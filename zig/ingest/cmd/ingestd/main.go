@@ -12,6 +12,7 @@ import (
 
 	"github.com/ParkWardRR/Cairn/ingest/internal/db"
 	"github.com/ParkWardRR/Cairn/ingest/internal/handler"
+	"github.com/ParkWardRR/Cairn/ingest/internal/mqtt"
 	"github.com/ParkWardRR/Cairn/ingest/internal/storage"
 )
 
@@ -23,6 +24,7 @@ func main() {
 	listenAddr := envOr("LISTEN_ADDR", ":8443")
 	databaseURL := envOr("DATABASE_URL", "postgres://cairn@localhost/cairn")
 	bundleDir := envOr("BUNDLE_DIR", "/data/bundles")
+	mqttBroker := os.Getenv("MQTT_BROKER_URL")
 	tlsCert := os.Getenv("TLS_CERT")
 	tlsKey := os.Getenv("TLS_KEY")
 
@@ -43,13 +45,21 @@ func main() {
 		log.Fatalf("storage init failed: %v", err)
 	}
 
+	// ── MQTT ────────────────────────────────────────────────────────────
+
+	mqttPub := mqtt.New(mqttBroker)
+	defer mqttPub.Close()
+
 	// ── routes ──────────────────────────────────────────────────────────
 
 	mux := http.NewServeMux()
 
 	uploadHandler := handler.NewUploadHandler(queries, store)
+	uploadHandler.SetMQTT(mqttPub)
 	healthHandler := handler.NewHealthHandler(pool)
+	apiHandler := handler.NewApiHandler(queries)
 
+	// Ingest endpoints
 	mux.HandleFunc("GET /api/v1/health", healthHandler.Health)
 	mux.HandleFunc("POST /api/v1/upload/init", uploadHandler.Init)
 	mux.HandleFunc("PUT /api/v1/upload/{id}/chunk", uploadHandler.Chunk)
@@ -57,11 +67,29 @@ func main() {
 	mux.HandleFunc("GET /api/v1/devices/{id}/status", uploadHandler.DeviceStatus)
 	mux.HandleFunc("POST /api/v1/upload/{id}/reparse", uploadHandler.Reparse)
 
+	// Read API
+	mux.HandleFunc("GET /api/v1/stats", apiHandler.Stats)
+	mux.HandleFunc("GET /api/v1/trips", apiHandler.ListTrips)
+	mux.HandleFunc("GET /api/v1/trips/{id}", apiHandler.GetTrip)
+	mux.HandleFunc("GET /api/v1/trips/{id}/route", apiHandler.GetTripRoute)
+	mux.HandleFunc("GET /api/v1/trips/{id}/events", apiHandler.GetTripEvents)
+	mux.HandleFunc("GET /api/v1/trips/{id}/export/gpx", apiHandler.ExportGPX)
+	mux.HandleFunc("GET /api/v1/trips/{id}/export/geojson", apiHandler.ExportGeoJSON)
+	mux.HandleFunc("GET /api/v1/trips/{id}/export/csv", apiHandler.ExportCSV)
+	mux.HandleFunc("DELETE /api/v1/trips/{id}", apiHandler.DeleteTrip)
+	mux.HandleFunc("POST /api/v1/trips/{id}/tags", apiHandler.AddTag)
+	mux.HandleFunc("DELETE /api/v1/trips/{id}/tags/{tag}", apiHandler.RemoveTag)
+	mux.HandleFunc("GET /api/v1/devices", apiHandler.ListDevices)
+	mux.HandleFunc("GET /api/v1/places", apiHandler.ListPlaces)
+	mux.HandleFunc("POST /api/v1/places", apiHandler.CreatePlace)
+	mux.HandleFunc("PUT /api/v1/places/{id}", apiHandler.UpdatePlace)
+	mux.HandleFunc("DELETE /api/v1/places/{id}", apiHandler.DeletePlace)
+
 	// ── server ──────────────────────────────────────────────────────────
 
 	srv := &http.Server{
 		Addr:         listenAddr,
-		Handler:      mux,
+		Handler:      corsMiddleware(mux),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -95,6 +123,19 @@ func main() {
 		log.Fatalf("shutdown error: %v", err)
 	}
 	log.Println("stopped")
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Upload-Offset")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func envOr(key, fallback string) string {

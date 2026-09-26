@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ParkWardRR/Cairn/ingest/internal/db"
+	"github.com/ParkWardRR/Cairn/ingest/internal/mqtt"
 	"github.com/ParkWardRR/Cairn/ingest/internal/parser"
 	"github.com/ParkWardRR/Cairn/ingest/internal/receipt"
 	"github.com/ParkWardRR/Cairn/ingest/internal/storage"
@@ -23,6 +24,12 @@ type UploadHandler struct {
 	queries *db.Queries
 	store   *storage.Store
 	signer  *receipt.Signer
+	mqtt    *mqtt.Publisher
+}
+
+// SetMQTT attaches an MQTT publisher for trip event notifications.
+func (h *UploadHandler) SetMQTT(pub *mqtt.Publisher) {
+	h.mqtt = pub
 }
 
 // NewUploadHandler creates an UploadHandler with an ephemeral signing key.
@@ -282,6 +289,10 @@ func (h *UploadHandler) Finalize(w http.ResponseWriter, r *http.Request) {
 	// bundle is safely stored and can be reparsed later.
 	h.parseAndInsert(ctx, uploadID, upload.DeviceID, computedHash)
 
+	if h.mqtt != nil {
+		h.mqtt.PublishSyncCompleted(upload.DeviceID, "")
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"receipt_id": rcpt.ReceiptID.String(),
 		"signature":  rcpt.Signature,
@@ -418,6 +429,11 @@ func (h *UploadHandler) parseAndInsert(ctx context.Context, uploadID uuid.UUID, 
 		bundle.Manifest.TripID, uploadID,
 		len(bundle.Samples), len(bundle.MotionSamples), len(bundle.Events),
 		bundle.DistanceM, bundle.DurationS)
+
+	if h.mqtt != nil {
+		h.mqtt.PublishTripEnd(bundle.Manifest.DeviceID, bundle.Manifest.TripID,
+			bundle.EndedAt, bundle.DistanceM, bundle.DurationS)
+	}
 }
 
 // insertParsedBundle inserts a fully-parsed bundle into the database.
