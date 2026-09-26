@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-zig:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Build common
+        working-directory: zig/common
+        run: zig build
+
+      - name: Test common
+        working-directory: zig/common
+        run: zig build test
+
+      - name: Build bundle
+        working-directory: zig/bundle
+        run: zig build
+
+      - name: Build CLI
+        working-directory: zig/cli
+        run: zig build
+
+      - name: CLI smoke test
+        working-directory: zig/cli
+        run: |
+          ./zig-out/bin/tripctl generate --duration-minutes 5 --output /tmp/ci-test-trip
+          ./zig-out/bin/tripctl validate /tmp/ci-test-trip
+          ./zig-out/bin/tripctl inspect /tmp/ci-test-trip
+          ./zig-out/bin/tripctl export-gpx /tmp/ci-test-trip --output /tmp/ci-test.gpx
+          rm -rf /tmp/ci-test-trip /tmp/ci-test.gpx
+
+  build-go:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: Build ingest service
+        working-directory: zig/ingest
+        run: go build ./cmd/ingestd/
+
+      - name: Vet
+        working-directory: zig/ingest
+        run: go vet ./...
+
+  simulator-test:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate and validate fixtures
+        run: |
+          python3 zig/simulator/simulate_device.py --trips 3 --output /tmp/ci-fixtures --seed 12345
+          # Verify binary alignment and hash integrity
+          python3 -c "
+          import os, hashlib, json
+          for d in sorted(os.listdir('/tmp/ci-fixtures')):
+              trip_dir = os.path.join('/tmp/ci-fixtures', d)
+              if not os.path.isdir(trip_dir): continue
+              # Check binary alignment
+              sb = os.path.getsize(os.path.join(trip_dir, 'samples.bin'))
+              assert sb % 32 == 0, f'{d}: samples.bin not 32-byte aligned'
+              # Check hashes
+              with open(os.path.join(trip_dir, 'sha256sums.txt')) as f:
+                  for line in f:
+                      h, name = line.strip().split('  ')
+                      actual = hashlib.sha256(open(os.path.join(trip_dir, name), 'rb').read()).hexdigest()
+                      assert actual == h, f'{d}/{name}: hash mismatch'
+              print(f'{d}: OK ({sb//32} GNSS samples)')
+          "
+          rm -rf /tmp/ci-fixtures
