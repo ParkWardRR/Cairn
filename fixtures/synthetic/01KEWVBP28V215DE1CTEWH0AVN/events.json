@@ -1,0 +1,56 @@
+[
+  {
+    "type": "trip_start",
+    "timestamp": "2026-01-13T23:34:21+00:00",
+    "data": {}
+  },
+  {
+    "type": "stop_candidate",
+    "timestamp": "2026-01-13T23:35:10+00:00",
+    "data": {
+      "resolved": "resumed",
+      "duration_s": 84,
+      "location": "Ocean & Colorado"
+    }
+  },
+  {
+    "type": "gnss_quality_degraded",
+    "timestamp": "2026-01-13T23:36:34+00:00",
+    "data": {
+      "reason": "overpass",
+      "duration_s": 7
+    }
+  },
+  {
+    "type": "stop_candidate",
+    "timestamp": "2026-01-13T23:37:55+00:00",
+    "data": {
+      "resolved": "resumed",
+      "duration_s": 90,
+      "location": "Ocean & Wilshire"
+    }
+  },
+  {
+    "type": "stop_candidate",
+    "timestamp": "2026-01-13T23:41:06+00:00",
+    "data": {
+      "resolved": "resumed",
+      "duration_s": 28,
+      "location": "Montana & 7th"
+    }
+  },
+  {
+    "type": "stop_candidate",
+    "timestamp": "2026-01-13T23:44:17+00:00",
+    "data": {
+      "resolved": "resumed",
+      "duration_s": 26,
+      "location": "Lincoln & Montana"
+    }
+  },
+  {
+    "type": "trip_end",
+    "timestamp": "2026-01-13T23:45:38+00:00",
+    "data": {}
+  }
+]

@@ -1,0 +1,26 @@
+# Caddyfile — local reverse proxy for Cairn
+#
+# cairn.local is resolved via mDNS on the home LAN.
+# TLS uses Caddy's internal CA (or bring your own certs).
+
+cairn.local {
+	# Ingest API — upload endpoints
+	handle /api/v1/* {
+		reverse_proxy ingest:8443
+	}
+
+	# PWA static files (placeholder — serve from a directory once the PWA is built)
+	handle {
+		root * /srv/pwa
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+
+	# Use internal TLS for LAN-only deployments.
+	tls internal
+}

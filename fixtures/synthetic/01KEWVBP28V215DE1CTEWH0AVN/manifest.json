@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "trip_id": "01KEWVBP28V215DE1CTEWH0AVN",
+  "device_id": "cairn-simulator-01",
+  "firmware_version": "0.1.0-sim",
+  "started_at": "2026-01-13T23:34:21+00:00",
+  "ended_at": "2026-01-13T23:45:37+00:00",
+  "sample_count": {
+    "gnss": 677,
+    "imu_summary": 16900,
+    "imu_raw_windows": 0
+  },
+  "gnss_rate_hz": 1,
+  "imu_rate_hz": 25,
+  "schema_version": 1,
+  "compression": "none",
+  "integrity": {
+    "sha256_manifest": false,
+    "sha256_samples": "1e5395bfbd46e5d79132f3fc0220dfe00722b3574e05a34e01cad837370865a4",
+    "sha256_events": "0044add13fe3cd2850b8a69879476c1b654cf107804f563eeec9ef888c3f399e"
+  }
+}

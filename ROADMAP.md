@@ -13,43 +13,43 @@
 
 ### Deliverables
 
-- [ ] **Product specification**
-  - [ ] Write one-page statement of core flow
-  - [ ] Document non-goals and explicit exclusions
-  - [ ] Define privacy defaults and operational model
-  - [ ] Specify supported vehicles and mounting considerations
+- [x] **Product specification**
+  - [x] Write one-page statement of core flow
+  - [x] Document non-goals and explicit exclusions
+  - [x] Define privacy defaults and operational model
+  - [x] Specify supported vehicles and mounting considerations
 
-- [ ] **Device state machine**
-  - [ ] Define all states: `sleep`, `arming`, `recording`, `finalizing`, `awaiting_home_wifi`, `syncing`, `low_battery_protection`, `fault`
-  - [ ] Document transitions between states with trigger conditions
-  - [ ] Specify timeout values and debounce thresholds
-  - [ ] Diagram the state machine
+- [x] **Device state machine**
+  - [x] Define all states: `sleep`, `arming`, `recording`, `finalizing`, `awaiting_home_wifi`, `syncing`, `low_battery_protection`, `fault`
+  - [x] Document transitions between states with trigger conditions
+  - [x] Specify timeout values and debounce thresholds
+  - [x] Diagram the state machine
 
-- [ ] **Trip bundle format**
-  - [ ] Design versioned, self-describing bundle schema
-  - [ ] Define CBOR manifest structure
-  - [ ] Define binary sample encoding for GNSS and IMU
-  - [ ] Specify checksum and signature scheme (SHA-256 + Ed25519)
-  - [ ] Document zstd compression strategy (server-side; raw on device for v1)
+- [x] **Trip bundle format**
+  - [x] Design versioned, self-describing bundle schema
+  - [x] Define CBOR manifest structure
+  - [x] Define binary sample encoding for GNSS and IMU
+  - [x] Specify checksum and signature scheme (SHA-256 + Ed25519)
+  - [x] Document zstd compression strategy (server-side; raw on device for v1)
 
-- [ ] **Home network design**
-  - [ ] Define trusted SSID/BSSID allowlist mechanism
-  - [ ] Plan WPA credential provisioning (serial-first)
-  - [ ] Specify local hostname/IP resolution (mDNS + static DHCP)
-  - [ ] Design certificate strategy (local CA, device keypair, server pinning)
+- [x] **Home network design**
+  - [x] Define trusted SSID/BSSID allowlist mechanism
+  - [x] Plan WPA credential provisioning (serial-first)
+  - [x] Specify local hostname/IP resolution (mDNS + static DHCP)
+  - [x] Design certificate strategy (local CA, device keypair, server pinning)
 
-- [ ] **Data retention policy**
-  - [ ] Define device spool period (7–30 day configurable window)
-  - [ ] Define server retention tiers (raw, normalized, derived)
-  - [ ] Specify backup schedule and restore procedure
-  - [ ] Document deletion rules — never delete without server receipt + retention window
+- [x] **Data retention policy**
+  - [x] Define device spool period (7–30 day configurable window)
+  - [x] Define server retention tiers (raw, normalized, derived)
+  - [x] Specify backup schedule and restore procedure
+  - [x] Document deletion rules — never delete without server receipt + retention window
 
-- [ ] **Test corpus**
-  - [ ] Create synthetic scenario: normal 45-minute drive
-  - [ ] Create synthetic scenario: short stop (gas station, drive-through)
+- [x] **Test corpus**
+  - [x] Create synthetic scenario: normal 45-minute drive
+  - [x] Create synthetic scenario: short stop (gas station, drive-through)
   - [ ] Create synthetic scenario: long stop (multi-hour parking)
   - [ ] Create synthetic scenario: no GNSS fix (garage/tunnel)
-  - [ ] Create synthetic scenario: interrupted write (power loss mid-trip)
+  - [x] Create synthetic scenario: interrupted write (power loss mid-trip)
   - [ ] Create synthetic scenario: interrupted upload (Wi-Fi loss mid-sync)
 
 ### Bundle Structure
@@ -86,8 +86,8 @@ trip/
 
 ### Deliverables
 
-- [ ] **Flash baseline firmware**
-  - [ ] Set up Arduino IDE / PlatformIO for Freematics ONE+ Model B
+- [x] **Flash baseline firmware**
+  - [x] Set up Arduino IDE / PlatformIO for Freematics ONE+ Model B
   - [ ] Successfully erase, flash, and serial-monitor the device
   - [ ] Document recovery procedure for bricked state
   - [ ] Verify serial debug output is reliable
@@ -163,49 +163,49 @@ STOP_CANDIDATE
 
 ### Deliverables
 
-- [ ] **Ignition / activity heuristic**
-  - [ ] Detect drive start from GNSS speed + IMU activity
-  - [ ] Use OBD port voltage only as power context (not diagnostics)
+- [x] **Ignition / activity heuristic**
+  - [x] Detect drive start from GNSS speed + IMU activity
+  - [x] Use OBD port voltage only as power context (not diagnostics)
   - [ ] Validate heuristic across both target vehicles
 
-- [ ] **Start debounce**
-  - [ ] Filter out noise, door slams, and minor garage movement
-  - [ ] Require sustained movement for configurable threshold (e.g., 15 seconds)
+- [x] **Start debounce**
+  - [x] Filter out noise, door slams, and minor garage movement
+  - [x] Require sustained movement for configurable threshold (e.g., 15 seconds)
   - [ ] Test with real-world false triggers
 
-- [ ] **Adaptive sample scheduling**
-  - [ ] Active driving: 1–5 Hz GNSS, 25–50 Hz IMU
-  - [ ] Slow maneuvering / parking: 1–2 Hz GNSS, 25 Hz IMU
-  - [ ] Stationary stop candidate: 0.2–1 Hz GNSS, 10–25 Hz IMU
-  - [ ] Parked: GNSS off, low-power motion wake only
+- [x] **Adaptive sample scheduling**
+  - [x] Active driving: 1–5 Hz GNSS, 25–50 Hz IMU
+  - [x] Slow maneuvering / parking: 1–2 Hz GNSS, 25 Hz IMU
+  - [x] Stationary stop candidate: 0.2–1 Hz GNSS, 10–25 Hz IMU
+  - [x] Parked: GNSS off, low-power motion wake only
 
-- [ ] **Stop debounce**
-  - [ ] Avoid fragmenting trips during traffic lights
-  - [ ] Avoid fragmenting during fuel stops and drive-throughs
-  - [ ] Configurable dwell time threshold
-  - [ ] Prefer merging short errands over producing false trips
+- [x] **Stop debounce**
+  - [x] Avoid fragmenting trips during traffic lights
+  - [x] Avoid fragmenting during fuel stops and drive-throughs
+  - [x] Configurable dwell time threshold
+  - [x] Prefer merging short errands over producing false trips
 
-- [ ] **Parking snapshot**
-  - [ ] Record final reliable location with GNSS accuracy
-  - [ ] Record heading and timestamp
-  - [ ] Mark as parking endpoint in trip events
+- [x] **Parking snapshot**
+  - [x] Record final reliable location with GNSS accuracy
+  - [x] Record heading and timestamp
+  - [x] Mark as parking endpoint in trip events
 
-- [ ] **Local event markers**
-  - [ ] Emit: trip_start, trip_stop, trip_pause, trip_resumed
-  - [ ] Emit: poor_gnss_quality, gnss_restored
-  - [ ] Emit: power_anomaly, storage_pressure
-  - [ ] Store events in trip bundle's events.cbor
+- [x] **Local event markers**
+  - [x] Emit: trip_start, trip_stop, trip_pause, trip_resumed
+  - [x] Emit: poor_gnss_quality, gnss_restored
+  - [x] Emit: power_anomaly, storage_pressure
+  - [x] Store events in trip bundle's events.cbor
 
-- [ ] **Storage recovery**
-  - [ ] Implement append-only record format with periodic checkpoints
-  - [ ] Boot-time scan and recovery of incomplete sessions
+- [x] **Storage recovery**
+  - [x] Implement append-only record format with periodic checkpoints
+  - [x] Boot-time scan and recovery of incomplete sessions
   - [ ] Validate recovery after simulated power loss
 
-- [ ] **Capacity controls**
-  - [ ] Monitor microSD free space
-  - [ ] Prevent exhaustion with configurable threshold
-  - [ ] Preserve unsynced data according to retention policy
-  - [ ] Alert on next home sync if storage was under pressure
+- [x] **Capacity controls**
+  - [x] Monitor microSD free space
+  - [x] Prevent exhaustion with configurable threshold
+  - [x] Preserve unsynced data according to retention policy
+  - [x] Alert on next home sync if storage was under pressure
 
 ---
 
@@ -238,28 +238,28 @@ STOP_CANDIDATE
   - [ ] Pin server public key / hostname
   - [ ] No public Web PKI dependency
 
-- [ ] **Resumable upload**
-  - [ ] Chunked upload using trip ID + content hash + byte offset
-  - [ ] Resume after Wi-Fi disconnect or vehicle departure
-  - [ ] Handle partial uploads gracefully
+- [x] **Resumable upload**
+  - [x] Chunked upload using trip ID + content hash + byte offset
+  - [x] Resume after Wi-Fi disconnect or vehicle departure
+  - [x] Handle partial uploads gracefully
 
-- [ ] **Server receipt**
-  - [ ] Server issues signed/durable acknowledgment
-  - [ ] Receipt ties to trip ID and content hash
-  - [ ] Receipt issued only after object + database record committed
+- [x] **Server receipt**
+  - [x] Server issues signed/durable acknowledgment
+  - [x] Receipt ties to trip ID and content hash
+  - [x] Receipt issued only after object + database record committed
 
-- [ ] **Device cleanup**
-  - [ ] Delete local trip only after receipt + retention window
-  - [ ] Store receipt locally as proof of server acknowledgment
-  - [ ] Never delete merely because an HTTP request succeeded
+- [x] **Device cleanup**
+  - [x] Delete local trip only after receipt + retention window
+  - [x] Store receipt locally as proof of server acknowledgment
+  - [x] Never delete merely because an HTTP request succeeded
 
 - [ ] **Upload budget**
   - [ ] Limit Wi-Fi transmit duration per sync session
   - [ ] Suspend/resume safely if vehicle leaves garage mid-upload
-  - [ ] Prioritize oldest unsynced trips
+  - [x] Prioritize oldest unsynced trips
 
-- [ ] **Local discovery**
-  - [ ] mDNS (`cairn.local`) for initial deployment
+- [x] **Local discovery**
+  - [x] mDNS (`cairn.local`) for initial deployment
   - [ ] Static DHCP reservation for production reliability
 
 ---
@@ -272,28 +272,28 @@ STOP_CANDIDATE
 
 ### Deliverables
 
-- [ ] **`bundle` library**
-  - [ ] Parse trip bundles from device
-  - [ ] Validate checksums and signatures
-  - [ ] Hash and verify content integrity
+- [x] **`bundle` library**
+  - [x] Parse trip bundles from device
+  - [x] Validate checksums and signatures
+  - [x] Hash and verify content integrity
   - [ ] Support schema version migration
 
-- [ ] **`ingestd` service**
-  - [ ] mTLS endpoint for device uploads
-  - [ ] Resumable chunked upload support
-  - [ ] Replay protection (reject duplicate content hashes)
-  - [ ] Rate limiting per device
-  - [ ] Issue durable receipts on successful commit
+- [x] **`ingestd` service**
+  - [x] mTLS endpoint for device uploads
+  - [x] Resumable chunked upload support
+  - [x] Replay protection (reject duplicate content hashes)
+  - [x] Rate limiting per device
+  - [x] Issue durable receipts on successful commit
 
-- [ ] **`tripctl` CLI**
-  - [ ] Inspect local trip bundles
-  - [ ] Validate storage integrity
-  - [ ] Generate synthetic test fixtures
-  - [ ] Export raw data (GPX, GeoJSON, CSV)
+- [x] **`tripctl` CLI**
+  - [x] Inspect local trip bundles
+  - [x] Validate storage integrity
+  - [x] Generate synthetic test fixtures
+  - [x] Export raw data (GPX, GeoJSON, CSV)
 
-- [ ] **`trip-sim` simulator**
-  - [ ] Replay historical drives into ingest pipeline
-  - [ ] Generate synthetic journeys
+- [x] **`trip-sim` simulator**
+  - [x] Replay historical drives into ingest pipeline
+  - [x] Generate synthetic journeys
   - [ ] Support accelerated and real-time replay
 
 - [ ] **`api` service**
@@ -301,18 +301,18 @@ STOP_CANDIDATE
   - [ ] Endpoints: trips, places, route segments, tags, exports
   - [ ] PostGIS queries for nearest-place and distance
 
-- [ ] **Database schema**
-  - [ ] `devices` — public key, metadata, last-seen, firmware version
-  - [ ] `uploads` — content hash, state, receipt ID, storage path
-  - [ ] `trips` — stable ID, start/end, device, summary, bundle hash
-  - [ ] `location_samples` — raw GNSS with accuracy and sequence
-  - [ ] `motion_samples` — IMU or downsampled aggregates
-  - [ ] `trip_events` — start/stop/pause/sync/quality events
-  - [ ] `places` — named locations with radius
-  - [ ] `trip_tags` — personal/business/road-trip/private labels
-  - [ ] `derivations` — algorithm version, output hash, reproducibility
-  - [ ] All timestamps in UTC; render in viewer per timezone
-  - [ ] PostGIS extensions enabled
+- [x] **Database schema**
+  - [x] `devices` — public key, metadata, last-seen, firmware version
+  - [x] `uploads` — content hash, state, receipt ID, storage path
+  - [x] `trips` — stable ID, start/end, device, summary, bundle hash
+  - [x] `location_samples` — raw GNSS with accuracy and sequence
+  - [x] `motion_samples` — IMU or downsampled aggregates
+  - [x] `trip_events` — start/stop/pause/sync/quality events
+  - [x] `places` — named locations with radius
+  - [x] `trip_tags` — personal/business/road-trip/private labels
+  - [x] `derivations` — algorithm version, output hash, reproducibility
+  - [x] All timestamps in UTC; render in viewer per timezone
+  - [x] PostGIS extensions enabled
 
 ---
 

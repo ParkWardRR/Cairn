@@ -1,0 +1,9 @@
+zig-out/
+zig-cache/
+.zig-cache/
+*.o
+*.a
+__pycache__/
+*.pyc
+ingestd
+.DS_Store

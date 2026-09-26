@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
-  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_0_·_Planning-6C3483?style=flat-square" alt="Project Status"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_1–4_·_Active_Dev-2ECC71?style=flat-square" alt="Project Status"></a>
   <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <a href="https://github.com/ParkWardRR/Cairn/issues"><img src="https://img.shields.io/github/issues/ParkWardRR/Cairn?style=flat-square&color=E74C3C" alt="Issues"></a>
   <a href="https://github.com/ParkWardRR/Cairn/pulls"><img src="https://img.shields.io/github/issues-pr/ParkWardRR/Cairn?style=flat-square&color=2ECC71" alt="Pull Requests"></a>
@@ -113,6 +113,8 @@ No phone required. No cloud account. No cellular connection. No subscription. Ju
 | **Odin** | Offline desktop tools: trip inspector, route density, SD recovery | Pleasant native tooling for debugging and exploration |
 | **Mojo** | Experimental: route clustering, map matching, trajectory analysis | GPU-friendly analysis without production dependency |
 | **Arduino/C++** | Freematics firmware (hardware enablement) | Shortest path to real driving data on ESP32 |
+| **Go** | Auxiliary services, CLI companions, integration glue | Fast compilation, single-binary deploys, strong networking stdlib |
+| **Rust** | Safety-critical parsing, cryptographic verification, embedded tooling | Memory safety guarantees without garbage collection |
 
 ## Explicit Non-Goals
 
@@ -164,13 +166,13 @@ Cairn/
 
 ## Quick Start
 
-> Cairn is in **Phase 0 — Planning**. The sections below describe the target setup.
+> Cairn is in **active development** (Phases 0–4). Firmware, bundle tooling, ingest service, and database schema are implemented. Hardware validation is next.
 
 ### Prerequisites
 
 - [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/) with microSD card
-- USB-to-serial adapter for firmware flashing
-- Homelab server (Linux/macOS) with Docker
+- USB-to-serial adapter or Raspberry Pi Zero W (UART for flash/debug, Wi-Fi as test server)
+- Homelab server (Linux/macOS) with Docker — a Raspberry Pi Zero W works for development
 - Home Wi-Fi network with a stable SSID/BSSID
 
 ### Device Setup
@@ -206,6 +208,7 @@ docker compose up -d
 | [Retention & Backup](docs/retention-and-backup.md) | Data lifecycle from device spool to archive |
 | [Home Wi-Fi Deployment](docs/home-wifi-deployment.md) | Network setup, mDNS, certificates, and provisioning |
 | [Roadmap](ROADMAP.md) | Full phased roadmap with checklists |
+| [Test Plan](docs/test-plan.md) | ELI5 testing guide for RPi Zero + Freematics hardware |
 
 ## Data Model
 
