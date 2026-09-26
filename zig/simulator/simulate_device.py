@@ -598,13 +598,14 @@ class UploadSimulator:
         try:
             # Step 1: POST /upload/init
             init_payload = json.dumps({
+                "device_id": "cairn-simulator-01",
                 "trip_id": trip_id,
                 "content_hash": content_hash,
                 "size": len(data),
             }).encode("utf-8")
 
             req = urllib.request.Request(
-                f"{self.server_url}/upload/init",
+                f"{self.server_url}/api/v1/upload/init",
                 data=init_payload,
                 headers={"Content-Type": "application/json"},
                 method="POST",
@@ -621,11 +622,11 @@ class UploadSimulator:
             while offset < len(data):
                 chunk = data[offset:offset + self.CHUNK_SIZE]
                 chunk_req = urllib.request.Request(
-                    f"{self.server_url}/upload/{upload_id}/chunk",
+                    f"{self.server_url}/api/v1/upload/{upload_id}/chunk",
                     data=chunk,
                     headers={
                         "Content-Type": "application/octet-stream",
-                        "X-Offset": str(offset),
+                        "X-Upload-Offset": str(offset),
                     },
                     method="PUT",
                 )
@@ -641,7 +642,7 @@ class UploadSimulator:
                 "content_hash": content_hash,
             }).encode("utf-8")
             fin_req = urllib.request.Request(
-                f"{self.server_url}/upload/{upload_id}/finalize",
+                f"{self.server_url}/api/v1/upload/{upload_id}/finalize",
                 data=finalize_payload,
                 headers={"Content-Type": "application/json"},
                 method="POST",
