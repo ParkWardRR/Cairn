@@ -16,7 +16,9 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust">
   <img src="https://img.shields.io/badge/Zig-F7A41D?style=flat-square&logo=zig&logoColor=white" alt="Zig">
+  <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/Gleam-FFAFF3?style=flat-square&logo=gleam&logoColor=black" alt="Gleam">
   <img src="https://img.shields.io/badge/MoonBit-5C2D91?style=flat-square" alt="MoonBit">
   <img src="https://img.shields.io/badge/Odin-1E90FF?style=flat-square" alt="Odin">
@@ -87,7 +89,7 @@ No phone required. No cloud account. No cellular connection. No subscription. Ju
 │ Homelab                                                         │
 │                                                                 │
 │ ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐      │
-│ │ Zig Ingest  │→ │ PostgreSQL   │→ │ Zig API + PWA      │      │
+│ │ Go Ingest   │→ │ PostgreSQL   │→ │ Zig API + PWA      │      │
 │ │ (mTLS,      │  │ + PostGIS    │  │ (trips, maps,      │      │
 │ │  resumable) │  │              │  │  places, export)   │      │
 │ └─────────────┘  └──────┬───────┘  └────────────────────┘      │
@@ -127,7 +129,7 @@ Every language in this stack was chosen for deterministic resource management, s
 - **No single-binary deploy** — every target needs a Python runtime; contrast with `go build` or `cargo build`
 - **Aesthetics** — significant whitespace, implicit conventions, and the general vibe are a poor fit for systems work
 
-Any existing Python in this repo is legacy test scaffolding being migrated to Rust. New tooling should use Rust, Zig, or Go.
+This repo contains zero Python. All device emulation and test tooling is written in Rust.
 
 ## Explicit Non-Goals
 
@@ -153,13 +155,13 @@ Cairn/
 │   ├── trip-recorder/       # Drive detection + logging
 │   ├── wifi-provisioner/    # Home network provisioning
 │   └── test-fixtures/       # Hardware test scenarios
-├── zig/                     # Core services (Zig)
+├── emulator/                # Rust device emulator (15 scenarios, chunked upload)
+├── zig/                     # Core services (Zig + Go)
 │   ├── common/              # Shared types, crypto, config
 │   ├── bundle/              # Trip bundle parse/validate/sign
-│   ├── ingest/              # mTLS upload receiver
+│   ├── ingest/              # Go ingest service (mTLS upload receiver)
 │   ├── api/                 # REST API for web UI
-│   ├── cli/                 # tripctl command-line tool
-│   └── simulator/           # Trip replay for testing
+│   └── cli/                 # tripctl command-line tool
 ├── gleam/                   # Event services (Gleam/OTP)
 │   └── trip-orchestrator/   # Lifecycle, retry, automation
 ├── moonbit/                 # WASM plugins (MoonBit)
@@ -171,6 +173,7 @@ Cairn/
 │   └── trip-inspector/
 ├── mojo/                    # Experimental (Mojo)
 │   └── experiments/
+├── tests/                   # Smoke tests (shell)
 ├── deploy/                  # Docker Compose, Caddy, systemd
 ├── fixtures/                # Test data
 ├── ROADMAP.md               # Phased roadmap with checklists
@@ -179,7 +182,7 @@ Cairn/
 
 ## Quick Start
 
-> Cairn is in **active development** (Phases 0–4). Firmware, bundle tooling, ingest service, and database schema are implemented. Hardware validation is next.
+> Cairn is in **active development** (Phases 0–4). Firmware, bundle tooling, ingest service, database schema, and a full Rust device emulator (15 scenarios, tested against live ingest at 5000x speedup) are implemented. Hardware validation is next.
 
 ### Prerequisites
 

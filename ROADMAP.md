@@ -47,10 +47,10 @@
 - [x] **Test corpus**
   - [x] Create synthetic scenario: normal 45-minute drive
   - [x] Create synthetic scenario: short stop (gas station, drive-through)
-  - [ ] Create synthetic scenario: long stop (multi-hour parking)
-  - [ ] Create synthetic scenario: no GNSS fix (garage/tunnel)
+  - [x] Create synthetic scenario: long stop (multi-hour parking)
+  - [x] Create synthetic scenario: no GNSS fix (garage/tunnel)
   - [x] Create synthetic scenario: interrupted write (power loss mid-trip)
-  - [ ] Create synthetic scenario: interrupted upload (Wi-Fi loss mid-sync)
+  - [x] Create synthetic scenario: interrupted upload (Wi-Fi loss mid-sync)
 
 ### Bundle Structure
 
@@ -304,7 +304,7 @@ STOP_CANDIDATE
 - [x] **`trip-sim` simulator**
   - [x] Replay historical drives into ingest pipeline
   - [x] Generate synthetic journeys
-  - [ ] Support accelerated and real-time replay
+  - [x] Support accelerated and real-time replay
 
 - [ ] **`api` service**
   - [ ] Read-only JSON API for trips
