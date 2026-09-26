@@ -8,3 +8,4 @@ __pycache__/
 /deploy/ingestd
 .DS_Store
 emulator/output/
+emulator/target/
