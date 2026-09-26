@@ -5,5 +5,5 @@ zig-cache/
 *.a
 __pycache__/
 *.pyc
-ingestd
+/deploy/ingestd
 .DS_Store
