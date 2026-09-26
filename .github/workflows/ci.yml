@@ -87,6 +87,38 @@ jobs:
           "
           rm -rf /tmp/ci-fixtures
 
+  emulator-test:
+    runs-on: [self-hosted, cairn]
+    needs: [build-go, simulator-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Emulator scenarios against live ingest
+        run: |
+          if curl -sf --max-time 5 http://localhost:8443/api/v1/health >/dev/null 2>&1; then
+            python3 emulator/freematics_emulator.py \
+              --scenario normal_commute \
+              --server http://localhost:8443 \
+              --headless --speedup 100 \
+              --output /tmp/ci-emulator-output \
+              --seed $RANDOM
+            python3 emulator/freematics_emulator.py \
+              --scenario short_errand \
+              --server http://localhost:8443 \
+              --headless --speedup 100 \
+              --output /tmp/ci-emulator-output \
+              --seed $RANDOM
+            python3 emulator/freematics_emulator.py \
+              --scenario power_loss_upload \
+              --server http://localhost:8443 \
+              --headless --speedup 100 \
+              --output /tmp/ci-emulator-output \
+              --seed $RANDOM
+            rm -rf /tmp/ci-emulator-output
+          else
+            echo "Ingest service not running -- skipping emulator tests"
+          fi
+
   integration-test:
     runs-on: [self-hosted, cairn]
     needs: [build-go, simulator-test]

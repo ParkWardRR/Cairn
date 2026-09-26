@@ -7,3 +7,4 @@ __pycache__/
 *.pyc
 /deploy/ingestd
 .DS_Store
+emulator/output/
