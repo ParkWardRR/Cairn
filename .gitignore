@@ -3,8 +3,6 @@ zig-cache/
 .zig-cache/
 *.o
 *.a
-__pycache__/
-*.pyc
 /deploy/ingestd
 .DS_Store
 emulator/output/

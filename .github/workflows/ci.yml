@@ -60,60 +60,71 @@ jobs:
         working-directory: zig/ingest
         run: go vet ./...
 
-  simulator-test:
+  build-rust:
     runs-on: [self-hosted, cairn]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate and validate fixtures
-        run: |
-          python3 zig/simulator/simulate_device.py --trips 3 --output /tmp/ci-fixtures --seed 12345
-          # Verify binary alignment and hash integrity
-          python3 -c "
-          import os, hashlib, json
-          for d in sorted(os.listdir('/tmp/ci-fixtures')):
-              trip_dir = os.path.join('/tmp/ci-fixtures', d)
-              if not os.path.isdir(trip_dir): continue
-              # Check binary alignment
-              sb = os.path.getsize(os.path.join(trip_dir, 'samples.bin'))
-              assert sb % 32 == 0, f'{d}: samples.bin not 32-byte aligned'
-              # Check hashes
-              with open(os.path.join(trip_dir, 'sha256sums.txt')) as f:
-                  for line in f:
-                      h, name = line.strip().split('  ')
-                      actual = hashlib.sha256(open(os.path.join(trip_dir, name), 'rb').read()).hexdigest()
-                      assert actual == h, f'{d}/{name}: hash mismatch'
-              print(f'{d}: OK ({sb//32} GNSS samples)')
-          "
-          rm -rf /tmp/ci-fixtures
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build emulator
+        working-directory: emulator
+        run: cargo build --release
+
+      - name: Verify binary
+        run: ./emulator/target/release/cairn-emulator --help
 
   emulator-test:
     runs-on: [self-hosted, cairn]
-    needs: [build-go, simulator-test]
+    needs: [build-go, build-rust]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build emulator
+        working-directory: emulator
+        run: cargo build --release
+
+      - name: Generate and validate fixtures
+        run: |
+          ./emulator/target/release/cairn-emulator \
+            --scenario normal_commute \
+            --speedup 1000 \
+            --seed 12345 \
+            --output /tmp/ci-fixtures
+          # Verify binary alignment and hash integrity
+          for d in /tmp/ci-fixtures/cairn-emulator-01/*/; do
+            [ -f "$d/samples.bin" ] || continue
+            sb=$(wc -c < "$d/samples.bin" | tr -d ' ')
+            if [ $((sb % 32)) -ne 0 ]; then
+              echo "FAIL: samples.bin not 32-byte aligned in $d"
+              exit 1
+            fi
+            while IFS='  ' read -r expected name; do
+              actual=$(shasum -a 256 "$d/$name" | cut -d' ' -f1)
+              if [ "$expected" != "$actual" ]; then
+                echo "FAIL: hash mismatch for $name in $d"
+                exit 1
+              fi
+            done < "$d/sha256sums.txt"
+            echo "OK: $d ($((sb / 32)) GNSS samples)"
+          done
+          rm -rf /tmp/ci-fixtures
 
       - name: Emulator scenarios against live ingest
         run: |
           if curl -sf --max-time 5 http://localhost:8443/api/v1/health >/dev/null 2>&1; then
-            python3 emulator/freematics_emulator.py \
-              --scenario normal_commute \
-              --server http://localhost:8443 \
-              --headless --speedup 100 \
-              --output /tmp/ci-emulator-output \
-              --seed $RANDOM
-            python3 emulator/freematics_emulator.py \
-              --scenario short_errand \
-              --server http://localhost:8443 \
-              --headless --speedup 100 \
-              --output /tmp/ci-emulator-output \
-              --seed $RANDOM
-            python3 emulator/freematics_emulator.py \
-              --scenario power_loss_upload \
-              --server http://localhost:8443 \
-              --headless --speedup 100 \
-              --output /tmp/ci-emulator-output \
-              --seed $RANDOM
+            for scenario in normal_commute short_errand power_loss_upload; do
+              ./emulator/target/release/cairn-emulator \
+                --scenario "$scenario" \
+                --server http://localhost:8443 \
+                --speedup 1000 \
+                --output /tmp/ci-emulator-output \
+                --seed $RANDOM
+            done
             rm -rf /tmp/ci-emulator-output
           else
             echo "Ingest service not running -- skipping emulator tests"
@@ -121,9 +132,16 @@ jobs:
 
   integration-test:
     runs-on: [self-hosted, cairn]
-    needs: [build-go, simulator-test]
+    needs: [build-go, build-rust]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build emulator
+        working-directory: emulator
+        run: cargo build --release
 
       - name: Smoke test against live ingest
         run: |

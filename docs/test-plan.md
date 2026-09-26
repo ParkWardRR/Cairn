@@ -480,11 +480,13 @@ The most important test. Just use Cairn normally for a week.
 Don't want to drive around? Use the simulator:
 
 ```bash
-# Generate 5 fake trips
-python3 zig/simulator/simulate_device.py --trips 5 --output fixtures/synthetic/
+# Generate trips with the Rust emulator
+cargo run --release --manifest-path emulator/Cargo.toml -- \
+  --scenario normal_commute --speedup 100 --output fixtures/synthetic/
 
-# Upload them to the server
-python3 zig/simulator/simulate_device.py --upload --server http://cairn.local:8443 --trips 3
+# Upload to the server
+cargo run --release --manifest-path emulator/Cargo.toml -- \
+  --scenario normal_commute --server http://cairn.local:8443 --speedup 100
 
 # Or use tripctl to generate and inspect
 ./tripctl generate --duration-minutes 45 --output /tmp/test-trip/
