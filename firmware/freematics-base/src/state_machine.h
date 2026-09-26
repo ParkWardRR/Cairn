@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include "trip_types.h"
+#include "../hal/hal.h"
+#include "config.h"
 
 class StateMachine {
 public:
@@ -14,23 +16,31 @@ public:
     const char* getStateName(DeviceState state) const;
 
 private:
-    // Current device state
     DeviceState state_ = DeviceState::SLEEP;
 
-    // Timing helpers
     unsigned long stateEnteredAt_  = 0;
     unsigned long lastGNSSRead_    = 0;
     unsigned long lastIMURead_     = 0;
     unsigned long lastWiFiScan_    = 0;
 
-    // Trip bookkeeping
     uint32_t gnssSampleCount_      = 0;
     uint32_t imuSummaryCount_      = 0;
     char     currentTripId_[27]    = {};
 
-    // -----------------------------------------------------------------------
+    // Trip file paths built from trip ID
+    char tripDir_[64]    = {};
+    char samplesPath_[80] = {};
+    char imuPath_[80]     = {};
+
+    // Wi-Fi credentials loaded from NVS at init
+    CairnHAL::NVSWiFiCredentials wifiCreds_ = {};
+    uint8_t trustedBSSID_[6] = {};
+    bool    wifiCredsLoaded_ = false;
+
+    // Running SHA-256 for samples.bin during recording
+    bool hashActive_ = false;
+
     // State handlers
-    // -----------------------------------------------------------------------
     void handleSleep();
     void handleArming();
     void handleRecording();
@@ -42,37 +52,42 @@ private:
     void handleLowBatteryProtection();
     void handleFault();
 
-    // Transition helper
     void transitionTo(DeviceState next);
 
-    // -----------------------------------------------------------------------
-    // Sensor stubs (to be replaced with real drivers)
-    // -----------------------------------------------------------------------
-    static bool        detectMotion();
-    static GNSSSample  readGNSS();
-    static IMUSummary  readIMU();
-    static float       getSpeedKmh(const GNSSSample& s);
-    static bool        isMoving(const GNSSSample& s, const IMUSummary& imu);
+    // Sensor reads (HAL-backed)
+    bool       detectMotion();
+    GNSSSample readGNSS();
+    IMUSummary readIMU();
+    float      getSpeedKmh(const GNSSSample& s);
+    bool       isMoving(const GNSSSample& s, const IMUSummary& imu);
 
-    // -----------------------------------------------------------------------
-    // Storage stubs
-    // -----------------------------------------------------------------------
-    static bool initSD();
-    static bool openTripFile(const char* tripId);
-    static bool writeSample(const GNSSSample& s);
-    static bool finalizeTripBundle();
+    // Storage (HAL SDMMC-backed)
+    bool initSD();
+    bool openTripFile(const char* tripId);
+    bool writeSample(const GNSSSample& s);
+    bool writeIMUSummary(const IMUSummary& s);
+    bool finalizeTripBundle();
 
-    // -----------------------------------------------------------------------
-    // Connectivity stubs
-    // -----------------------------------------------------------------------
-    static bool scanForTrustedNetwork();
-    static bool connectToHome();
-    static bool uploadBundle(const char* tripId);
+    // Connectivity (HAL Wi-Fi-backed)
+    bool scanForTrustedNetwork();
+    bool connectToHome();
+    bool uploadBundle(const char* tripId);
 
-    // -----------------------------------------------------------------------
-    // Power stubs
-    // -----------------------------------------------------------------------
-    static float getBatteryVoltage();
+    // Power (HAL-backed)
+    float getBatteryVoltage();
+
+    // Helpers
+    void generateTripId(char* buf, size_t len);
+    bool writeManifest();
+    bool writeChecksums();
+    void addEvent(TripEvent::EventType type, const char* details);
+
+    // Event buffer for current trip
+    static constexpr size_t MAX_EVENTS = 64;
+    TripEvent events_[MAX_EVENTS];
+    uint16_t  eventCount_ = 0;
+
+    uint64_t tripStartMs_ = 0;
 };
 
 #endif // CAIRN_STATE_MACHINE_H

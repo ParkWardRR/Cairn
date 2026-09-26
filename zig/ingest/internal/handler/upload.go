@@ -1,16 +1,19 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/ParkWardRR/Cairn/ingest/internal/db"
+	"github.com/ParkWardRR/Cairn/ingest/internal/parser"
 	"github.com/ParkWardRR/Cairn/ingest/internal/receipt"
 	"github.com/ParkWardRR/Cairn/ingest/internal/storage"
 )
@@ -274,6 +277,11 @@ func (h *UploadHandler) Finalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse the uploaded bundle and insert trip data.
+	// Parsing failures are logged but do not block the receipt — the raw
+	// bundle is safely stored and can be reparsed later.
+	h.parseAndInsert(ctx, uploadID, upload.DeviceID, computedHash)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"receipt_id": rcpt.ReceiptID.String(),
 		"signature":  rcpt.Signature,
@@ -302,6 +310,228 @@ func (h *UploadHandler) DeviceStatus(w http.ResponseWriter, r *http.Request) {
 		"last_seen_at":     lastSeen,
 		"firmware_version": fwVersion,
 	})
+}
+
+// ─── POST /api/v1/upload/{id}/reparse ──────────────────────────────────────
+
+// Reparse triggers reparsing of an already-completed upload. Useful when the
+// parser logic has been updated or when initial parsing failed.
+func (h *UploadHandler) Reparse(w http.ResponseWriter, r *http.Request) {
+	uploadIDStr := r.PathValue("id")
+	uploadID, err := uuid.Parse(uploadIDStr)
+	if err != nil {
+		httpError(w, http.StatusBadRequest, "invalid upload id")
+		return
+	}
+
+	ctx := r.Context()
+
+	upload, err := h.queries.GetUpload(ctx, uploadID)
+	if err != nil || upload == nil {
+		httpError(w, http.StatusNotFound, "upload not found")
+		return
+	}
+	if upload.UploadState != "completed" {
+		httpError(w, http.StatusConflict, "upload not yet completed")
+		return
+	}
+
+	// Delete existing parsed data so we can re-insert cleanly.
+	bundlePath := h.store.BundlePath(uploadIDStr)
+	bundle, err := parser.ParseBundleFile(bundlePath)
+	if err != nil {
+		// Try raw samples fallback
+		data, readErr := os.ReadFile(bundlePath)
+		if readErr != nil {
+			httpError(w, http.StatusUnprocessableEntity, fmt.Sprintf("parse error: %v", err))
+			return
+		}
+		bundle, err = parser.ParseRawSamples(data, upload.DeviceID, upload.ContentHash)
+		if err != nil {
+			log.Printf("reparse %s: parse failed: %v", uploadID, err)
+			httpError(w, http.StatusUnprocessableEntity, fmt.Sprintf("parse error: %v", err))
+			return
+		}
+	}
+	if bundle.Manifest.DeviceID == "" || bundle.Manifest.DeviceID == "unknown" {
+		bundle.Manifest.DeviceID = upload.DeviceID
+	}
+
+	// Clean existing trip data.
+	if err := h.queries.DeleteTripData(ctx, bundle.Manifest.TripID); err != nil {
+		log.Printf("reparse %s: delete old data: %v", uploadID, err)
+		// Continue — tables may not have had data.
+	}
+
+	if err := h.insertParsedBundle(ctx, bundle, uploadID, upload.ContentHash); err != nil {
+		log.Printf("reparse %s: insert failed: %v", uploadID, err)
+		httpError(w, http.StatusInternalServerError, fmt.Sprintf("insert error: %v", err))
+		return
+	}
+
+	log.Printf("reparse %s: trip %s reparsed successfully (%d samples, %d motion, %d events)",
+		uploadID, bundle.Manifest.TripID,
+		len(bundle.Samples), len(bundle.MotionSamples), len(bundle.Events))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"trip_id":        bundle.Manifest.TripID,
+		"sample_count":   len(bundle.Samples),
+		"motion_count":   len(bundle.MotionSamples),
+		"event_count":    len(bundle.Events),
+		"distance_m":     bundle.DistanceM,
+		"duration_s":     bundle.DurationS,
+	})
+}
+
+// ─── bundle parsing + insertion ────────────────────────────────────────────
+
+// parseAndInsert attempts to parse the stored bundle and insert trip data.
+// Errors are logged but never propagated — the upload is already finalized.
+func (h *UploadHandler) parseAndInsert(ctx context.Context, uploadID uuid.UUID, deviceID, contentHash string) {
+	bundlePath := h.store.BundlePath(uploadID.String())
+
+	bundle, err := parser.ParseBundleFile(bundlePath)
+	if err != nil {
+		// Try parsing as raw samples.bin
+		data, readErr := os.ReadFile(bundlePath)
+		if readErr != nil {
+			log.Printf("parse bundle %s: %v; read fallback: %v (bundle stored; reparse later)", uploadID, err, readErr)
+			return
+		}
+		bundle, err = parser.ParseRawSamples(data, deviceID, contentHash)
+		if err != nil {
+			log.Printf("parse bundle %s as raw samples: %v (bundle stored; reparse later)", uploadID, err)
+			return
+		}
+	}
+	// Use upload's device ID if the manifest doesn't have one
+	if bundle.Manifest.DeviceID == "" || bundle.Manifest.DeviceID == "unknown" {
+		bundle.Manifest.DeviceID = deviceID
+	}
+
+	if err := h.insertParsedBundle(ctx, bundle, uploadID, contentHash); err != nil {
+		log.Printf("insert parsed data for %s: %v", uploadID, err)
+		return
+	}
+
+	log.Printf("parsed trip %s from upload %s: %d samples, %d motion, %d events, %.0f m, %d s",
+		bundle.Manifest.TripID, uploadID,
+		len(bundle.Samples), len(bundle.MotionSamples), len(bundle.Events),
+		bundle.DistanceM, bundle.DurationS)
+}
+
+// insertParsedBundle inserts a fully-parsed bundle into the database.
+func (h *UploadHandler) insertParsedBundle(ctx context.Context, bundle *parser.ParsedBundle, uploadID uuid.UUID, contentHash string) error {
+	m := bundle.Manifest
+
+	// Build a summary JSONB blob with useful metadata.
+	summary, _ := json.Marshal(map[string]any{
+		"firmware_version": m.FirmwareVersion,
+		"gnss_rate_hz":     m.GNSSRateHz,
+		"imu_rate_hz":      m.IMURateHz,
+		"schema_version":   m.SchemaVersion,
+		"sample_count": map[string]int{
+			"gnss":             len(bundle.Samples),
+			"imu_summary":      len(bundle.MotionSamples),
+			"events":           len(bundle.Events),
+		},
+	})
+
+	trip := db.Trip{
+		ID:         m.TripID,
+		DeviceID:   m.DeviceID,
+		StartedAt:  bundle.StartedAt,
+		EndedAt:    bundle.EndedAt,
+		UploadID:   uploadID,
+		DistanceM:  bundle.DistanceM,
+		DurationS:  bundle.DurationS,
+		StartLat:   bundle.StartLocation[0],
+		StartLon:   bundle.StartLocation[1],
+		EndLat:     bundle.EndLocation[0],
+		EndLon:     bundle.EndLocation[1],
+		BundleHash: contentHash,
+		Summary:    summary,
+	}
+
+	if err := h.queries.InsertTrip(ctx, trip); err != nil {
+		return fmt.Errorf("insert trip: %w", err)
+	}
+
+	// Convert parser samples to db samples.
+	dbSamples := make([]db.LocationSample, len(bundle.Samples))
+	for i, s := range bundle.Samples {
+		dbSamples[i] = db.LocationSample{
+			TimestampMs: s.TimestampMs,
+			Latitude:    s.Latitude,
+			Longitude:   s.Longitude,
+			AltitudeM:   s.AltitudeM,
+			SpeedMps:    s.SpeedMps,
+			HeadingDeg:  s.HeadingDeg,
+			FixQuality:  s.FixQuality,
+			Satellites:  s.Satellites,
+			Hdop:        s.Hdop,
+			AccuracyM:   s.AccuracyM,
+		}
+	}
+	if err := h.queries.InsertLocationSamples(ctx, m.TripID, dbSamples); err != nil {
+		return fmt.Errorf("insert location samples: %w", err)
+	}
+
+	// Convert parser motion samples to db motion samples.
+	dbMotion := make([]db.MotionSample, len(bundle.MotionSamples))
+	for i, s := range bundle.MotionSamples {
+		dbMotion[i] = db.MotionSample{
+			WindowStartMs:    s.WindowStartMs,
+			WindowDurationMs: s.WindowDurationMs,
+			AccelPeakXMg:     s.AccelPeakXMg,
+			AccelPeakYMg:     s.AccelPeakYMg,
+			AccelPeakZMg:     s.AccelPeakZMg,
+			AccelRmsMg:       s.AccelRmsMg,
+			GyroPeakDps:      s.GyroPeakDps,
+			Variance:         s.Variance,
+			Flags:            s.Flags,
+		}
+	}
+	if err := h.queries.InsertMotionSamples(ctx, m.TripID, dbMotion); err != nil {
+		return fmt.Errorf("insert motion samples: %w", err)
+	}
+
+	// Convert parser events to db events.
+	dbEvents := make([]db.TripEvent, 0, len(bundle.Events))
+	for _, e := range bundle.Events {
+		ts, err := time.Parse(time.RFC3339, e.Timestamp)
+		if err != nil {
+			log.Printf("skip event with bad timestamp %q: %v", e.Timestamp, err)
+			continue
+		}
+
+		metadata, _ := json.Marshal(e.Data)
+
+		evt := db.TripEvent{
+			EventType:   e.Type,
+			TimestampAt: ts,
+			Metadata:    metadata,
+		}
+
+		// Extract location from event data if present.
+		if data := e.Data; data != nil {
+			if locMap, ok := data["location"].(map[string]any); ok {
+				if lat, ok := locMap["lat"].(float64); ok {
+					if lon, ok := locMap["lon"].(float64); ok {
+						evt.Lat = &lat
+						evt.Lon = &lon
+					}
+				}
+			}
+		}
+
+		dbEvents = append(dbEvents, evt)
+	}
+	if err := h.queries.InsertTripEvents(ctx, m.TripID, dbEvents); err != nil {
+		return fmt.Errorf("insert trip events: %w", err)
+	}
+
+	return nil
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

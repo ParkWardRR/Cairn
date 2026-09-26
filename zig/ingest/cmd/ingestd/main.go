@@ -55,6 +55,7 @@ func main() {
 	mux.HandleFunc("PUT /api/v1/upload/{id}/chunk", uploadHandler.Chunk)
 	mux.HandleFunc("POST /api/v1/upload/{id}/finalize", uploadHandler.Finalize)
 	mux.HandleFunc("GET /api/v1/devices/{id}/status", uploadHandler.DeviceStatus)
+	mux.HandleFunc("POST /api/v1/upload/{id}/reparse", uploadHandler.Reparse)
 
 	// ── server ──────────────────────────────────────────────────────────
 

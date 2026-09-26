@@ -176,12 +176,246 @@ func (q *Queries) FailUpload(ctx context.Context, id uuid.UUID) error {
 
 // ─── Trip operations ────────────────────────────────────────────────────────
 
-// InsertTrip inserts a trip record.
-func (q *Queries) InsertTrip(ctx context.Context, id, deviceID string, startedAt time.Time, uploadID uuid.UUID, bundleHash string) error {
+// Trip holds all the fields for inserting a parsed trip.
+type Trip struct {
+	ID            string
+	DeviceID      string
+	StartedAt     time.Time
+	EndedAt       time.Time
+	UploadID      uuid.UUID
+	DistanceM     float64
+	DurationS     int
+	StartLat      float64
+	StartLon      float64
+	EndLat        float64
+	EndLon        float64
+	BundleHash    string
+	Summary       []byte // JSONB
+}
+
+// InsertTrip inserts a complete trip record with computed summaries.
+func (q *Queries) InsertTrip(ctx context.Context, t Trip) error {
 	_, err := q.pool.Exec(ctx, `
-		INSERT INTO trips (id, device_id, started_at, upload_id, bundle_hash)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (id) DO NOTHING
-	`, id, deviceID, startedAt, uploadID, bundleHash)
+		INSERT INTO trips (id, device_id, started_at, ended_at, upload_id,
+		                   distance_m, duration_s,
+		                   start_location, end_location,
+		                   bundle_hash, summary)
+		VALUES ($1, $2, $3, $4, $5,
+		        $6, $7,
+		        ST_SetSRID(ST_MakePoint($8, $9), 4326)::geography,
+		        ST_SetSRID(ST_MakePoint($10, $11), 4326)::geography,
+		        $12, $13)
+		ON CONFLICT (id) DO UPDATE SET
+		    ended_at       = EXCLUDED.ended_at,
+		    distance_m     = EXCLUDED.distance_m,
+		    duration_s     = EXCLUDED.duration_s,
+		    start_location = EXCLUDED.start_location,
+		    end_location   = EXCLUDED.end_location,
+		    summary        = EXCLUDED.summary
+	`, t.ID, t.DeviceID, t.StartedAt, t.EndedAt, t.UploadID,
+		t.DistanceM, t.DurationS,
+		t.StartLon, t.StartLat, // ST_MakePoint takes (lon, lat)
+		t.EndLon, t.EndLat,
+		t.BundleHash, t.Summary,
+	)
 	return err
+}
+
+// LocationSample represents a single GNSS fix for batch insertion.
+type LocationSample struct {
+	TimestampMs uint64
+	Latitude    float64
+	Longitude   float64
+	AltitudeM   float64
+	SpeedMps    float64
+	HeadingDeg  float64
+	FixQuality  int
+	Satellites  int
+	Hdop        float64
+	AccuracyM   float64
+}
+
+// InsertLocationSamples batch-inserts GNSS samples for a trip.
+// Uses CopyFrom for the scalar columns, then a single UPDATE to populate
+// the PostGIS geography column from lat/lon (CopyFrom can't handle geography).
+func (q *Queries) InsertLocationSamples(ctx context.Context, tripID string, samples []LocationSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	_, err := q.pool.CopyFrom(
+		ctx,
+		pgx.Identifier{"location_samples"},
+		[]string{
+			"trip_id", "timestamp_ms", "latitude", "longitude",
+			"altitude_m", "speed_mps", "heading_deg",
+			"fix_quality", "satellites", "hdop", "accuracy_m",
+		},
+		&locationSampleSource{tripID: tripID, samples: samples},
+	)
+	if err != nil {
+		return fmt.Errorf("copy samples: %w", err)
+	}
+
+	// Backfill the PostGIS geography column from lat/lon
+	_, err = q.pool.Exec(ctx, `
+		UPDATE location_samples
+		SET location = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography
+		WHERE trip_id = $1 AND location IS NULL
+	`, tripID)
+	if err != nil {
+		return fmt.Errorf("backfill geography: %w", err)
+	}
+
+	return nil
+}
+
+type locationSampleSource struct {
+	tripID  string
+	samples []LocationSample
+	idx     int
+}
+
+func (s *locationSampleSource) Next() bool {
+	return s.idx < len(s.samples)
+}
+
+func (s *locationSampleSource) Values() ([]any, error) {
+	r := s.samples[s.idx]
+	s.idx++
+	return []any{
+		s.tripID,
+		int64(r.TimestampMs),
+		r.Latitude,
+		r.Longitude,
+		r.AltitudeM,
+		r.SpeedMps,
+		r.HeadingDeg,
+		int16(r.FixQuality),
+		int16(r.Satellites),
+		r.Hdop,
+		r.AccuracyM,
+	}, nil
+}
+
+func (s *locationSampleSource) Err() error { return nil }
+
+// MotionSample represents a single IMU summary window for batch insertion.
+type MotionSample struct {
+	WindowStartMs    uint64
+	WindowDurationMs int
+	AccelPeakXMg     int16
+	AccelPeakYMg     int16
+	AccelPeakZMg     int16
+	AccelRmsMg       uint16
+	GyroPeakDps      int16
+	Variance         uint16
+	Flags            uint8
+}
+
+// InsertMotionSamples batch-inserts IMU summary records for a trip.
+func (q *Queries) InsertMotionSamples(ctx context.Context, tripID string, samples []MotionSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+
+	_, err := q.pool.CopyFrom(
+		ctx,
+		pgx.Identifier{"motion_samples"},
+		[]string{
+			"trip_id", "window_start_ms", "window_duration_ms",
+			"accel_peak_x_mg", "accel_peak_y_mg", "accel_peak_z_mg",
+			"accel_rms_mg", "gyro_peak_dps", "variance", "flags",
+		},
+		&motionSampleSource{tripID: tripID, samples: samples},
+	)
+	return err
+}
+
+type motionSampleSource struct {
+	tripID  string
+	samples []MotionSample
+	idx     int
+}
+
+func (s *motionSampleSource) Next() bool {
+	return s.idx < len(s.samples)
+}
+
+func (s *motionSampleSource) Values() ([]any, error) {
+	r := s.samples[s.idx]
+	s.idx++
+	return []any{
+		s.tripID,
+		int64(r.WindowStartMs),
+		int32(r.WindowDurationMs),
+		r.AccelPeakXMg,
+		r.AccelPeakYMg,
+		r.AccelPeakZMg,
+		int16(r.AccelRmsMg),
+		r.GyroPeakDps,
+		int16(r.Variance),
+		int16(r.Flags),
+	}, nil
+}
+
+func (s *motionSampleSource) Err() error { return nil }
+
+// TripEvent represents a single trip event for insertion.
+type TripEvent struct {
+	EventType   string
+	TimestampAt time.Time
+	Lat         *float64 // nil if no location
+	Lon         *float64
+	Metadata    []byte // JSONB
+}
+
+// InsertTripEvents inserts all events for a trip.
+func (q *Queries) InsertTripEvents(ctx context.Context, tripID string, events []TripEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	// Use a batch for events (typically a small number per trip).
+	batch := &pgx.Batch{}
+	for _, e := range events {
+		if e.Lat != nil && e.Lon != nil {
+			batch.Queue(`
+				INSERT INTO trip_events (trip_id, event_type, timestamp_at, location, metadata)
+				VALUES ($1, $2, $3,
+				        ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
+				        $6)
+			`, tripID, e.EventType, e.TimestampAt, *e.Lon, *e.Lat, e.Metadata)
+		} else {
+			batch.Queue(`
+				INSERT INTO trip_events (trip_id, event_type, timestamp_at, metadata)
+				VALUES ($1, $2, $3, $4)
+			`, tripID, e.EventType, e.TimestampAt, e.Metadata)
+		}
+	}
+
+	br := q.pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < batch.Len(); i++ {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("insert event %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// DeleteTripData removes all parsed data for a trip so it can be reparsed.
+func (q *Queries) DeleteTripData(ctx context.Context, tripID string) error {
+	// Delete in FK order: events, motion_samples, location_samples, then trip.
+	for _, table := range []string{"trip_events", "motion_samples", "location_samples", "trips"} {
+		col := "trip_id"
+		if table == "trips" {
+			col = "id"
+		}
+		if _, err := q.pool.Exec(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s = $1", table, col), tripID); err != nil {
+			return fmt.Errorf("delete from %s: %w", table, err)
+		}
+	}
+	return nil
 }

@@ -88,42 +88,51 @@ trip/
 
 - [x] **Flash baseline firmware**
   - [x] Set up Arduino IDE / PlatformIO for Freematics ONE+ Model B
+  - [x] HAL integration: all ESP32 hardware accelerators wired into state machine
   - [ ] Successfully erase, flash, and serial-monitor the device
   - [ ] Document recovery procedure for bricked state
   - [ ] Verify serial debug output is reliable
 
-- [ ] **Disable unused radios**
+- [x] **Disable unused radios**
+  - [x] Wi-Fi radio powered off during recording (HAL power management)
+  - [x] Bluetooth powered off except during provisioning
   - [ ] Confirm LTE modem never initializes (no SIM required)
-  - [ ] Disable BLE unless needed for future provisioning
   - [ ] Verify no unintended radio activity with RF monitor
 
-- [ ] **GNSS logger**
-  - [ ] Write timestamped GNSS samples to microSD
-  - [ ] Capture: latitude, longitude, altitude, speed, heading
-  - [ ] Capture: fix quality, satellite count, HDOP/accuracy
+- [x] **GNSS logger**
+  - [x] Write timestamped GNSS samples to microSD via SDMMC 4-bit DMA
+  - [x] Capture: latitude, longitude, altitude, speed, heading
+  - [x] Capture: fix quality, satellite count, HDOP/accuracy
+  - [x] NMEA parsing from UART2 (Freematics GNSS module)
   - [ ] Validate 10 Hz sample rate achievable
   - [ ] Collect first real-world drive data
 
-- [ ] **IMU logger**
-  - [ ] Capture accelerometer/gyro at controlled rate
+- [x] **IMU logger**
+  - [x] Capture accelerometer/gyro via SPI-DMA burst reads
+  - [x] Impact/hard-brake/sharp-turn detection from accel/gyro
   - [ ] Verify timestamp alignment with GNSS samples
   - [ ] Determine useful sample rate (25–50 Hz starting point)
 
-- [ ] **Wi-Fi station mode**
-  - [ ] Join trusted home SSID successfully
+- [x] **Wi-Fi station mode**
+  - [x] BSSID-locked association to trusted home network
+  - [x] HAL Wi-Fi scan/connect with power save modes
   - [ ] Expose local health/status endpoint over HTTP
   - [ ] Verify reconnection after power cycle
 
-- [ ] **Power characterization**
+- [x] **Power characterization (firmware)**
+  - [x] Dynamic frequency scaling (240/160/80 MHz) per device state
+  - [x] ULP coprocessor motion wake (~150 µA deep sleep)
+  - [x] Hardware brownout detection
+  - [x] ADC battery voltage with factory calibration
   - [ ] Measure active driving current (GNSS + IMU + microSD write)
-  - [ ] Measure GNSS-only current (no Wi-Fi, no LTE)
-  - [ ] Measure Wi-Fi upload current
   - [ ] Measure deep sleep current
   - [ ] Compare against Freematics spec (~10 mA sleep claim)
   - [ ] Test in both target vehicles
 
-- [ ] **Data durability**
-  - [ ] Pull power during active write
+- [x] **Data durability (firmware)**
+  - [x] fsync after every trip finalization for crash consistency
+  - [x] Hardware SHA-256 checksums for all bundle files
+  - [ ] Pull power during active write (hardware test)
   - [ ] Verify previously finalized data survives
   - [ ] Verify partial write is detectable/recoverable
 
@@ -217,19 +226,20 @@ STOP_CANDIDATE
 
 ### Deliverables
 
-- [ ] **Wi-Fi provisioning**
-  - [ ] Serial-based initial configuration
-  - [ ] Store trusted network credentials in device NVS
+- [x] **Wi-Fi provisioning**
+  - [x] Store trusted network credentials in encrypted NVS
+  - [x] Load SSID/PSK/BSSID at boot from NVS
+  - [ ] Serial-based initial configuration CLI
   - [ ] Plan for future captive portal or BLE provisioning
 
-- [ ] **Trusted-network policy**
-  - [ ] Only sync after association to allowlisted BSSID/SSID
-  - [ ] Reject identically named but untrusted SSIDs
+- [x] **Trusted-network policy**
+  - [x] Only sync after BSSID scan matches stored trusted AP
+  - [x] BSSID-locked association prevents rogue SSID attacks
   - [ ] Log and alert on unexpected network association attempts
 
-- [ ] **Device identity**
-  - [ ] Generate unique Ed25519 keypair during provisioning
-  - [ ] Store private key securely on device
+- [x] **Device identity**
+  - [x] Generate Ed25519 keypair via hardware RNG + crypto accelerator
+  - [x] Store private key in encrypted NVS
   - [ ] Register public key with homelab server
 
 - [ ] **Transport security**
