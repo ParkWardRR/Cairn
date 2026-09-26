@@ -38,6 +38,7 @@ services:
       LISTEN_ADDR: ":8443"
       DATABASE_URL: "postgres://cairn:${DB_PASSWORD:-cairn}@postgres:5432/cairn?sslmode=disable"
       BUNDLE_DIR: /data/bundles
+      MQTT_BROKER_URL: "mosquitto:1883"
       TLS_CERT: /certs/server.pem
       TLS_KEY: /certs/server-key.pem
     healthcheck:
@@ -46,6 +47,19 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - cairn
+
+  # ── MQTT broker ──────────────────────────────────────────────────────────
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+    ports:
+      - "1883:1883"
     networks:
       - cairn
 
@@ -61,6 +75,7 @@ services:
       - "443:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../pwa:/srv/pwa:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
@@ -69,6 +84,7 @@ services:
 volumes:
   pgdata:
   bundles:
+  mosquitto_data:
   caddy_data:
   caddy_config:
 

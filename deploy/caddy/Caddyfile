@@ -9,11 +9,12 @@ cairn.local {
 		reverse_proxy ingest:8443
 	}
 
-	# PWA static files (placeholder — serve from a directory once the PWA is built)
+	# PWA static files
 	handle {
 		root * /srv/pwa
 		try_files {path} /index.html
 		file_server
+		header Cache-Control "public, max-age=3600"
 	}
 
 	log {

@@ -306,10 +306,10 @@ STOP_CANDIDATE
   - [x] Generate synthetic journeys
   - [x] Support accelerated and real-time replay
 
-- [ ] **`api` service**
-  - [ ] Read-only JSON API for trips
-  - [ ] Endpoints: trips, places, route segments, tags, exports
-  - [ ] PostGIS queries for nearest-place and distance
+- [x] **`api` service**
+  - [x] Read-only JSON API for trips
+  - [x] Endpoints: trips, places, route segments, tags, exports
+  - [x] PostGIS queries for nearest-place and distance
 
 - [x] **Database schema**
   - [x] `devices` — public key, metadata, last-seen, firmware version
@@ -334,54 +334,54 @@ STOP_CANDIDATE
 
 ### Web UI Views
 
-- [ ] **Today view**
-  - [ ] Most recent trip summary
-  - [ ] Last parked location on map
-  - [ ] Sync status indicator
-  - [ ] Device battery/health summary
+- [x] **Today view**
+  - [x] Most recent trip summary
+  - [x] Last parked location on map
+  - [x] Sync status indicator
+  - [x] Device battery/health summary
 
-- [ ] **Trips view**
-  - [ ] Time-sorted trip list
-  - [ ] Map thumbnail per trip
-  - [ ] Duration, distance, endpoint, tags
-  - [ ] Filter by date range, tag, place
+- [x] **Trips view**
+  - [x] Time-sorted trip list
+  - [x] Map thumbnail per trip
+  - [x] Duration, distance, endpoint, tags
+  - [x] Filter by date range, tag, place
 
-- [ ] **Trip detail view**
-  - [ ] Full route on map
-  - [ ] Timeline with stop candidates
-  - [ ] GNSS quality overlay
-  - [ ] Raw data download / export buttons
+- [x] **Trip detail view**
+  - [x] Full route on map
+  - [x] Timeline with stop candidates
+  - [x] GNSS quality overlay
+  - [x] Raw data download / export buttons
 
-- [ ] **Places view**
-  - [ ] Saved locations with configurable radius
+- [x] **Places view**
+  - [x] Saved locations with configurable radius
   - [ ] Arrival/departure history
   - [ ] Rename and merge controls
 
-- [ ] **Device view**
-  - [ ] Firmware version
+- [x] **Device view**
+  - [x] Firmware version
   - [ ] Storage usage
-  - [ ] Last sync time
+  - [x] Last sync time
   - [ ] Wi-Fi state and low-power state
 
-- [ ] **Privacy / data view**
+- [x] **Privacy / data view**
   - [ ] Retention controls
-  - [ ] Export all data
-  - [ ] Delete individual trips
+  - [x] Export all data
+  - [x] Delete individual trips
   - [ ] Redact start/end areas (privacy zones)
 
 ### Home Assistant Integration
 
-- [ ] **MQTT event bus**
+- [x] **MQTT event bus**
   - [ ] Publish `trip_started` event
-  - [ ] Publish `trip_ended` event with distance/duration
+  - [x] Publish `trip_ended` event with distance/duration
   - [ ] Publish `arrived_home` / `departed_home`
-  - [ ] Publish `sync_completed`
+  - [x] Publish `sync_completed`
   - [ ] Publish `last_parked` location
 
-- [ ] **Resilience**
+- [x] **Resilience**
   - [ ] Persist events for replay if HA is unavailable
-  - [ ] Never make HA availability a reason for trip failure
-  - [ ] Semantic events only — no raw GPS stream
+  - [x] Never make HA availability a reason for trip failure
+  - [x] Semantic events only — no raw GPS stream
 
 ---
 
@@ -393,30 +393,30 @@ STOP_CANDIDATE
 
 ### Deliverables
 
-- [ ] **Trip lifecycle projector**
-  - [ ] Convert raw/derived state into coherent trip lifecycle events
-  - [ ] Maintain event consistency across reprocessing
+- [x] **Trip lifecycle projector**
+  - [x] Convert raw/derived state into coherent trip lifecycle events
+  - [x] Maintain event consistency across reprocessing
 
-- [ ] **Retry scheduler**
-  - [ ] Reprocess trips when algorithms improve
-  - [ ] Idempotent reprocessing with version tracking
+- [x] **Retry scheduler**
+  - [x] Reprocess trips when algorithms improve
+  - [x] Idempotent reprocessing with version tracking
 
-- [ ] **Automation executor**
-  - [ ] Apply rules: "on arrival home, update HA presence"
-  - [ ] Configurable rule engine for user-defined automations
+- [x] **Automation executor**
+  - [x] Apply rules: "on arrival home, update HA presence"
+  - [x] Configurable rule engine for user-defined automations
 
-- [ ] **Notification policy**
-  - [ ] Evaluate whether sync/device/storage issues deserve notification
-  - [ ] Configurable severity thresholds
+- [x] **Notification policy**
+  - [x] Evaluate whether sync/device/storage issues deserve notification
+  - [x] Configurable severity thresholds
 
-- [ ] **Data-quality queue**
-  - [ ] Flag impossible GNSS jumps
-  - [ ] Flag prolonged GPS loss
-  - [ ] Detect duplicate tracks and clock drift
+- [x] **Data-quality queue**
+  - [x] Flag impossible GNSS jumps
+  - [x] Flag prolonged GPS loss
+  - [x] Detect duplicate tracks and clock drift
 
-- [ ] **OTP supervision**
-  - [ ] Fault-tolerant supervision tree
-  - [ ] Independent restart of failing background tasks
+- [x] **OTP supervision**
+  - [x] Fault-tolerant supervision tree
+  - [x] Independent restart of failing background tasks
   - [ ] Health monitoring and reporting
 
 ---

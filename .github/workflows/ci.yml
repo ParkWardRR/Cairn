@@ -130,6 +130,31 @@ jobs:
             echo "Ingest service not running -- skipping emulator tests"
           fi
 
+  build-gleam:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build trip-orchestrator
+        working-directory: gleam/trip-orchestrator
+        run: gleam build
+
+      - name: Test trip-orchestrator
+        working-directory: gleam/trip-orchestrator
+        run: gleam test
+
+  validate-pwa:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate PWA files exist
+        run: |
+          for f in pwa/index.html pwa/app.js pwa/style.css pwa/manifest.json pwa/sw.js; do
+            test -f "$f" || { echo "FAIL: missing $f"; exit 1; }
+          done
+          echo "All PWA files present"
+
   integration-test:
     runs-on: [self-hosted, cairn]
     needs: [build-go, build-rust]
