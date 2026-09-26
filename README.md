@@ -114,7 +114,20 @@ No phone required. No cloud account. No cellular connection. No subscription. Ju
 | **Mojo** | Experimental: route clustering, map matching, trajectory analysis | GPU-friendly analysis without production dependency |
 | **Arduino/C++** | Freematics firmware (hardware enablement) | Shortest path to real driving data on ESP32 |
 | **Go** | Auxiliary services, CLI companions, integration glue | Fast compilation, single-binary deploys, strong networking stdlib |
-| **Rust** | Safety-critical parsing, cryptographic verification, embedded tooling | Memory safety guarantees without garbage collection |
+| **Rust** | Safety-critical parsing, crypto verification, device emulation, embedded tooling | Memory safety guarantees without garbage collection |
+
+### Why not Python?
+
+Every language in this stack was chosen for deterministic resource management, strong static types, single-binary deployment, and native performance. Python fails on all counts:
+
+- **Garbage collection** — nondeterministic cleanup is incompatible with embedded and resource-constrained contexts
+- **Weak type system** — runtime type errors instead of compile-time guarantees; duck typing hides bugs
+- **Interpreter overhead** — orders of magnitude slower than compiled languages for the data volumes Cairn handles
+- **Packaging nightmare** — pip, venv, conda, system Python conflicts; fragile across machines and CI
+- **No single-binary deploy** — every target needs a Python runtime; contrast with `go build` or `cargo build`
+- **Aesthetics** — significant whitespace, implicit conventions, and the general vibe are a poor fit for systems work
+
+Any existing Python in this repo is legacy test scaffolding being migrated to Rust. New tooling should use Rust, Zig, or Go.
 
 ## Explicit Non-Goals
 
