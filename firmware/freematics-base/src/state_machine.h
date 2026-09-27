@@ -2,8 +2,10 @@
 #define CAIRN_STATE_MACHINE_H
 
 #include <Arduino.h>
+#include <SD.h>
+#include <FS.h>
+#include <FreematicsPlus.h>
 #include "trip_types.h"
-#include "../hal/hal.h"
 #include "config.h"
 
 class StateMachine {
@@ -27,17 +29,22 @@ private:
     uint32_t imuSummaryCount_      = 0;
     char     currentTripId_[27]    = {};
 
-    // Trip file paths built from trip ID
-    char tripDir_[64]    = {};
+    char tripDir_[64]     = {};
     char samplesPath_[80] = {};
     char imuPath_[80]     = {};
 
-    // Wi-Fi credentials loaded from NVS at init
-    CairnHAL::NVSWiFiCredentials wifiCreds_ = {};
-    uint8_t trustedBSSID_[6] = {};
-    bool    wifiCredsLoaded_ = false;
+    float lastBatteryVoltage_ = 0;
+    unsigned long lastVoltageRead_ = 0;
 
-    // Running SHA-256 for samples.bin during recording
+    // Hardware — provided by FreematicsPlus
+    FreematicsESP32 sys_;
+    MEMS_I2C* mems_ = nullptr;
+    GPS_DATA* gpsData_ = nullptr;
+    bool gpsReady_ = false;
+    bool memsReady_ = false;
+    bool sdReady_ = false;
+
+    // Running SHA-256 context
     bool hashActive_ = false;
 
     // State handlers
@@ -54,26 +61,26 @@ private:
 
     void transitionTo(DeviceState next);
 
-    // Sensor reads (HAL-backed)
+    // Sensor reads
     bool       detectMotion();
     GNSSSample readGNSS();
     IMUSummary readIMU();
     float      getSpeedKmh(const GNSSSample& s);
     bool       isMoving(const GNSSSample& s, const IMUSummary& imu);
 
-    // Storage (HAL SDMMC-backed)
+    // Storage
     bool initSD();
     bool openTripFile(const char* tripId);
     bool writeSample(const GNSSSample& s);
     bool writeIMUSummary(const IMUSummary& s);
     bool finalizeTripBundle();
 
-    // Connectivity (HAL Wi-Fi-backed)
+    // Connectivity
     bool scanForTrustedNetwork();
     bool connectToHome();
     bool uploadBundle(const char* tripId);
 
-    // Power (HAL-backed)
+    // Power
     float getBatteryVoltage();
 
     // Helpers
@@ -82,7 +89,6 @@ private:
     bool writeChecksums();
     void addEvent(TripEvent::EventType type, const char* details);
 
-    // Event buffer for current trip
     static constexpr size_t MAX_EVENTS = 64;
     TripEvent events_[MAX_EVENTS];
     uint16_t  eventCount_ = 0;

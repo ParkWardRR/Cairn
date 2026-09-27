@@ -2,9 +2,12 @@
 #include "config.h"
 #include <cstring>
 #include <cstdio>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include "mbedtls/sha256.h"
 
 // ===========================================================================
-// Initialization
+// Initialization — using FreematicsPlus for all hardware
 // ===========================================================================
 
 void StateMachine::init() {
@@ -15,39 +18,52 @@ void StateMachine::init() {
     eventCount_ = 0;
     memset(currentTripId_, 0, sizeof(currentTripId_));
 
-    // Initialize all HAL subsystems in correct order
-    if (!CairnHAL::init()) {
-        Serial.println("[HAL] Critical subsystem init failed");
-        transitionTo(DeviceState::FAULT);
-        return;
-    }
-    CairnHAL::printCapabilities();
-
-    // Enable brownout detection
-    CairnHAL::power.enableBrownoutDetection(BROWNOUT_THRESHOLD_V);
-
-    // Load Wi-Fi credentials from encrypted NVS
-    wifiCredsLoaded_ = CairnHAL::nvs.loadWiFiCredentials(wifiCreds_);
-    if (wifiCredsLoaded_) {
-        memcpy(trustedBSSID_, wifiCreds_.bssid, 6);
-        Serial.println("[NVS] Wi-Fi credentials loaded");
+    // Init OBD coprocessor link (detects device type, sets up UART)
+    if (!sys_.begin(true, false)) {
+        Serial.println("[SYS] Coprocessor init failed — trying without");
     } else {
-        Serial.println("[NVS] No Wi-Fi credentials stored");
+        Serial.printf("[SYS] Device type: %u\n", sys_.devType);
     }
 
-    // Check wake reason — if waking from ULP motion detection, go to ARMING
-    CairnHAL::WakeReason wake = CairnHAL::HalULP::getWakeReason();
-    if (wake == CairnHAL::WakeReason::ULP_MOTION) {
-        Serial.printf("[ULP] Motion wake (magnitude: %u mg)\n",
-                      CairnHAL::HalULP::getMotionMagnitude());
-        CairnHAL::power.setPerformanceMode();
-        transitionTo(DeviceState::ARMING);
-        return;
+    // Init IMU (ICM-42627 via I2C, address 0x68, SDA=21, SCL=22)
+    mems_ = new ICM_42627;
+    byte memsResult = mems_->begin();
+    memsReady_ = (memsResult > 0);
+    if (memsReady_) {
+        Serial.println("[IMU] ICM-42627 initialized");
+    } else {
+        Serial.println("[IMU] ICM-42627 init failed");
     }
 
-    // Start in low-power mode for SLEEP state
-    CairnHAL::power.setLowPowerMode();
-    CairnHAL::power.powerOffWiFi();
+    // Init GNSS (UART to u-blox module, with UBX configuration)
+    gpsReady_ = sys_.gpsBeginExt(GPS_SOFT_BAUDRATE);
+    if (gpsReady_) {
+        Serial.println("[GPS] GNSS module online");
+    } else {
+        Serial.println("[GPS] GNSS init failed — retrying with link passthrough");
+        gpsReady_ = sys_.gpsBegin();
+        if (gpsReady_) {
+            Serial.println("[GPS] GNSS via coprocessor link");
+        } else {
+            Serial.println("[GPS] GNSS not available");
+        }
+    }
+
+    // Init SD card (SPI, CS=GPIO5)
+    sdReady_ = SD.begin(PIN_SD_CS);
+    if (sdReady_) {
+        uint64_t totalBytes = SD.totalBytes();
+        uint64_t usedBytes = SD.usedBytes();
+        Serial.printf("[SD] Mounted: %llu MB total, %llu MB used\n",
+                      totalBytes / (1024*1024), usedBytes / (1024*1024));
+        SD.mkdir(TRIP_BASE_PATH);
+    } else {
+        Serial.println("[SD] Card mount failed");
+    }
+
+    // Read initial battery voltage
+    lastBatteryVoltage_ = getBatteryVoltage();
+    Serial.printf("[PWR] Battery: %.1f V\n", lastBatteryVoltage_);
 
     Serial.println("[STATE] Initialized -> SLEEP");
 }
@@ -57,14 +73,16 @@ void StateMachine::init() {
 // ===========================================================================
 
 void StateMachine::update() {
-    // Feed hardware watchdog every iteration
-    CairnHAL::timer.feedWatchdog();
+    // Periodic battery voltage check (every 10s, avoid hammering coprocessor)
+    unsigned long now = millis();
+    if (now - lastVoltageRead_ >= 10000) {
+        lastBatteryVoltage_ = getBatteryVoltage();
+        lastVoltageRead_ = now;
+    }
 
-    // Global battery check
     if (state_ != DeviceState::SLEEP &&
         state_ != DeviceState::LOW_BATTERY_PROTECTION) {
-        float voltage = getBatteryVoltage();
-        if (voltage * 1000.0f < LOW_BATTERY_THRESHOLD_MV) {
+        if (lastBatteryVoltage_ > 0 && lastBatteryVoltage_ < LOW_BATTERY_THRESHOLD_V) {
             transitionTo(DeviceState::LOW_BATTERY_PROTECTION);
             return;
         }
@@ -90,21 +108,20 @@ void StateMachine::update() {
 // ===========================================================================
 
 void StateMachine::handleSleep() {
-    // Configure ULP motion wake program and enter deep sleep
-    CairnHAL::power.powerOffWiFi();
-    CairnHAL::power.powerOffBluetooth();
+    // Check for motion via IMU
+    if (memsReady_ && detectMotion()) {
+        transitionTo(DeviceState::ARMING);
+        return;
+    }
 
-    CairnHAL::ulp.loadMotionWakeProgram(ULP_MOTION_THRESHOLD_MG,
-                                         ULP_CHECK_INTERVAL_MS);
-    CairnHAL::ulp.startMonitoring();
+    // Check for engine start via voltage
+    if (lastBatteryVoltage_ >= ENGINE_ON_VOLTAGE_V) {
+        Serial.printf("[SLEEP] Engine voltage detected: %.1f V\n", lastBatteryVoltage_);
+        transitionTo(DeviceState::ARMING);
+        return;
+    }
 
-    // Save any pending NVS data before deep sleep wipes RAM
-    CairnHAL::nvs.commit();
-
-    // Deep sleep — ULP draws ~150 µA, main CPU off
-    // On wake, ESP32 reboots through init() which checks getWakeReason()
-    CairnHAL::power.enterDeepSleep(0);
-    // Not reached — chip reboots on wake
+    delay(500);
 }
 
 void StateMachine::handleArming() {
@@ -124,15 +141,11 @@ void StateMachine::handleArming() {
     }
 
     if (elapsed >= ARMING_DURATION_MS) {
-        // Switch to max performance for recording
-        CairnHAL::power.setPerformanceMode();
-        CairnHAL::power.enableAllPeripherals();
-
-        // Initialize hardware timers for deterministic sample rates
-        CairnHAL::timer.initHighResCounter();
-
         generateTripId(currentTripId_, sizeof(currentTripId_));
-        openTripFile(currentTripId_);
+        if (!openTripFile(currentTripId_)) {
+            transitionTo(DeviceState::FAULT);
+            return;
+        }
 
         gnssSampleCount_ = 0;
         imuSummaryCount_ = 0;
@@ -154,7 +167,6 @@ void StateMachine::handleRecording() {
         return;
     }
 
-    // GNSS read at active rate
     uint16_t gnssIntervalMs = (GNSS_RATE_ACTIVE_HZ > 0) ? (1000 / GNSS_RATE_ACTIVE_HZ) : 0;
     if (gnssIntervalMs > 0 && (now - lastGNSSRead_ >= gnssIntervalMs)) {
         GNSSSample sample = readGNSS();
@@ -175,7 +187,6 @@ void StateMachine::handleRecording() {
         }
     }
 
-    // Independent IMU reads at higher rate
     uint16_t imuIntervalMs = (IMU_RATE_ACTIVE_HZ > 0) ? (1000 / IMU_RATE_ACTIVE_HZ) : 0;
     if (imuIntervalMs > 0 && (now - lastIMURead_ >= imuIntervalMs)) {
         IMUSummary imu = readIMU();
@@ -187,8 +198,8 @@ void StateMachine::handleRecording() {
 
 void StateMachine::handleStopCandidate() {
     unsigned long elapsed = millis() - stateEnteredAt_;
-
     unsigned long now = millis();
+
     uint16_t gnssIntervalMs = (GNSS_RATE_SLOW_HZ > 0) ? (1000 / GNSS_RATE_SLOW_HZ) : 0;
     if (gnssIntervalMs > 0 && (now - lastGNSSRead_ >= gnssIntervalMs)) {
         GNSSSample sample = readGNSS();
@@ -218,9 +229,7 @@ void StateMachine::handleStopCandidate() {
 void StateMachine::handleFinalizing() {
     bool ok = finalizeTripBundle();
     if (ok) {
-        Serial.println("[FINALIZING] Trip bundle written successfully");
-        // Drop to low-power mode — recording is over
-        CairnHAL::power.setLowPowerMode();
+        Serial.println("[FINALIZING] Trip bundle written");
         transitionTo(DeviceState::QUEUED_FOR_HOME_SYNC);
     } else {
         Serial.println("[FINALIZING] Failed to write trip bundle");
@@ -234,26 +243,16 @@ void StateMachine::handleQueuedForHomeSync() {
     if (now - lastWiFiScan_ >= WIFI_SCAN_INTERVAL_MS) {
         lastWiFiScan_ = now;
 
-        // Power on Wi-Fi radio for scan
-        CairnHAL::power.powerOnWiFi();
-        CairnHAL::wifi.init();
-
         if (scanForTrustedNetwork()) {
             if (connectToHome()) {
-                // Disable power save for maximum upload throughput
-                CairnHAL::wifi.disablePowerSave();
                 transitionTo(DeviceState::SYNCING);
                 return;
             }
         }
-
-        // Scan failed — power off Wi-Fi to save energy
-        CairnHAL::wifi.powerOff();
     }
 
-    unsigned long waitTime = now - stateEnteredAt_;
-    if (waitTime > WIFI_SCAN_INTERVAL_MS * 10) {
-        Serial.println("[QUEUED] No network found -- entering SLEEP to save power");
+    if (now - stateEnteredAt_ > WIFI_SCAN_INTERVAL_MS * 10) {
+        Serial.println("[QUEUED] No network found — entering SLEEP");
         transitionTo(DeviceState::SLEEP);
     }
 }
@@ -262,13 +261,11 @@ void StateMachine::handleSyncing() {
     bool ok = uploadBundle(currentTripId_);
     if (ok) {
         Serial.println("[SYNCING] Upload complete");
-        CairnHAL::wifi.disconnect();
-        CairnHAL::wifi.powerOff();
+        WiFi.disconnect(true);
         transitionTo(DeviceState::RETAINED);
     } else {
-        Serial.println("[SYNCING] Upload failed -- requeueing");
-        CairnHAL::wifi.disconnect();
-        CairnHAL::wifi.powerOff();
+        Serial.println("[SYNCING] Upload failed — requeueing");
+        WiFi.disconnect(true);
         transitionTo(DeviceState::QUEUED_FOR_HOME_SYNC);
     }
 }
@@ -276,27 +273,22 @@ void StateMachine::handleSyncing() {
 void StateMachine::handleRetained() {
     unsigned long retentionMs = (unsigned long)RETENTION_WINDOW_HOURS * 3600UL * 1000UL;
     if (millis() - stateEnteredAt_ >= retentionMs) {
-        // Prune trip data from SD
         char path[80];
-        snprintf(path, sizeof(path), "%s/cairn/trips/%s",
-                 SDMMC_MOUNT_POINT, currentTripId_);
-        // Delete trip files but keep receipt in NVS
-        CairnHAL::sdmmc.remove(path);
+        snprintf(path, sizeof(path), "%s/%s", TRIP_BASE_PATH, currentTripId_);
+        SD.rmdir(path);
         transitionTo(DeviceState::PRUNABLE);
     }
 }
 
 void StateMachine::handleLowBatteryProtection() {
-    Serial.println("[LOW_BATTERY] Finalizing trip if active, entering deep sleep");
+    Serial.println("[LOW_BATTERY] Finalizing trip, entering deep sleep");
     addEvent(TripEvent::POWER_ANOMALY, "low battery protection");
     finalizeTripBundle();
-    CairnHAL::nvs.commit();
-    CairnHAL::power.enterDeepSleep(0);
+    esp_deep_sleep_start();
 }
 
 void StateMachine::handleFault() {
-    Serial.println("[FAULT] Error state -- awaiting reboot for recovery");
-    CairnHAL::nvs.commit();
+    Serial.println("[FAULT] Error state — rebooting in 5s");
     delay(5000);
     esp_restart();
 }
@@ -306,11 +298,7 @@ void StateMachine::handleFault() {
 // ===========================================================================
 
 void StateMachine::transitionTo(DeviceState next) {
-    Serial.print("[STATE] ");
-    Serial.print(getStateName(state_));
-    Serial.print(" -> ");
-    Serial.println(getStateName(next));
-
+    Serial.printf("[STATE] %s -> %s\n", getStateName(state_), getStateName(next));
     state_ = next;
     stateEnteredAt_ = millis();
 }
@@ -345,90 +333,39 @@ const char* StateMachine::getStateName(DeviceState state) const {
 }
 
 // ===========================================================================
-// Sensor implementations (HAL-backed)
+// Sensor reads — backed by FreematicsPlus
 // ===========================================================================
 
 bool StateMachine::detectMotion() {
-    // Read IMU via DMA burst and check for significant acceleration
-    uint8_t rawBuf[DMA_IMU_BURST_BYTES];
-    CairnHAL::DMATransferResult result =
-        CairnHAL::dma.readIMUBurst(0x3B, rawBuf, sizeof(rawBuf));
+    if (!memsReady_) return false;
 
-    if (!result.success) return false;
+    float acc[3] = {0};
+    mems_->read(acc);
 
-    // Parse raw accelerometer values (big-endian from MPU-6050)
-    int16_t ax = (int16_t)((rawBuf[0] << 8) | rawBuf[1]);
-    int16_t ay = (int16_t)((rawBuf[2] << 8) | rawBuf[3]);
-    int16_t az = (int16_t)((rawBuf[4] << 8) | rawBuf[5]);
-
-    // Convert to milli-g (assuming ±2g range: 16384 LSB/g)
-    float magnitude = sqrtf((float)ax*ax + (float)ay*ay + (float)az*az) / 16.384f;
-    return magnitude > ULP_MOTION_THRESHOLD_MG;
+    float magnitude = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+    float deviation = fabsf(magnitude - 1.0f);
+    return deviation > MOTION_THRESHOLD_G;
 }
 
 GNSSSample StateMachine::readGNSS() {
     GNSSSample s;
     memset(&s, 0, sizeof(s));
 
-    // Read NMEA sentences from UART2 (Freematics GNSS module)
-    char nmea[256];
-    int len = 0;
-    unsigned long start = millis();
-    while (millis() - start < 100 && len < (int)sizeof(nmea) - 1) {
-        if (Serial2.available()) {
-            char c = Serial2.read();
-            nmea[len++] = c;
-            if (c == '\n') break;
-        }
-    }
-    nmea[len] = '\0';
+    if (!gpsReady_) return s;
 
-    // Parse $GNGGA or $GPGGA sentence
-    if (len > 6 && (strncmp(nmea + 3, "GGA", 3) == 0)) {
-        // Field parsing: time,lat,N/S,lon,E/W,quality,sats,hdop,alt,...
-        char* field[15];
-        int nf = 0;
-        field[nf++] = nmea + 7; // skip $xxGGA,
-        for (int i = 7; i < len && nf < 15; i++) {
-            if (nmea[i] == ',') {
-                nmea[i] = '\0';
-                field[nf++] = nmea + i + 1;
-            }
-        }
+    if (!sys_.gpsGetData(&gpsData_)) return s;
+    if (!gpsData_) return s;
 
-        if (nf >= 10) {
-            s.timestamp_ms = millis(); // TODO: parse UTC from field[0]
-
-            // Latitude: ddmm.mmmm
-            if (field[1][0]) {
-                double raw = atof(field[1]);
-                int deg = (int)(raw / 100);
-                double min = raw - deg * 100;
-                double lat = deg + min / 60.0;
-                if (field[2][0] == 'S') lat = -lat;
-                s.latitude = (int32_t)(lat * 1e7);
-            }
-
-            // Longitude: dddmm.mmmm
-            if (field[3][0]) {
-                double raw = atof(field[3]);
-                int deg = (int)(raw / 100);
-                double min = raw - deg * 100;
-                double lon = deg + min / 60.0;
-                if (field[4][0] == 'W') lon = -lon;
-                s.longitude = (int32_t)(lon * 1e7);
-            }
-
-            s.fix_quality = atoi(field[5]);
-            s.satellites = atoi(field[6]);
-            s.hdop_tenths = (uint16_t)(atof(field[7]) * 10);
-            s.altitude_cm = (int32_t)(atof(field[8]) * 100);
-        }
-    }
-
-    // Parse $GNRMC or $GPRMC for speed and heading
-    // (In a full implementation this would buffer multiple sentences
-    // per fix cycle. For now speed/heading come from the next RMC.)
+    s.timestamp_ms = millis();
+    s.latitude     = (int32_t)(gpsData_->lat * 1e7);
+    s.longitude    = (int32_t)(gpsData_->lng * 1e7);
+    s.altitude_cm  = (int32_t)(gpsData_->alt * 100);
+    // TinyGPS speed is in knots*100, convert to cm/s (1 knot = 51.4444 cm/s)
+    s.speed_cmps   = (uint16_t)(gpsData_->speed * 51.4444f);
+    s.heading_cdeg = (uint16_t)(gpsData_->heading * 100);
+    s.satellites   = gpsData_->sat;
+    s.hdop_tenths  = (uint16_t)(gpsData_->hdop * 10);
+    s.fix_quality  = (gpsData_->sat > 0) ? 1 : 0;
 
     return s;
 }
@@ -437,48 +374,34 @@ IMUSummary StateMachine::readIMU() {
     IMUSummary summary;
     memset(&summary, 0, sizeof(summary));
 
-    // DMA burst read of all 6 axes from MPU-6050 (register 0x3B, 14 bytes)
-    uint8_t rawBuf[14];
-    CairnHAL::DMATransferResult result =
-        CairnHAL::dma.readIMUBurst(0x3B, rawBuf, sizeof(rawBuf));
+    if (!memsReady_) return summary;
 
-    if (!result.success) return summary;
+    float acc[3] = {0};
+    float gyr[3] = {0};
+    mems_->read(acc, gyr);
 
     summary.window_start_ms = millis();
-    summary.window_duration_ms = 20; // ~50 Hz window
+    summary.window_duration_ms = 20;
 
-    // Accelerometer (big-endian, ±2g = 16384 LSB/g)
-    int16_t ax = (int16_t)((rawBuf[0] << 8) | rawBuf[1]);
-    int16_t ay = (int16_t)((rawBuf[2] << 8) | rawBuf[3]);
-    int16_t az = (int16_t)((rawBuf[4] << 8) | rawBuf[5]);
-    // rawBuf[6..7] = temperature (skip)
+    // acc[] is in g from FreematicsPlus, convert to milli-g
+    summary.accel_peak_x_mg = (int16_t)(acc[0] * 1000.0f);
+    summary.accel_peak_y_mg = (int16_t)(acc[1] * 1000.0f);
+    summary.accel_peak_z_mg = (int16_t)(acc[2] * 1000.0f);
 
-    // Gyroscope (big-endian, ±250 dps = 131 LSB/dps)
-    int16_t gx = (int16_t)((rawBuf[8] << 8) | rawBuf[9]);
-    int16_t gy = (int16_t)((rawBuf[10] << 8) | rawBuf[11]);
-    int16_t gz = (int16_t)((rawBuf[12] << 8) | rawBuf[13]);
-
-    // Convert to milli-g (±2g range)
-    summary.accel_peak_x_mg = (int16_t)(ax * 1000 / 16384);
-    summary.accel_peak_y_mg = (int16_t)(ay * 1000 / 16384);
-    summary.accel_peak_z_mg = (int16_t)(az * 1000 / 16384);
-
-    float mag_mg = sqrtf((float)summary.accel_peak_x_mg * summary.accel_peak_x_mg +
-                         (float)summary.accel_peak_y_mg * summary.accel_peak_y_mg +
-                         (float)summary.accel_peak_z_mg * summary.accel_peak_z_mg);
+    float mag_mg = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]) * 1000.0f;
     summary.accel_rms_mg = (uint16_t)mag_mg;
 
-    // Convert gyro to dps×10
-    int16_t gyro_max = max(max(abs(gx), abs(gy)), abs(gz));
-    summary.gyro_peak_dps = (int16_t)(gyro_max * 10 / 131);
+    // gyr[] is in dps from FreematicsPlus
+    float gyro_max = fmaxf(fmaxf(fabsf(gyr[0]), fabsf(gyr[1])), fabsf(gyr[2]));
+    summary.gyro_peak_dps = (int16_t)(gyro_max * 10.0f);
 
-    summary.variance = (uint16_t)(mag_mg - 1000); // deviation from 1g rest
+    summary.variance = (uint16_t)fabsf(mag_mg - 1000.0f);
 
-    // Event detection flags
     summary.flags = 0;
-    if (mag_mg > 3000) summary.flags |= 0x01; // impact > 3g
-    if (summary.accel_peak_x_mg < -800) summary.flags |= 0x02; // hard brake
-    if (abs(summary.accel_peak_y_mg) > 600) summary.flags |= 0x04; // sharp turn
+    float total_g = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+    if (total_g > IMPACT_THRESHOLD_G) summary.flags |= 0x01;
+    if (acc[0] < -HARD_BRAKE_THRESHOLD_G) summary.flags |= 0x02;
+    if (fabsf(acc[1]) > SHARP_TURN_THRESHOLD_G) summary.flags |= 0x04;
 
     return summary;
 }
@@ -489,84 +412,58 @@ float StateMachine::getSpeedKmh(const GNSSSample& s) {
 
 bool StateMachine::isMoving(const GNSSSample& s, const IMUSummary& imu) {
     if (getSpeedKmh(s) >= MIN_SPEED_KMH) return true;
-    if (imu.accel_rms_mg > 200) return true;
+    if (imu.accel_rms_mg > ACCEL_RMS_MOVING_MG) return true;
     return false;
 }
 
 // ===========================================================================
-// Storage implementations (HAL SDMMC)
+// Storage — Arduino SD via SPI
 // ===========================================================================
 
 bool StateMachine::initSD() {
-    bool ok = CairnHAL::sdmmc.init(
-        PIN_SDMMC_CMD, PIN_SDMMC_CLK,
-        PIN_SDMMC_D0, PIN_SDMMC_D1, PIN_SDMMC_D2, PIN_SDMMC_D3,
-        SDMMC_MOUNT_POINT);
-
-    if (!ok) {
-        // Fallback to 1-bit mode
-        ok = CairnHAL::sdmmc.init1Bit(PIN_SDMMC_CMD, PIN_SDMMC_CLK,
-                                       PIN_SDMMC_D0, SDMMC_MOUNT_POINT);
+    if (sdReady_) return true;
+    sdReady_ = SD.begin(PIN_SD_CS);
+    if (sdReady_) {
+        SD.mkdir(TRIP_BASE_PATH);
     }
-
-    if (ok) {
-        CairnHAL::SDCardInfo info = CairnHAL::sdmmc.getCardInfo();
-        Serial.printf("[SD] Mounted: %s, %u-bit, %lluMB free / %lluMB total\n",
-                      info.name, info.busWidth,
-                      info.freeBytes / (1024*1024),
-                      info.totalBytes / (1024*1024));
-
-        // Create base directory structure
-        char basePath[48];
-        snprintf(basePath, sizeof(basePath), "%s/cairn/trips", SDMMC_MOUNT_POINT);
-        CairnHAL::sdmmc.mkdir(basePath);
-    }
-    return ok;
+    return sdReady_;
 }
 
 bool StateMachine::openTripFile(const char* tripId) {
-    snprintf(tripDir_, sizeof(tripDir_), "%s/cairn/trips/%s",
-             SDMMC_MOUNT_POINT, tripId);
+    snprintf(tripDir_, sizeof(tripDir_), "%s/%s", TRIP_BASE_PATH, tripId);
     snprintf(samplesPath_, sizeof(samplesPath_), "%s/samples.bin", tripDir_);
     snprintf(imuPath_, sizeof(imuPath_), "%s/imu_summary.bin", tripDir_);
 
-    if (!CairnHAL::sdmmc.mkdir(tripDir_)) {
+    if (!SD.mkdir(tripDir_)) {
         Serial.printf("[SD] Failed to create trip dir: %s\n", tripDir_);
         return false;
     }
 
-    // Start streaming SHA-256 hash of samples (hardware-accelerated)
-    hashActive_ = CairnHAL::crypto.sha256_start();
-
+    hashActive_ = true;
     Serial.printf("[SD] Trip dir: %s\n", tripDir_);
     return true;
 }
 
 bool StateMachine::writeSample(const GNSSSample& s) {
-    bool ok = CairnHAL::sdmmc.append(samplesPath_,
-                                      reinterpret_cast<const uint8_t*>(&s),
-                                      sizeof(s));
-    if (ok && hashActive_) {
-        CairnHAL::crypto.sha256_update(
-            reinterpret_cast<const uint8_t*>(&s), sizeof(s));
-    }
-    return ok;
+    File f = SD.open(samplesPath_, FILE_APPEND);
+    if (!f) return false;
+    size_t n = f.write(reinterpret_cast<const uint8_t*>(&s), sizeof(s));
+    f.close();
+    return n == sizeof(s);
 }
 
 bool StateMachine::writeIMUSummary(const IMUSummary& s) {
-    return CairnHAL::sdmmc.append(imuPath_,
-                                   reinterpret_cast<const uint8_t*>(&s),
-                                   sizeof(s));
+    File f = SD.open(imuPath_, FILE_APPEND);
+    if (!f) return false;
+    size_t n = f.write(reinterpret_cast<const uint8_t*>(&s), sizeof(s));
+    f.close();
+    return n == sizeof(s);
 }
 
 bool StateMachine::finalizeTripBundle() {
-    if (gnssSampleCount_ == 0) return true; // nothing to finalize
+    if (gnssSampleCount_ == 0) return true;
 
     addEvent(TripEvent::TRIP_END, "finalized");
-
-    // Flush all buffered writes to physical media
-    CairnHAL::sdmmc.fsync(samplesPath_);
-    CairnHAL::sdmmc.fsync(imuPath_);
 
     if (!writeManifest()) return false;
     if (!writeChecksums()) return false;
@@ -577,162 +474,161 @@ bool StateMachine::finalizeTripBundle() {
 }
 
 bool StateMachine::writeManifest() {
-    // Build manifest JSON
-    char json[512];
-    int n = snprintf(json, sizeof(json),
-        "{\n"
-        "  \"version\": 1,\n"
-        "  \"trip_id\": \"%s\",\n"
-        "  \"started_at_ms\": %llu,\n"
-        "  \"ended_at_ms\": %llu,\n"
-        "  \"gnss_sample_count\": %u,\n"
-        "  \"imu_summary_count\": %u,\n"
-        "  \"gnss_rate_hz\": %u,\n"
-        "  \"imu_rate_hz\": %u,\n"
-        "  \"schema_version\": 1\n"
-        "}",
-        currentTripId_,
-        (unsigned long long)tripStartMs_,
-        (unsigned long long)millis(),
-        gnssSampleCount_,
-        imuSummaryCount_,
-        GNSS_RATE_ACTIVE_HZ,
-        IMU_RATE_ACTIVE_HZ);
+    char filePath[80];
+    snprintf(filePath, sizeof(filePath), "%s/manifest.json", tripDir_);
 
-    char manifestPath[80];
-    snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", tripDir_);
-    return CairnHAL::sdmmc.write(manifestPath,
-                                  reinterpret_cast<const uint8_t*>(json), n);
+    File f = SD.open(filePath, FILE_WRITE);
+    if (!f) return false;
+
+    uint64_t endMs = millis();
+    f.printf("{\n");
+    f.printf("  \"version\": 1,\n");
+    f.printf("  \"schema_version\": 1,\n");
+    f.printf("  \"trip_id\": \"%s\",\n", currentTripId_);
+    f.printf("  \"started_at_ms\": %llu,\n", (unsigned long long)tripStartMs_);
+    f.printf("  \"ended_at_ms\": %llu,\n", (unsigned long long)endMs);
+    f.printf("  \"duration_ms\": %llu,\n", (unsigned long long)(endMs - tripStartMs_));
+    f.printf("  \"gnss_sample_count\": %u,\n", gnssSampleCount_);
+    f.printf("  \"imu_summary_count\": %u,\n", imuSummaryCount_);
+    f.printf("  \"gnss_rate_hz\": %u,\n", GNSS_RATE_ACTIVE_HZ);
+    f.printf("  \"imu_rate_hz\": %u\n", IMU_RATE_ACTIVE_HZ);
+    f.printf("}\n");
+    f.close();
+    return true;
 }
 
 bool StateMachine::writeChecksums() {
-    // Compute SHA-256 for each file using hardware crypto
+    // SHA-256 using ESP32 hardware-accelerated mbedtls
     char checksumPath[80];
     snprintf(checksumPath, sizeof(checksumPath), "%s/sha256sums.txt", tripDir_);
 
-    char sums[512];
-    int offset = 0;
+    File outFile = SD.open(checksumPath, FILE_WRITE);
+    if (!outFile) return false;
 
-    // samples.bin — finish the streaming hash
-    uint8_t hash[32];
-    if (hashActive_) {
-        CairnHAL::crypto.sha256_finish(hash);
-        hashActive_ = false;
-    } else {
-        // Fallback: hash entire file
-        uint8_t buf[4096];
-        int32_t bytesRead = CairnHAL::sdmmc.read(samplesPath_, buf, sizeof(buf));
-        if (bytesRead > 0) {
-            CairnHAL::HalCrypto::sha256(buf, bytesRead, hash);
+    const char* files[] = { "samples.bin", "imu_summary.bin", "manifest.json" };
+
+    for (const char* name : files) {
+        char filePath[96];
+        snprintf(filePath, sizeof(filePath), "%s/%s", tripDir_, name);
+
+        File dataFile = SD.open(filePath, FILE_READ);
+        if (!dataFile) continue;
+
+        mbedtls_sha256_context ctx;
+        mbedtls_sha256_init(&ctx);
+        mbedtls_sha256_starts(&ctx, 0);
+
+        uint8_t buf[512];
+        while (dataFile.available()) {
+            size_t n = dataFile.read(buf, sizeof(buf));
+            if (n > 0) mbedtls_sha256_update(&ctx, buf, n);
         }
-    }
-    for (int i = 0; i < 32; i++) {
-        offset += snprintf(sums + offset, sizeof(sums) - offset, "%02x", hash[i]);
-    }
-    offset += snprintf(sums + offset, sizeof(sums) - offset, "  samples.bin\n");
+        dataFile.close();
 
-    // imu_summary.bin
-    uint8_t imuBuf[4096];
-    int32_t imuBytes = CairnHAL::sdmmc.read(imuPath_, imuBuf, sizeof(imuBuf));
-    if (imuBytes > 0) {
-        CairnHAL::HalCrypto::sha256(imuBuf, imuBytes, hash);
+        uint8_t hash[32];
+        mbedtls_sha256_finish(&ctx, hash);
+        mbedtls_sha256_free(&ctx);
+
+        char hex[65];
         for (int i = 0; i < 32; i++) {
-            offset += snprintf(sums + offset, sizeof(sums) - offset, "%02x", hash[i]);
+            snprintf(hex + i * 2, 3, "%02x", hash[i]);
         }
-        offset += snprintf(sums + offset, sizeof(sums) - offset,
-                           "  imu_summary.bin\n");
+        outFile.printf("%s  %s\n", hex, name);
     }
 
-    // manifest.json
-    char manifestPath[80];
-    snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", tripDir_);
-    uint8_t mBuf[1024];
-    int32_t mBytes = CairnHAL::sdmmc.read(manifestPath, mBuf, sizeof(mBuf));
-    if (mBytes > 0) {
-        CairnHAL::HalCrypto::sha256(mBuf, mBytes, hash);
-        for (int i = 0; i < 32; i++) {
-            offset += snprintf(sums + offset, sizeof(sums) - offset, "%02x", hash[i]);
-        }
-        offset += snprintf(sums + offset, sizeof(sums) - offset,
-                           "  manifest.json\n");
-    }
-
-    return CairnHAL::sdmmc.write(checksumPath,
-                                  reinterpret_cast<const uint8_t*>(sums), offset);
-}
-
-// ===========================================================================
-// Connectivity implementations (HAL Wi-Fi)
-// ===========================================================================
-
-bool StateMachine::scanForTrustedNetwork() {
-    if (!wifiCredsLoaded_) return false;
-    return CairnHAL::wifi.scanForBSSID(trustedBSSID_);
-}
-
-bool StateMachine::connectToHome() {
-    if (!wifiCredsLoaded_) return false;
-    return CairnHAL::wifi.connectTrusted(
-        wifiCreds_.ssid, wifiCreds_.psk, trustedBSSID_, 10000);
-}
-
-bool StateMachine::uploadBundle(const char* tripId) {
-    if (!CairnHAL::wifi.isConnected()) return false;
-
-    // Read the entire bundle directory into a tar-like blob for upload
-    // In production this would stream files individually using the
-    // chunked upload protocol. For now, read samples.bin and upload it.
-
-    // Compute content hash of the bundle for deduplication
-    uint8_t bundleHash[32];
-    char samplesFile[80];
-    snprintf(samplesFile, sizeof(samplesFile),
-             "%s/cairn/trips/%s/samples.bin", SDMMC_MOUNT_POINT, tripId);
-
-    // Read file in chunks, hash with hardware SHA-256
-    CairnHAL::crypto.sha256_start();
-    uint8_t readBuf[UPLOAD_CHUNK_SIZE];
-    int32_t totalSize = 0;
-    FILE* f = fopen(samplesFile, "rb");
-    if (!f) return false;
-
-    while (true) {
-        size_t n = fread(readBuf, 1, sizeof(readBuf), f);
-        if (n == 0) break;
-        CairnHAL::crypto.sha256_update(readBuf, n);
-        totalSize += n;
-    }
-    fclose(f);
-    CairnHAL::crypto.sha256_finish(bundleHash);
-
-    // Convert hash to hex string
-    char hashHex[65];
-    for (int i = 0; i < 32; i++) {
-        snprintf(hashHex + i * 2, 3, "%02x", bundleHash[i]);
-    }
-
-    // TODO: Implement HTTP client for resumable upload protocol
-    // POST /api/v1/upload/init  { device_id, content_hash, size }
-    // PUT  /api/v1/upload/{id}/chunk (X-Upload-Offset header)
-    // POST /api/v1/upload/{id}/finalize { content_hash }
-    //
-    // For now, log what would be uploaded.
-    Serial.printf("[SYNC] Would upload %s (%d bytes, hash=%s)\n",
-                  tripId, totalSize, hashHex);
-
-    // Store receipt stub in NVS
-    CairnHAL::nvs.storeServerReceipt(tripId, bundleHash, 32);
-    CairnHAL::nvs.commit();
-
+    outFile.close();
+    Serial.println("[SD] SHA-256 checksums written");
     return true;
 }
 
 // ===========================================================================
-// Power implementation (HAL)
+// Connectivity — ESP32 WiFi
+// ===========================================================================
+
+bool StateMachine::scanForTrustedNetwork() {
+    int n = WiFi.scanNetworks(false, false, false, 300);
+    if (n <= 0) return false;
+
+    // Look for any known network — in production, check NVS-stored SSID/BSSID
+    for (int i = 0; i < n; i++) {
+        Serial.printf("[WIFI] Found: %s (%d dBm)\n",
+                      WiFi.SSID(i).c_str(), WiFi.RSSI(i));
+    }
+    WiFi.scanDelete();
+    return n > 0;
+}
+
+bool StateMachine::connectToHome() {
+    // In production, load SSID/PSK from NVS
+    // For now, log the attempt
+    Serial.println("[WIFI] Connect to home network (stub)");
+    return false;
+}
+
+bool StateMachine::uploadBundle(const char* tripId) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    // Compute content hash of samples.bin for deduplication
+    char samplesFile[80];
+    snprintf(samplesFile, sizeof(samplesFile), "%s/%s/samples.bin",
+             TRIP_BASE_PATH, tripId);
+
+    File f = SD.open(samplesFile, FILE_READ);
+    if (!f) return false;
+
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);
+
+    uint8_t readBuf[UPLOAD_CHUNK_SIZE];
+    size_t totalSize = 0;
+    while (f.available()) {
+        size_t n = f.read(readBuf, sizeof(readBuf));
+        if (n > 0) {
+            mbedtls_sha256_update(&ctx, readBuf, n);
+            totalSize += n;
+        }
+    }
+    f.close();
+
+    uint8_t hash[32];
+    mbedtls_sha256_finish(&ctx, hash);
+    mbedtls_sha256_free(&ctx);
+
+    char hashHex[65];
+    for (int i = 0; i < 32; i++) {
+        snprintf(hashHex + i * 2, 3, "%02x", hash[i]);
+    }
+
+    Serial.printf("[SYNC] Ready to upload %s (%u bytes, hash=%s)\n",
+                  tripId, (unsigned)totalSize, hashHex);
+
+    // TODO: Implement HTTP upload to cairn.local:8443
+    // POST /api/v1/upload/init  { trip_id, content_hash, size }
+    // PUT  /api/v1/upload/{id}/chunk
+    // POST /api/v1/upload/{id}/finalize
+
+    return false;
+}
+
+// ===========================================================================
+// Power — via OBD coprocessor ATRV command
 // ===========================================================================
 
 float StateMachine::getBatteryVoltage() {
-    return CairnHAL::power.readBatteryVoltageHW();
+    if (!sys_.link) return 0;
+
+    char buf[32];
+    int n = sys_.link->sendCommand("ATRV\r", buf, sizeof(buf), 500);
+    if (n <= 0) return 0;
+
+    // Response is like "12.5V" or "14.2V\r>"
+    float voltage = 0;
+    char* p = buf;
+    while (*p && (*p < '0' || *p > '9') && *p != '.') p++;
+    if (*p) voltage = atof(p);
+
+    return voltage;
 }
 
 // ===========================================================================
@@ -740,29 +636,17 @@ float StateMachine::getBatteryVoltage() {
 // ===========================================================================
 
 void StateMachine::generateTripId(char* buf, size_t len) {
-    // Generate a ULID-like ID using hardware RNG for randomness
-    // Format: timestamp (10 chars base32) + random (16 chars base32) = 26 chars
-    static const char base32[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    if (len < 27) { if (len > 0) buf[0] = '\0'; return; }
 
-    uint64_t ts = millis(); // In production, use real epoch time from GNSS
-    uint8_t rnd[10];
-    CairnHAL::HalCrypto::generate_random(rnd, sizeof(rnd));
+    // 10 hex chars from millis timestamp + 16 hex chars from esp_random
+    uint64_t now = millis();
+    uint32_t r1 = esp_random();
+    uint32_t r2 = esp_random();
 
-    // Encode timestamp (10 chars, big-endian base32)
-    for (int i = 9; i >= 0; i--) {
-        buf[i] = base32[ts & 0x1F];
-        ts >>= 5;
-    }
-    // Encode randomness (16 chars)
-    int ri = 0;
-    for (int i = 10; i < 26; i++) {
-        buf[i] = base32[rnd[ri % sizeof(rnd)] & 0x1F];
-        rnd[ri % sizeof(rnd)] >>= 5;
-        if (rnd[ri % sizeof(rnd)] == 0) ri++;
-        else continue;
-        ri++;
-    }
-    buf[26] = '\0';
+    snprintf(buf, len, "%010llX%08lX%08lX",
+             (unsigned long long)now,
+             (unsigned long)r1,
+             (unsigned long)r2);
 }
 
 void StateMachine::addEvent(TripEvent::EventType type, const char* details) {
@@ -771,7 +655,7 @@ void StateMachine::addEvent(TripEvent::EventType type, const char* details) {
     TripEvent& e = events_[eventCount_++];
     e.type = type;
     e.timestamp_ms = millis();
-    e.latitude = 0;  // populated from last GNSS fix in production
+    e.latitude = 0;
     e.longitude = 0;
     strncpy(e.details, details, sizeof(e.details) - 1);
     e.details[sizeof(e.details) - 1] = '\0';
