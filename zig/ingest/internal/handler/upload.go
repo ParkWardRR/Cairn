@@ -12,6 +12,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"math"
+	"strings"
+
 	"github.com/ParkWardRR/Cairn/ingest/internal/db"
 	"github.com/ParkWardRR/Cairn/ingest/internal/mqtt"
 	"github.com/ParkWardRR/Cairn/ingest/internal/parser"
@@ -143,6 +146,10 @@ func (h *UploadHandler) Init(w http.ResponseWriter, r *http.Request) {
 		log.Printf("note: could not re-read upload to update path: %v", err)
 	}
 	_ = storagePath // path is derived from upload ID, so it is deterministic
+
+	if h.mqtt != nil {
+		h.mqtt.PublishTripStarted(req.DeviceID, req.TripID)
+	}
 
 	writeJSON(w, http.StatusOK, initResponse{
 		UploadID:     uploadID.String(),
@@ -433,6 +440,15 @@ func (h *UploadHandler) parseAndInsert(ctx context.Context, uploadID uuid.UUID, 
 	if h.mqtt != nil {
 		h.mqtt.PublishTripEnd(bundle.Manifest.DeviceID, bundle.Manifest.TripID,
 			bundle.EndedAt, bundle.DistanceM, bundle.DurationS)
+
+		// Publish last_parked with final coordinates.
+		h.mqtt.PublishLastParked(bundle.Manifest.DeviceID, bundle.Manifest.TripID,
+			bundle.EndLocation[0], bundle.EndLocation[1])
+
+		// Check if trip start/end are near a "home" place for arrived/departed events.
+		h.publishHomeProximityEvents(ctx, bundle.Manifest.DeviceID, bundle.Manifest.TripID,
+			bundle.StartLocation[0], bundle.StartLocation[1],
+			bundle.EndLocation[0], bundle.EndLocation[1])
 	}
 }
 
@@ -548,6 +564,46 @@ func (h *UploadHandler) insertParsedBundle(ctx context.Context, bundle *parser.P
 	}
 
 	return nil
+}
+
+// ─── home proximity events ─────────────────────────────────────────────────
+
+// publishHomeProximityEvents checks whether the trip start or end point is near
+// a place tagged as "home" (name contains "home", case-insensitive) and publishes
+// departed_home / arrived_home MQTT events accordingly.
+func (h *UploadHandler) publishHomeProximityEvents(ctx context.Context, deviceID, tripID string, startLat, startLon, endLat, endLon float64) {
+	places, err := h.queries.ListPlaces(ctx)
+	if err != nil {
+		log.Printf("mqtt home proximity: list places: %v", err)
+		return
+	}
+
+	for _, p := range places {
+		if !strings.Contains(strings.ToLower(p.Name), "home") {
+			continue
+		}
+		// Check if trip started near home (departed_home).
+		if haversineM(startLat, startLon, p.Lat, p.Lon) <= p.RadiusM {
+			h.mqtt.PublishDepartedHome(deviceID, tripID, p.Name)
+		}
+		// Check if trip ended near home (arrived_home).
+		if haversineM(endLat, endLon, p.Lat, p.Lon) <= p.RadiusM {
+			h.mqtt.PublishArrivedHome(deviceID, tripID, p.Name)
+		}
+	}
+}
+
+// haversineM returns the great-circle distance in meters between two lat/lon points.
+func haversineM(lat1, lon1, lat2, lon2 float64) float64 {
+	const earthRadiusM = 6371000.0
+	dLat := (lat2 - lat1) * math.Pi / 180.0
+	dLon := (lon2 - lon1) * math.Pi / 180.0
+	lat1r := lat1 * math.Pi / 180.0
+	lat2r := lat2 * math.Pi / 180.0
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1r)*math.Cos(lat2r)*math.Sin(dLon/2)*math.Sin(dLon/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return earthRadiusM * c
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────

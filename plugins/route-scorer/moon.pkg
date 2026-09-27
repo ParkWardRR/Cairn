@@ -1,0 +1,11 @@
+pkgtype(kind: "foreign_library")
+
+import {
+  "moonbitlang/core/json",
+}
+
+options(
+  link: {
+    "wasm": { "exports": [ "alloc", "score_route" ], "export-memory-name": "memory" },
+  },
+)

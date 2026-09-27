@@ -75,6 +75,25 @@ jobs:
       - name: Verify binary
         run: ./emulator/target/release/cairn-emulator --help
 
+  build-trajectory:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build trajectory tool
+        working-directory: rust/trajectory
+        run: cargo build --release
+
+      - name: Test trajectory tool
+        working-directory: rust/trajectory
+        run: cargo test
+
+      - name: Verify binary
+        run: ./rust/trajectory/target/release/cairn-trajectory --help
+
   emulator-test:
     runs-on: [self-hosted, cairn]
     needs: [build-go, build-rust]
@@ -188,6 +207,24 @@ jobs:
 
       - name: Build privacy-redactor
         working-directory: plugins/privacy-redactor
+        run: |
+          moon install
+          moon build --target wasm
+
+      - name: Build export-transformer
+        working-directory: plugins/export-transformer
+        run: |
+          moon install
+          moon build --target wasm
+
+      - name: Build route-scorer
+        working-directory: plugins/route-scorer
+        run: |
+          moon install
+          moon build --target wasm
+
+      - name: Build data-quality-detector
+        working-directory: plugins/data-quality-detector
         run: |
           moon install
           moon build --target wasm

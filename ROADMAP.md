@@ -379,11 +379,11 @@ STOP_CANDIDATE
 ### Home Assistant Integration
 
 - [x] **MQTT event bus**
-  - [ ] Publish `trip_started` event
+  - [x] Publish `trip_started` event
   - [x] Publish `trip_ended` event with distance/duration
-  - [ ] Publish `arrived_home` / `departed_home`
+  - [x] Publish `arrived_home` / `departed_home`
   - [x] Publish `sync_completed`
-  - [ ] Publish `last_parked` location
+  - [x] Publish `last_parked` location
 
 - [x] **Resilience**
   - [ ] Persist events for replay if HA is unavailable
@@ -452,17 +452,17 @@ STOP_CANDIDATE
   - [x] Input: route + configured privacy zones
   - [x] Output: redacted route/endpoint geometry
 
-- [ ] **Export transformer**
-  - [ ] Input: trip model
-  - [ ] Output: GPX, GeoJSON, CSV, Markdown trip report
+- [x] **Export transformer**
+  - [x] Input: trip model
+  - [x] Output: GPX, GeoJSON, CSV, Markdown trip report
 
-- [ ] **Route scorer**
-  - [ ] Input: polyline + places
-  - [ ] Output: favorite-road / repeat-route score
+- [x] **Route scorer**
+  - [x] Input: polyline + places
+  - [x] Output: favorite-road / repeat-route score
 
-- [ ] **Data-quality detector**
-  - [ ] Input: timestamped samples
-  - [ ] Output: anomaly annotations
+- [x] **Data-quality detector**
+  - [x] Input: timestamped samples
+  - [x] Output: anomaly annotations
 
 ### Sandbox Constraints
 
@@ -505,44 +505,49 @@ STOP_CANDIDATE
 
 ---
 
-## Phase 9 — Mojo Experimental Lane
+## Phase 9 — Rust Trajectory Experiments
 
-**Goal:** Explore accelerator-friendly trajectory analysis without making the product depend on it. Start only after several months of clean local data.
+**Goal:** Offline trajectory analysis experiments in Rust. Explore route clustering, place discovery, and driving patterns without making the product depend on it. Start only after several months of clean local data.
 
 **Timeline:** Days 90+
 
 ### Experiments
 
-- [ ] **Route similarity**
-  - [ ] Cluster trips: "These 14 trips are effectively the same commute"
-  - [ ] Output candidate route groups for manual review
+- [x] **Route similarity** (`cairn-trajectory similarity`)
+  - [x] Cluster trips: "These 14 trips are effectively the same commute"
+  - [x] Output candidate route groups for manual review
+  - [x] Hausdorff distance with subsampled polylines
 
-- [ ] **Automatic place discovery**
-  - [ ] Identify candidate recurring endpoints
+- [x] **Automatic place discovery** (`cairn-trajectory places`)
+  - [x] Identify candidate recurring endpoints
+  - [x] DBSCAN-style clustering with configurable radius
   - [ ] Subject to privacy review before surfacing
 
-- [ ] **Stop/errand segmentation**
-  - [ ] Identify meaningful stops in long routes
+- [x] **Stop/errand segmentation** (`cairn-trajectory segments`)
+  - [x] Identify meaningful stops in long routes
+  - [x] Drive/stop phase segmentation with configurable thresholds
   - [ ] Compare against device-side stop detection
 
 - [ ] **GNSS smoothing / map-matching evaluation**
   - [ ] Compare algorithms against manually checked routes
   - [ ] Benchmark accuracy and performance
 
-- [ ] **Driving-style visualization**
-  - [ ] Cluster acceleration/turning patterns
-  - [ ] Personal exploration only — not scoring
+- [x] **Driving-style visualization** (`cairn-trajectory density`)
+  - [x] Cluster acceleration/turning patterns
+  - [x] Acceleration and turn-rate histograms with percentile stats
+  - [x] Personal exploration only — not scoring
 
-- [ ] **Anomaly detection**
-  - [ ] Flag routes/speed traces that indicate bad GNSS
-  - [ ] Distinguish sensor error from real driving behavior
+- [x] **Anomaly detection** (`cairn-trajectory anomalies`)
+  - [x] Flag routes/speed traces that indicate bad GNSS
+  - [x] Detect impossible jumps, GPS loss, clock drift, HDOP spikes
+  - [x] Distinguish sensor error from real driving behavior
 
 ### Guardrails
 
-- [ ] Authoritative output stays in deterministic Zig/Gleam paths
-- [ ] Mojo proposes annotations; never decides deletion or trip boundaries
-- [ ] No safety-critical actions
-- [ ] All outputs reproducible without GPU/accelerator
+- [x] Authoritative output stays in deterministic Zig/Gleam paths
+- [x] Trajectory tool proposes annotations; never decides deletion or trip boundaries
+- [x] No safety-critical actions
+- [x] All outputs reproducible without GPU/accelerator
 
 ---
 
@@ -574,7 +579,7 @@ STOP_CANDIDATE
 | Gleam | One supervised workflow service for trip projection/reprocessing |
 | MoonBit | One read-only plugin: privacy redaction or trip classification |
 | Odin | Build `trip-inspector` using real data corpus |
-| Mojo | Start one offline experiment: route similarity or map matching |
+| Rust trajectory | Route similarity, place discovery, anomaly detection, driving style |
 | Hardening | Power-loss testing, SD exhaustion, Wi-Fi loss, server restart, backup restore |
 
 ---

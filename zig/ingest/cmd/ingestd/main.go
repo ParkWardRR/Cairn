@@ -101,6 +101,9 @@ func main() {
 	mux.HandleFunc("POST /api/v1/plugins/{name}/run", pluginHandler.RunPlugin)
 	mux.HandleFunc("POST /api/v1/trips/{id}/classify", pluginHandler.ClassifyTrip)
 	mux.HandleFunc("POST /api/v1/trips/{id}/redact", pluginHandler.RedactTrip)
+	mux.HandleFunc("POST /api/v1/trips/{id}/export", pluginHandler.ExportTrip)
+	mux.HandleFunc("POST /api/v1/trips/{id}/score-route", pluginHandler.ScoreRoute)
+	mux.HandleFunc("POST /api/v1/trips/{id}/detect-anomalies", pluginHandler.DetectAnomalies)
 
 	// ── server ──────────────────────────────────────────────────────────
 

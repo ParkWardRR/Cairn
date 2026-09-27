@@ -18,3 +18,7 @@ odin/*/trip-diff
 odin/*/trip-replay
 odin/*/route-density
 odin/*/sd-recover
+rust/trajectory/target/
+web/node_modules/
+web/.svelte-kit/
+web/build/

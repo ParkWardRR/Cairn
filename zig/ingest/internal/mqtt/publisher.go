@@ -160,6 +160,90 @@ func (p *Publisher) PublishSyncCompleted(deviceID, tripID string) {
 	}
 }
 
+// PublishTripStarted publishes a trip_started event when a new upload is initialized.
+func (p *Publisher) PublishTripStarted(deviceID, tripID string) {
+	evt := struct {
+		VehicleID string    `json:"vehicle_id"`
+		TripID    string    `json:"trip_id"`
+		Event     string    `json:"event"`
+		StartedAt time.Time `json:"started_at"`
+	}{
+		VehicleID: deviceID,
+		TripID:    tripID,
+		Event:     "trip_started",
+		StartedAt: time.Now().UTC(),
+	}
+	topic := fmt.Sprintf("cairn/vehicle/%s/trip_started", deviceID)
+	if err := p.PublishJSON(topic, evt); err != nil {
+		log.Printf("mqtt: publish trip_started: %v", err)
+	}
+}
+
+// PublishArrivedHome publishes an arrived_home event when a trip ends near a home place.
+func (p *Publisher) PublishArrivedHome(deviceID, tripID, placeName string) {
+	evt := struct {
+		VehicleID string    `json:"vehicle_id"`
+		TripID    string    `json:"trip_id"`
+		Event     string    `json:"event"`
+		Place     string    `json:"place"`
+		ArrivedAt time.Time `json:"arrived_at"`
+	}{
+		VehicleID: deviceID,
+		TripID:    tripID,
+		Event:     "arrived_home",
+		Place:     placeName,
+		ArrivedAt: time.Now().UTC(),
+	}
+	topic := fmt.Sprintf("cairn/vehicle/%s/arrived_home", deviceID)
+	if err := p.PublishJSON(topic, evt); err != nil {
+		log.Printf("mqtt: publish arrived_home: %v", err)
+	}
+}
+
+// PublishDepartedHome publishes a departed_home event when a trip starts near a home place.
+func (p *Publisher) PublishDepartedHome(deviceID, tripID, placeName string) {
+	evt := struct {
+		VehicleID  string    `json:"vehicle_id"`
+		TripID     string    `json:"trip_id"`
+		Event      string    `json:"event"`
+		Place      string    `json:"place"`
+		DepartedAt time.Time `json:"departed_at"`
+	}{
+		VehicleID:  deviceID,
+		TripID:     tripID,
+		Event:      "departed_home",
+		Place:      placeName,
+		DepartedAt: time.Now().UTC(),
+	}
+	topic := fmt.Sprintf("cairn/vehicle/%s/departed_home", deviceID)
+	if err := p.PublishJSON(topic, evt); err != nil {
+		log.Printf("mqtt: publish departed_home: %v", err)
+	}
+}
+
+// PublishLastParked publishes the final GNSS coordinates when a trip ends.
+func (p *Publisher) PublishLastParked(deviceID, tripID string, lat, lon float64) {
+	evt := struct {
+		VehicleID string    `json:"vehicle_id"`
+		TripID    string    `json:"trip_id"`
+		Event     string    `json:"event"`
+		Lat       float64   `json:"lat"`
+		Lon       float64   `json:"lon"`
+		ParkedAt  time.Time `json:"parked_at"`
+	}{
+		VehicleID: deviceID,
+		TripID:    tripID,
+		Event:     "last_parked",
+		Lat:       lat,
+		Lon:       lon,
+		ParkedAt:  time.Now().UTC(),
+	}
+	topic := fmt.Sprintf("cairn/vehicle/%s/last_parked", deviceID)
+	if err := p.PublishJSON(topic, evt); err != nil {
+		log.Printf("mqtt: publish last_parked: %v", err)
+	}
+}
+
 // ─── MQTT 3.1.1 packet builders ────────────────────────────────────────────
 
 func buildConnectPacket(clientID string) []byte {

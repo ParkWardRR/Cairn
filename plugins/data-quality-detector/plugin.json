@@ -1,0 +1,7 @@
+{
+  "name": "data-quality-detector",
+  "version": "0.1.0",
+  "type": "detector",
+  "entry_function": "detect_anomalies",
+  "description": "Detects GPS anomalies, impossible jumps, clock drift, and satellite drops"
+}

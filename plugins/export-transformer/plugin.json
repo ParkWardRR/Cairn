@@ -1,0 +1,7 @@
+{
+  "name": "export-transformer",
+  "version": "0.1.0",
+  "type": "transformer",
+  "entry_function": "export_trip",
+  "description": "Transforms trip data into GPX, GeoJSON, CSV, or Markdown format"
+}

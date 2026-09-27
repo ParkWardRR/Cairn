@@ -84,6 +84,123 @@ func (h *PluginHandler) ClassifyTrip(w http.ResponseWriter, r *http.Request) {
 	w.Write(output)
 }
 
+func (h *PluginHandler) ExportTrip(w http.ResponseWriter, r *http.Request) {
+	tripID := r.PathValue("id")
+	ctx := r.Context()
+
+	// Get format from query parameter; default to "gpx".
+	format := r.URL.Query().Get("format")
+	if format == "" {
+		format = "gpx"
+	}
+
+	trip, err := h.queries.GetTrip(ctx, tripID)
+	if err != nil {
+		log.Printf("export trip %s: get trip: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if trip == nil {
+		httpError(w, http.StatusNotFound, "trip not found")
+		return
+	}
+
+	route, err := h.queries.GetTripRoute(ctx, tripID)
+	if err != nil {
+		log.Printf("export trip %s: get route: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	input, err := plugin.BuildExportInput(trip, route, format)
+	if err != nil {
+		log.Printf("export trip %s: build input: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "failed to build plugin input")
+		return
+	}
+
+	output, err := h.host.Execute("export-transformer", input)
+	if err != nil {
+		log.Printf("export trip %s: execute: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(output)
+}
+
+func (h *PluginHandler) ScoreRoute(w http.ResponseWriter, r *http.Request) {
+	tripID := r.PathValue("id")
+	ctx := r.Context()
+
+	route, err := h.queries.GetTripRoute(ctx, tripID)
+	if err != nil {
+		log.Printf("score route %s: get route: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if len(route) == 0 {
+		httpError(w, http.StatusNotFound, "no route data for trip")
+		return
+	}
+
+	// For history, we pass an empty set; the caller can provide history via
+	// the generic plugin runner if more sophisticated scoring is needed.
+	input, err := plugin.BuildRouteScorerInput(route, nil, 0)
+	if err != nil {
+		log.Printf("score route %s: build input: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "failed to build plugin input")
+		return
+	}
+
+	output, err := h.host.Execute("route-scorer", input)
+	if err != nil {
+		log.Printf("score route %s: execute: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(output)
+}
+
+func (h *PluginHandler) DetectAnomalies(w http.ResponseWriter, r *http.Request) {
+	tripID := r.PathValue("id")
+	ctx := r.Context()
+
+	route, err := h.queries.GetTripRoute(ctx, tripID)
+	if err != nil {
+		log.Printf("detect anomalies %s: get route: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	if len(route) == 0 {
+		httpError(w, http.StatusNotFound, "no route data for trip")
+		return
+	}
+
+	input, err := plugin.BuildDataQualityInput(route)
+	if err != nil {
+		log.Printf("detect anomalies %s: build input: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, "failed to build plugin input")
+		return
+	}
+
+	output, err := h.host.Execute("data-quality-detector", input)
+	if err != nil {
+		log.Printf("detect anomalies %s: execute: %v", tripID, err)
+		httpError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(output)
+}
+
 func (h *PluginHandler) RedactTrip(w http.ResponseWriter, r *http.Request) {
 	tripID := r.PathValue("id")
 	ctx := r.Context()

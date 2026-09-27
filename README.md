@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
-  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_1–8_Complete-2ECC71?style=flat-square" alt="Project Status"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_1–9_Active-2ECC71?style=flat-square" alt="Project Status"></a>
   <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
 </p>
 
@@ -163,6 +163,18 @@ Five standalone CLI tools for offline bundle inspection and debugging:
 
 Full device emulator producing realistic trip bundles with proper binary format, SHA-256 integrity, and chunked upload support. 15 driving scenarios from normal commutes to power-loss edge cases. Tested against the live ingest service at 5000x speedup.
 
+### Rust Trajectory Tool (`rust/trajectory/`)
+
+Offline trajectory analysis experiments for recorded trip bundles. Five subcommands:
+
+| Subcommand | Purpose |
+|------------|---------|
+| **similarity** | Route similarity clustering via Hausdorff distance — find repeated commutes |
+| **places** | DBSCAN-style endpoint clustering to discover recurring locations |
+| **segments** | Stop/errand segmentation — split a trip into drive/stop phases |
+| **anomalies** | GNSS anomaly detection: impossible jumps, GPS loss, clock drift, HDOP spikes |
+| **density** | Driving style analysis: acceleration/deceleration profiles, turn rates, style classification |
+
 ---
 
 ## Technology Stack
@@ -171,7 +183,7 @@ Full device emulator producing realistic trip bundles with proper binary format,
 |----------|------|-----|
 | **Zig** | Bundle format, common types, CLI (`tripctl`) | Low-level control, deterministic resources, cross-compilation |
 | **Go** | Ingest service, read API, MQTT, WASM plugin host | Single-binary deploys, strong networking stdlib, zero-dep MQTT |
-| **Rust** | Device emulator, crypto verification | Memory safety without GC, excellent for system simulation |
+| **Rust** | Device emulator, trajectory analysis, crypto verification | Memory safety without GC, excellent for system simulation and numeric analysis |
 | **Gleam** | Background event processing, job scheduling | Clean distributed-systems model with OTP fault isolation |
 | **MoonBit** | WASM plugins: trip classifier, privacy redactor | Portable sandboxed components via WASM, compiles to 62-94 KB |
 | **Odin** | Offline CLI tools: inspector, diff, replay, density, recovery | Pleasant native tooling with explicit memory, fast compilation |
@@ -199,6 +211,8 @@ Cairn/
 │   ├── cli/                     #   tripctl: generate, validate, inspect, export
 │   └── api/                     #   Legacy Zig API (superseded by Go endpoints in ingest)
 ├── emulator/                    # Rust device emulator (15 scenarios, chunked upload)
+├── rust/
+│   └── trajectory/              # Rust trajectory analysis CLI (5 subcommands)
 ├── gleam/
 │   └── trip-orchestrator/       # Gleam/OTP event processing (5 actor workers)
 ├── plugins/                     # MoonBit → WASM plugins
@@ -364,6 +378,9 @@ cd zig/cli && zig build
 # Rust emulator
 cd emulator && cargo build --release
 
+# Rust trajectory tool
+cd rust/trajectory && cargo build --release
+
 # Gleam orchestrator
 cd gleam/trip-orchestrator && gleam build
 
@@ -393,6 +410,12 @@ odin build odin/trip-inspector/ -o:speed
 # Generate a route density heatmap
 odin build odin/route-density/ -o:speed
 ./route-density /path/to/bundles/ --output heatmap.svg
+
+# Trajectory analysis on recorded bundles
+cd rust/trajectory && cargo build --release
+./target/release/cairn-trajectory anomalies --bundle /path/to/trip/bundle/
+./target/release/cairn-trajectory places --bundles /path/to/bundles/ --min-visits 2
+./target/release/cairn-trajectory similarity --bundles /path/to/bundles/
 ```
 
 ---
@@ -434,6 +457,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | `build-zig` | Zig common, bundle, CLI + smoke test |
 | `build-go` | Go ingest service + `go vet` |
 | `build-rust` | Rust emulator + binary verification |
+| `build-trajectory` | Rust trajectory tool build + tests |
 | `build-gleam` | Gleam trip-orchestrator build + test |
 | `build-plugins` | MoonBit trip-classifier + privacy-redactor → WASM |
 | `build-odin` | All 5 Odin tools + trip-inspector smoke test |
