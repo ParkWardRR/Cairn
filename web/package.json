@@ -19,8 +19,12 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
+    "@deck.gl/core": "^9.4.0",
+    "@deck.gl/layers": "^9.4.0",
+    "@deck.gl/mapbox": "^9.4.0",
+    "cesium": "^1.145.0",
     "leaflet": "^1.9.4",
-    "pmtiles": "^4.5.0",
-    "protomaps-leaflet": "^5.1.0"
+    "maplibre-gl": "^6.11.2",
+    "pmtiles": "^4.5.0"
   }
 }

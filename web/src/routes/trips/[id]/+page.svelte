@@ -8,7 +8,8 @@
   import Card from '$lib/components/Card.svelte';
   import Tag from '$lib/components/Tag.svelte';
   import Dialog from '$lib/components/Dialog.svelte';
-  import LeafletMap from '$lib/components/LeafletMap.svelte';
+  import MapLibreMap from '$lib/components/MapLibreMap.svelte';
+  import type { Map as MLMap } from 'maplibre-gl';
 
   const id = page.params.id!;
 
@@ -35,45 +36,140 @@
     loading = false;
   });
 
-  function setupMap(map: any) {
-    const L = (window as any).L;
-    if (!L) return;
-
+  function setupMap(map: MLMap) {
     if (routeData?.features?.length > 0) {
       const feature = routeData.features[0];
-      const coords = feature.geometry?.coordinates || [];
-      const speeds = feature.properties?.speed || [];
-      if (coords.length > 0) {
+      const coords: number[][] = feature.geometry?.coordinates || [];
+      const speeds: number[] = feature.properties?.speed || [];
+
+      if (coords.length > 1) {
         const maxSpeed = Math.max(...speeds.filter((s: number) => s > 0), 60);
-        const points = coords.map((c: number[], i: number) => ({
-          lat: c[1], lng: c[0], speed: speeds[i] || 0,
-        }));
-        for (let i = 1; i < points.length; i++) {
-          const ratio = Math.min(points[i].speed / maxSpeed, 1);
-          L.polyline(
-            [[points[i-1].lat, points[i-1].lng], [points[i].lat, points[i].lng]],
-            { color: speedColor(ratio), weight: 4, opacity: 0.85 }
-          ).addTo(map);
+
+        if (speeds.length > 0) {
+          const segmentFeatures = [];
+          for (let i = 1; i < coords.length; i++) {
+            const ratio = Math.min((speeds[i] || 0) / maxSpeed, 1);
+            segmentFeatures.push({
+              type: 'Feature' as const,
+              geometry: {
+                type: 'LineString' as const,
+                coordinates: [coords[i-1].slice(0, 2), coords[i].slice(0, 2)],
+              },
+              properties: { speed: ratio },
+            });
+          }
+
+          map.addSource('route-segments', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: segmentFeatures },
+          });
+
+          map.addLayer({
+            id: 'route-speed',
+            type: 'line',
+            source: 'route-segments',
+            paint: {
+              'line-width': 4,
+              'line-color': [
+                'interpolate', ['linear'], ['get', 'speed'],
+                0, '#30d158',
+                0.5, '#ffd60a',
+                1, '#ff375f',
+              ],
+              'line-opacity': 0.85,
+            },
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+          });
+        } else {
+          map.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: coords.map(c => c.slice(0, 2)) },
+              properties: {},
+            },
+          });
+          map.addLayer({
+            id: 'route-line',
+            type: 'line',
+            source: 'route',
+            paint: { 'line-color': '#ff375f', 'line-width': 4, 'line-opacity': 0.85 },
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+          });
         }
-        const start = points[0];
-        const end = points[points.length - 1];
-        L.circleMarker([start.lat, start.lng], { radius: 7, color: '#30d158', fillColor: '#30d158', fillOpacity: 1 }).bindPopup('Start').addTo(map);
-        L.circleMarker([end.lat, end.lng], { radius: 7, color: '#ff375f', fillColor: '#ff375f', fillOpacity: 1 }).bindPopup('End').addTo(map);
-        map.fitBounds(points.map((p: any) => [p.lat, p.lng]), { padding: [30, 30] });
+
+        const start = coords[0];
+        const end = coords[coords.length - 1];
+        map.addSource('endpoints', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', geometry: { type: 'Point', coordinates: [start[0], start[1]] }, properties: { type: 'start' } },
+              { type: 'Feature', geometry: { type: 'Point', coordinates: [end[0], end[1]] }, properties: { type: 'end' } },
+            ],
+          },
+        });
+        map.addLayer({
+          id: 'endpoint-circles',
+          type: 'circle',
+          source: 'endpoints',
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['match', ['get', 'type'], 'start', '#30d158', '#ff375f'],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ffffff',
+          },
+        });
+
+        const lngs = coords.map(c => c[0]);
+        const lats = coords.map(c => c[1]);
+        map.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 40, duration: 0 },
+        );
       }
     } else if (trip) {
-      const bounds: [number, number][] = [];
-      if (trip.start_lat && trip.start_lon) {
-        bounds.push([trip.start_lat, trip.start_lon]);
-        L.circleMarker([trip.start_lat, trip.start_lon], { radius: 7, color: '#30d158', fillOpacity: 1 }).addTo(map);
+      const points: [number, number][] = [];
+      if (trip.start_lat && trip.start_lon) points.push([trip.start_lon, trip.start_lat]);
+      if (trip.end_lat && trip.end_lon) points.push([trip.end_lon, trip.end_lat]);
+
+      if (points.length > 0) {
+        map.addSource('endpoints', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: points.map((p, i) => ({
+              type: 'Feature' as const,
+              geometry: { type: 'Point' as const, coordinates: p },
+              properties: { type: i === 0 ? 'start' : 'end' },
+            })),
+          },
+        });
+        map.addLayer({
+          id: 'endpoint-circles',
+          type: 'circle',
+          source: 'endpoints',
+          paint: {
+            'circle-radius': 7,
+            'circle-color': ['match', ['get', 'type'], 'start', '#30d158', '#ff375f'],
+            'circle-stroke-width': 2,
+            'circle-stroke-color': '#ffffff',
+          },
+        });
+
+        if (points.length === 2) {
+          const lngs = points.map(p => p[0]);
+          const lats = points.map(p => p[1]);
+          map.fitBounds(
+            [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+            { padding: 50, duration: 0 },
+          );
+        } else {
+          map.setCenter(points[0]);
+          map.setZoom(14);
+        }
       }
-      if (trip.end_lat && trip.end_lon) {
-        bounds.push([trip.end_lat, trip.end_lon]);
-        L.circleMarker([trip.end_lat, trip.end_lon], { radius: 7, color: '#ff375f', fillOpacity: 1 }).addTo(map);
-      }
-      if (bounds.length === 2) map.fitBounds(bounds, { padding: [40, 40] });
-      else if (bounds.length === 1) map.setView(bounds[0], 14);
-      else map.setView([0, 0], 2);
     }
   }
 
@@ -112,7 +208,6 @@
 </script>
 
 <div class="page">
-  <!-- Back + Title -->
   <header class="detail-header">
     <a href="/trips" class="back-btn">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -126,11 +221,10 @@
     {/if}
   </header>
 
-  <!-- Map -->
   <section class="map-section">
     <div class="map-wrap">
       {#if !loading}
-        <LeafletMap onready={setupMap} />
+        <MapLibreMap onready={setupMap} />
       {/if}
     </div>
     <div class="speed-legend">
@@ -141,7 +235,6 @@
   </section>
 
   <div class="detail-layout">
-    <!-- Main: Events Timeline -->
     <div class="detail-main">
       <section class="grouped-section">
         <h2 class="section-header">Events</h2>
@@ -167,9 +260,7 @@
       </section>
     </div>
 
-    <!-- Sidebar -->
     <div class="detail-sidebar">
-      <!-- Info -->
       <section class="grouped-section">
         <h2 class="section-header">Info</h2>
         <Card>
@@ -200,7 +291,6 @@
         </Card>
       </section>
 
-      <!-- Tags -->
       <section class="grouped-section">
         <h2 class="section-header">Tags</h2>
         <Card>
@@ -228,7 +318,6 @@
         </Card>
       </section>
 
-      <!-- Export -->
       <section class="grouped-section">
         <h2 class="section-header">Export</h2>
         <Card>
@@ -240,7 +329,6 @@
         </Card>
       </section>
 
-      <!-- Delete -->
       <section class="grouped-section">
         <button class="delete-btn" onclick={() => deleteOpen = true}>Delete Trip</button>
       </section>
@@ -251,12 +339,7 @@
 <Dialog title="Delete Trip" text="Are you sure? This action cannot be undone." bind:open={deleteOpen} onconfirm={deleteTrip} />
 
 <style>
-  .page {
-    padding-top: 8px;
-    animation: slide-up var(--duration-slow) var(--ease-decelerate);
-  }
-
-  /* ---- Header ---- */
+  .page { padding-top: 8px; animation: slide-up var(--duration-slow) var(--ease-decelerate); }
   .detail-header { padding: 8px 4px 12px; }
   .back-btn {
     display: inline-flex;
@@ -269,19 +352,8 @@
     margin-bottom: 8px;
   }
   .back-btn:active { opacity: 0.5; }
-  .detail-title {
-    font-size: 28px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1.15;
-  }
-  .detail-subtitle {
-    font-size: 15px;
-    color: var(--label-secondary);
-    margin-top: 2px;
-  }
-
-  /* ---- Map ---- */
+  .detail-title { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; }
+  .detail-subtitle { font-size: 15px; color: var(--label-secondary); margin-top: 2px; }
   .map-section { margin-bottom: 20px; }
   .map-wrap {
     width: 100%;
@@ -306,42 +378,17 @@
     border-radius: 2px;
     background: linear-gradient(to right, #30d158, #ffd60a, #ff375f);
   }
-
-  /* ---- Layout ---- */
-  .detail-layout {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
-  @media (min-width: 768px) {
-    .detail-layout { grid-template-columns: 1fr 300px; gap: 20px; }
-  }
-
-  /* ---- Sections ---- */
+  .detail-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
+  @media (min-width: 768px) { .detail-layout { grid-template-columns: 1fr 300px; gap: 20px; } }
   .grouped-section { margin-bottom: 20px; }
-  .section-header {
-    font-size: 20px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    padding: 0 4px;
-    margin-bottom: 8px;
-  }
+  .section-header { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; padding: 0 4px; margin-bottom: 8px; }
   .detail-sidebar { display: flex; flex-direction: column; }
-
-  /* ---- Info Table ---- */
   .info-table { font-size: 15px; }
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 11px 0;
-    border-bottom: 0.5px solid var(--separator);
-  }
+  .info-row { display: flex; justify-content: space-between; padding: 11px 0; border-bottom: 0.5px solid var(--separator); }
   .info-row.last { border-bottom: none; }
   .info-label { color: var(--label-secondary); }
   .info-value { font-weight: 500; text-align: right; }
   .info-value.mono { font-family: var(--font-mono); font-size: 14px; }
-
-  /* ---- Timeline ---- */
   .timeline { padding-left: 20px; position: relative; }
   .timeline::before {
     content: '';
@@ -352,12 +399,7 @@
     width: 1.5px;
     background: var(--separator-opaque);
   }
-  .timeline-item {
-    position: relative;
-    padding-bottom: 16px;
-    display: flex;
-    gap: 12px;
-  }
+  .timeline-item { position: relative; padding-bottom: 16px; display: flex; gap: 12px; }
   .timeline-item:last-child { padding-bottom: 0; }
   .timeline-dot {
     position: absolute;
@@ -371,25 +413,12 @@
     z-index: 1;
   }
   .timeline-content { display: flex; flex-direction: column; }
-  .timeline-time {
-    font-size: 12px;
-    font-family: var(--font-mono);
-    color: var(--label-tertiary);
-  }
-  .timeline-label {
-    font-size: 15px;
-    font-weight: 500;
-  }
-
-  /* ---- Tags ---- */
+  .timeline-time { font-size: 12px; font-family: var(--font-mono); color: var(--label-tertiary); }
+  .timeline-label { font-size: 15px; font-weight: 500; }
   .tags-area { display: flex; flex-direction: column; gap: 10px; }
   .tags-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .tag-input-row { display: flex; gap: 6px; }
-  .tag-input {
-    flex: 1;
-    font-size: 15px;
-    padding: 8px 12px;
-  }
+  .tag-input { flex: 1; font-size: 15px; padding: 8px 12px; }
   .btn-tint-sm {
     padding: 8px 14px;
     border-radius: var(--radius-sm);
@@ -401,8 +430,6 @@
     cursor: pointer;
   }
   .btn-tint-sm:active { opacity: 0.7; }
-
-  /* ---- Export ---- */
   .export-row { display: flex; gap: 8px; }
   .export-btn {
     flex: 1;
@@ -419,8 +446,6 @@
     transition: background var(--duration-fast);
   }
   .export-btn:active { background: var(--fill-secondary); }
-
-  /* ---- Delete ---- */
   .delete-btn {
     width: 100%;
     padding: 14px;
@@ -435,7 +460,6 @@
     transition: background var(--duration-fast);
   }
   .delete-btn:active { background: var(--system-bg-grouped-tertiary); }
-
   .empty-inline { padding: 12px 0; }
   .empty-text { font-size: 15px; color: var(--label-tertiary); }
 </style>

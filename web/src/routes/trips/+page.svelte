@@ -5,7 +5,8 @@
   import Card from '$lib/components/Card.svelte';
   import Tag from '$lib/components/Tag.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
-  import LeafletMap from '$lib/components/LeafletMap.svelte';
+  import MapLibreMap from '$lib/components/MapLibreMap.svelte';
+  import type { Map as MLMap } from 'maplibre-gl';
 
   let loading = $state(true);
   let trips: any[] = $state([]);
@@ -69,20 +70,61 @@
   }
 
   function setupMiniMap(trip: any) {
-    return (map: any) => {
-      const L = (window as any).L;
-      if (!L) return;
-      const bounds: [number, number][] = [];
-      if (trip.start_lat && trip.start_lon) bounds.push([trip.start_lat, trip.start_lon]);
-      if (trip.end_lat && trip.end_lon) bounds.push([trip.end_lat, trip.end_lon]);
-      if (bounds.length === 2) {
-        map.fitBounds(bounds, { padding: [15, 15] });
-        L.circleMarker(bounds[0], { radius: 4, color: '#30d158', fillOpacity: 1 }).addTo(map);
-        L.circleMarker(bounds[1], { radius: 4, color: '#ff375f', fillOpacity: 1 }).addTo(map);
-        L.polyline(bounds, { color: '#ff375f', weight: 2, opacity: 0.4, dashArray: '5,5' }).addTo(map);
-      } else if (bounds.length === 1) {
-        map.setView(bounds[0], 14);
-        L.circleMarker(bounds[0], { radius: 4, color: '#30d158', fillOpacity: 1 }).addTo(map);
+    return (map: MLMap) => {
+      const points: [number, number][] = [];
+      if (trip.start_lat && trip.start_lon) points.push([trip.start_lon, trip.start_lat]);
+      if (trip.end_lat && trip.end_lon) points.push([trip.end_lon, trip.end_lat]);
+      if (points.length === 0) return;
+
+      const srcId = `ep-${trip.id}`;
+      map.addSource(srcId, {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: points.map((p, i) => ({
+            type: 'Feature' as const,
+            geometry: { type: 'Point' as const, coordinates: p },
+            properties: { type: i === 0 ? 'start' : 'end' },
+          })),
+        },
+      });
+      map.addLayer({
+        id: `${srcId}-circles`,
+        type: 'circle',
+        source: srcId,
+        paint: {
+          'circle-radius': 4,
+          'circle-color': ['match', ['get', 'type'], 'start', '#30d158', '#ff375f'],
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      if (points.length === 2) {
+        map.addSource(`${srcId}-line`, {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: points },
+            properties: {},
+          },
+        });
+        map.addLayer({
+          id: `${srcId}-line-layer`,
+          type: 'line',
+          source: `${srcId}-line`,
+          paint: { 'line-color': '#ff375f', 'line-width': 2, 'line-opacity': 0.4, 'line-dasharray': [4, 4] },
+        }, `${srcId}-circles`);
+
+        const lngs = points.map(p => p[0]);
+        const lats = points.map(p => p[1]);
+        map.fitBounds(
+          [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+          { padding: 20, duration: 0 },
+        );
+      } else {
+        map.setCenter(points[0]);
+        map.setZoom(14);
       }
     };
   }
@@ -152,7 +194,7 @@
             </div>
             {#if trip.start_lat && trip.start_lon}
               <div class="trip-card-map">
-                <LeafletMap interactive={false} onready={setupMiniMap(trip)} />
+                <MapLibreMap interactive={false} onready={setupMiniMap(trip)} />
               </div>
             {/if}
           </div>
@@ -171,23 +213,11 @@
 </div>
 
 <style>
-  .page {
-    padding-top: 16px;
-    animation: slide-up var(--duration-slow) var(--ease-decelerate);
-  }
+  .page { padding-top: 16px; animation: slide-up var(--duration-slow) var(--ease-decelerate); }
   .large-title-header { padding: 8px 4px 4px; margin-bottom: 12px; }
   .title-row { display: flex; justify-content: space-between; align-items: center; }
-  .large-title {
-    font-size: 34px;
-    font-weight: 700;
-    letter-spacing: -0.03em;
-    line-height: 1.1;
-  }
-  .subtitle {
-    font-size: 15px;
-    color: var(--label-secondary);
-    margin-top: 2px;
-  }
+  .large-title { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+  .subtitle { font-size: 15px; color: var(--label-secondary); margin-top: 2px; }
   .filter-toggle {
     width: 36px; height: 36px;
     display: flex; align-items: center; justify-content: center;
@@ -197,8 +227,6 @@
   }
   .filter-toggle:active { transform: scale(0.9); }
   .filter-toggle.active { color: var(--tint); background: var(--tint-dim); }
-
-  /* ---- Filters ---- */
   .filter-bar {
     background: var(--system-bg-secondary);
     border-radius: var(--radius-card);
@@ -206,19 +234,9 @@
     margin-bottom: 16px;
     animation: scale-in var(--duration-normal) var(--ease-decelerate);
   }
-  .filter-row {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 8px;
-  }
-  .filter-input {
-    flex: 1;
-    font-size: 15px;
-    padding: 10px 12px;
-  }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .filter-input { flex: 1; font-size: 15px; padding: 10px 12px; }
   .filter-actions { display: flex; gap: 8px; justify-content: flex-end; }
-
-  /* ---- Buttons ---- */
   .btn-tint {
     padding: 8px 20px;
     border-radius: var(--radius-sm);
@@ -242,43 +260,14 @@
     cursor: pointer;
   }
   .btn-plain:active { opacity: 0.5; }
-
-  /* ---- Trip List ---- */
   .trip-list { display: flex; flex-direction: column; gap: 8px; }
-
-  .trip-card {
-    display: flex;
-    gap: 12px;
-    align-items: stretch;
-  }
+  .trip-card { display: flex; gap: 12px; align-items: stretch; }
   .trip-card-info { flex: 1; min-width: 0; }
-  .trip-card-date {
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  .trip-card-time {
-    font-size: 13px;
-    color: var(--label-secondary);
-    margin-top: 1px;
-  }
-  .trip-card-metrics {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-  }
-  .trip-card-metric {
-    font-size: 15px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--label-primary);
-  }
-  .metric-sep {
-    width: 3px; height: 3px;
-    border-radius: 50%;
-    background: var(--label-tertiary);
-  }
+  .trip-card-date { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .trip-card-time { font-size: 13px; color: var(--label-secondary); margin-top: 1px; }
+  .trip-card-metrics { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .trip-card-metric { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label-primary); }
+  .metric-sep { width: 3px; height: 3px; border-radius: 50%; background: var(--label-tertiary); }
   .trip-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
   .trip-card-map {
     width: 130px;
@@ -287,15 +276,7 @@
     overflow: hidden;
     flex-shrink: 0;
   }
-
-  /* ---- Load More ---- */
-  .load-more {
-    display: flex;
-    justify-content: center;
-    padding: 20px 0;
-  }
-
-  /* ---- Skeleton ---- */
+  .load-more { display: flex; justify-content: center; padding: 20px 0; }
   .skeleton-card {
     height: 100px;
     background: linear-gradient(90deg, var(--system-bg-secondary) 25%, var(--fill-quaternary) 50%, var(--system-bg-secondary) 75%);

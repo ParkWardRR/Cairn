@@ -4,8 +4,9 @@
   import { formatDistance, formatDuration, formatDate, formatTime, formatDateTime, relativeTime, isToday, isThisWeek, isThisMonth, deviceStatusColor } from '$lib/utils/format';
   import StatCard from '$lib/components/StatCard.svelte';
   import StatusDot from '$lib/components/StatusDot.svelte';
-  import LeafletMap from '$lib/components/LeafletMap.svelte';
+  import MapLibreMap from '$lib/components/MapLibreMap.svelte';
   import Card from '$lib/components/Card.svelte';
+  import type { Map as MLMap } from 'maplibre-gl';
 
   let loading = $state(true);
   let trips: any[] = $state([]);
@@ -44,33 +45,94 @@
     loading = false;
   });
 
-  function setupRecentMap(map: any) {
-    const L = (window as any).L;
-    if (!recentTrip || !L) return;
-    const bounds: [number, number][] = [];
-    if (recentTrip.start_lat && recentTrip.start_lon) bounds.push([recentTrip.start_lat, recentTrip.start_lon]);
-    if (recentTrip.end_lat && recentTrip.end_lon) bounds.push([recentTrip.end_lat, recentTrip.end_lon]);
-    if (bounds.length === 2) {
-      map.fitBounds(bounds, { padding: [20, 20] });
-      L.circleMarker(bounds[0], { radius: 5, color: '#30d158', fillOpacity: 1 }).addTo(map);
-      L.circleMarker(bounds[1], { radius: 5, color: '#ff375f', fillOpacity: 1 }).addTo(map);
-      L.polyline(bounds, { color: '#ff375f', weight: 2, opacity: 0.5 }).addTo(map);
-    } else if (bounds.length === 1) {
-      map.setView(bounds[0], 14);
-      L.circleMarker(bounds[0], { radius: 5, color: '#30d158', fillOpacity: 1 }).addTo(map);
+  function setupRecentMap(map: MLMap) {
+    if (!recentTrip) return;
+    const points: [number, number][] = [];
+    if (recentTrip.start_lat && recentTrip.start_lon) points.push([recentTrip.start_lon, recentTrip.start_lat]);
+    if (recentTrip.end_lat && recentTrip.end_lon) points.push([recentTrip.end_lon, recentTrip.end_lat]);
+    if (points.length === 0) return;
+
+    map.addSource('endpoints', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: points.map((p, i) => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: p },
+          properties: { type: i === 0 ? 'start' : 'end' },
+        })),
+      },
+    });
+
+    map.addLayer({
+      id: 'endpoint-circles',
+      type: 'circle',
+      source: 'endpoints',
+      paint: {
+        'circle-radius': 6,
+        'circle-color': ['match', ['get', 'type'], 'start', '#30d158', '#ff375f'],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+
+    if (points.length === 2) {
+      map.addSource('route-line', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: points },
+          properties: {},
+        },
+      });
+      map.addLayer({
+        id: 'route-line-layer',
+        type: 'line',
+        source: 'route-line',
+        paint: { 'line-color': '#ff375f', 'line-width': 2, 'line-opacity': 0.5 },
+      }, 'endpoint-circles');
+
+      const lngs = points.map(p => p[0]);
+      const lats = points.map(p => p[1]);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 30, duration: 0 },
+      );
+    } else {
+      map.setCenter(points[0]);
+      map.setZoom(14);
     }
   }
 
-  function setupParkedMap(map: any) {
-    const L = (window as any).L;
-    if (!parkedLat || !parkedLon || !L) return;
-    map.setView([parkedLat, parkedLon], 15);
-    L.circleMarker([parkedLat, parkedLon], { radius: 8, color: '#ff375f', fillColor: '#ff375f', fillOpacity: 0.8 }).addTo(map);
+  function setupParkedMap(map: MLMap) {
+    if (!parkedLat || !parkedLon) return;
+    map.setCenter([parkedLon, parkedLat]);
+    map.setZoom(15);
+
+    map.addSource('parked', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [parkedLon, parkedLat] },
+        properties: {},
+      },
+    });
+    map.addLayer({
+      id: 'parked-circle',
+      type: 'circle',
+      source: 'parked',
+      paint: {
+        'circle-radius': 8,
+        'circle-color': '#ff375f',
+        'circle-opacity': 0.8,
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
   }
 </script>
 
 <div class="page">
-  <!-- Large Title -->
   <header class="large-title-header">
     <h1 class="large-title">Today</h1>
     <div class="sync-pill">
@@ -87,7 +149,6 @@
     </div>
   </header>
 
-  <!-- Quick Stats -->
   <section class="grouped-section">
     <div class="stat-grid">
       <StatCard value={loading ? '--' : todayCount} label="Today" {loading} />
@@ -97,7 +158,6 @@
     </div>
   </section>
 
-  <!-- Recent Trip -->
   <section class="grouped-section">
     <h2 class="section-header">Most Recent Trip</h2>
     {#if loading}
@@ -123,7 +183,7 @@
           </div>
           {#if recentTrip.start_lat}
             <div class="recent-trip-map">
-              <LeafletMap interactive={false} onready={setupRecentMap} />
+              <MapLibreMap interactive={false} onready={setupRecentMap} />
             </div>
           {/if}
         </div>
@@ -137,14 +197,13 @@
     {/if}
   </section>
 
-  <!-- Last Parked + Devices side by side on desktop -->
   <div class="two-col">
     <section class="grouped-section">
       <h2 class="section-header">Last Parked</h2>
       <Card>
         {#if parkedLat && parkedLon}
           <div class="parked-map-wrap">
-            <LeafletMap interactive={false} onready={setupParkedMap} />
+            <MapLibreMap interactive={false} onready={setupParkedMap} />
           </div>
           <div class="parked-info">
             <span class="parked-coords">{parkedLat?.toFixed(5)}, {parkedLon?.toFixed(5)}</span>
@@ -187,8 +246,6 @@
     padding-top: 16px;
     animation: slide-up var(--duration-slow) var(--ease-decelerate);
   }
-
-  /* ---- iOS Large Title ---- */
   .large-title-header {
     padding: 8px 4px 4px;
     margin-bottom: 8px;
@@ -212,11 +269,7 @@
     color: var(--label-secondary);
     font-weight: 500;
   }
-
-  /* ---- Grouped Sections ---- */
-  .grouped-section {
-    margin-bottom: 24px;
-  }
+  .grouped-section { margin-bottom: 24px; }
   .section-header {
     font-size: 20px;
     font-weight: 700;
@@ -225,8 +278,6 @@
     padding: 0 4px;
     margin-bottom: 8px;
   }
-
-  /* ---- Stats Grid ---- */
   .stat-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -235,41 +286,20 @@
   @media (min-width: 600px) {
     .stat-grid { grid-template-columns: repeat(4, 1fr); }
   }
-
-  /* ---- Recent Trip ---- */
   .recent-trip {
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
   @media (min-width: 600px) {
-    .recent-trip {
-      flex-direction: row;
-      align-items: stretch;
-    }
+    .recent-trip { flex-direction: row; align-items: stretch; }
   }
   .recent-trip-info { flex: 1; }
-  .recent-trip-date {
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-  .recent-trip-time {
-    font-size: 13px;
-    color: var(--label-secondary);
-    margin-top: 2px;
-  }
-  .trip-metrics {
-    display: flex;
-    gap: 24px;
-    margin-top: 12px;
-  }
+  .recent-trip-date { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+  .recent-trip-time { font-size: 13px; color: var(--label-secondary); margin-top: 2px; }
+  .trip-metrics { display: flex; gap: 24px; margin-top: 12px; }
   .metric { display: flex; flex-direction: column; }
-  .metric-value {
-    font-size: 17px;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
+  .metric-value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
   .metric-label {
     font-size: 11px;
     color: var(--label-tertiary);
@@ -286,18 +316,10 @@
   @media (min-width: 600px) {
     .recent-trip-map { width: 180px; height: auto; min-height: 120px; }
   }
-
-  /* ---- Two Column ---- */
-  .two-col {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0;
-  }
+  .two-col { display: grid; grid-template-columns: 1fr; gap: 0; }
   @media (min-width: 600px) {
     .two-col { grid-template-columns: 1fr 1fr; gap: 16px; }
   }
-
-  /* ---- Parked ---- */
   .parked-map-wrap {
     height: 180px;
     border-radius: var(--radius-md);
@@ -305,43 +327,14 @@
     margin-bottom: 10px;
   }
   .parked-info { display: flex; flex-direction: column; gap: 2px; }
-  .parked-coords {
-    font-size: 13px;
-    font-family: var(--font-mono);
-    color: var(--label-secondary);
-  }
-  .parked-time {
-    font-size: 12px;
-    color: var(--label-tertiary);
-  }
-
-  /* ---- Device Row ---- */
-  .device-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 0;
-  }
-  .device-row.border-top {
-    border-top: 0.5px solid var(--separator);
-  }
-  .device-id {
-    font-family: var(--font-mono);
-    font-size: 14px;
-    font-weight: 500;
-    flex: 1;
-  }
-  .device-time {
-    font-size: 13px;
-    color: var(--label-tertiary);
-  }
-
-  /* ---- Empty / Skeleton ---- */
+  .parked-coords { font-size: 13px; font-family: var(--font-mono); color: var(--label-secondary); }
+  .parked-time { font-size: 12px; color: var(--label-tertiary); }
+  .device-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; }
+  .device-row.border-top { border-top: 0.5px solid var(--separator); }
+  .device-id { font-family: var(--font-mono); font-size: 14px; font-weight: 500; flex: 1; }
+  .device-time { font-size: 13px; color: var(--label-tertiary); }
   .empty-inline { padding: 16px 0; }
-  .empty-inline-text {
-    font-size: 15px;
-    color: var(--label-tertiary);
-  }
+  .empty-inline-text { font-size: 15px; color: var(--label-tertiary); }
   .skeleton-block {
     height: 160px;
     background: linear-gradient(90deg, var(--system-bg-tertiary) 25%, var(--fill-quaternary) 50%, var(--system-bg-tertiary) 75%);

@@ -8,7 +8,7 @@
   import Card from '$lib/components/Card.svelte';
   import StatCard from '$lib/components/StatCard.svelte';
   import Dialog from '$lib/components/Dialog.svelte';
-  import LeafletMap from '$lib/components/LeafletMap.svelte';
+  import MapLibreMap from '$lib/components/MapLibreMap.svelte';
 
   let loading = $state(true);
   let stats: any = $state(null);
@@ -16,10 +16,14 @@
   let deleteOpen = $state(false);
 
   let currentMapSettings = $state<MapSettings>({
-    providerId: 'carto-dark',
+    providerId: 'carto-voyager',
+    engine: '2d',
     customTileUrl: '',
     customAttribution: '',
     pmtilesUrl: '',
+    terrain: false,
+    pitch: 0,
+    bearing: 0,
   });
 
   let customUrlInput = $state('');
@@ -121,7 +125,7 @@
     <h2 class="section-header">Map Tiles</h2>
     <Card>
       <div class="map-preview">
-        <LeafletMap interactive={false} zoom={10} />
+        <MapLibreMap interactive={false} zoom={10} />
       </div>
     </Card>
     <div class="provider-grid">
@@ -340,8 +344,8 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .provider-badge.dark { background: rgba(255,255,255,0.08); color: var(--label-tertiary); }
-  .provider-badge.light { background: rgba(255,255,255,0.15); color: var(--label-secondary); }
+  .provider-badge.dark { background: var(--fill-quaternary); color: var(--label-tertiary); }
+  .provider-badge.light { background: var(--fill-quaternary); color: var(--label-secondary); }
 
   /* Self-hosted forms */
   .field-group {

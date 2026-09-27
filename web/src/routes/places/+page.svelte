@@ -5,11 +5,13 @@
   import Card from '$lib/components/Card.svelte';
   import Dialog from '$lib/components/Dialog.svelte';
   import EmptyState from '$lib/components/EmptyState.svelte';
-  import LeafletMap from '$lib/components/LeafletMap.svelte';
+  import MapLibreMap from '$lib/components/MapLibreMap.svelte';
+  import * as maplibregl from 'maplibre-gl';
+  import type { Map as MLMap } from 'maplibre-gl';
 
   let places: any[] = $state([]);
   let loading = $state(true);
-  let map: any = $state(null);
+  let map: MLMap | null = $state(null);
 
   let placeName = $state('');
   let placeLat = $state('');
@@ -20,25 +22,47 @@
   let deleteOpen = $state(false);
   let deleteTarget = $state<{ id: string; name: string } | null>(null);
 
-  let placeMarker: any = null;
-  let placeCircle: any = null;
+  let clickMarker: maplibregl.Marker | null = null;
 
   onMount(() => {});
 
-  function setupMap(m: any) {
+  function setupMap(m: MLMap) {
     map = m;
-    const L = (window as any).L;
-    if (!L) return;
-    map.setView([37.7749, -122.4194], 10);
+    map.setCenter([-122.4194, 37.7749]);
+    map.setZoom(10);
 
-    map.on('click', (e: any) => {
-      placeLat = e.latlng.lat.toFixed(5);
-      placeLon = e.latlng.lng.toFixed(5);
+    map.on('click', (e) => {
+      placeLat = e.lngLat.lat.toFixed(5);
+      placeLon = e.lngLat.lng.toFixed(5);
       const radius = parseInt(placeRadius) || 100;
-      if (placeMarker) map.removeLayer(placeMarker);
-      if (placeCircle) map.removeLayer(placeCircle);
-      placeMarker = L.circleMarker(e.latlng, { radius: 6, color: '#ff375f', fillColor: '#ff375f', fillOpacity: 1 }).addTo(map);
-      placeCircle = L.circle(e.latlng, { radius, color: '#ff375f', fillColor: '#ff375f', fillOpacity: 0.1, weight: 1 }).addTo(map);
+
+      if (clickMarker) clickMarker.remove();
+      clickMarker = new maplibregl.Marker({ color: '#ff375f' })
+        .setLngLat(e.lngLat)
+        .addTo(map!);
+
+      if (map!.getSource('click-radius')) {
+        (map!.getSource('click-radius') as any).setData(
+          radiusCircleGeoJSON(e.lngLat.lng, e.lngLat.lat, radius)
+        );
+      } else {
+        map!.addSource('click-radius', {
+          type: 'geojson',
+          data: radiusCircleGeoJSON(e.lngLat.lng, e.lngLat.lat, radius),
+        });
+        map!.addLayer({
+          id: 'click-radius-fill',
+          type: 'fill',
+          source: 'click-radius',
+          paint: { 'fill-color': '#ff375f', 'fill-opacity': 0.1 },
+        });
+        map!.addLayer({
+          id: 'click-radius-stroke',
+          type: 'line',
+          source: 'click-radius',
+          paint: { 'line-color': '#ff375f', 'line-width': 1 },
+        });
+      }
     });
 
     loadPlaces();
@@ -56,19 +80,91 @@
   }
 
   function renderPlacesOnMap() {
-    const L = (window as any).L;
-    if (!L || !map) return;
-    const bounds: [number, number][] = [];
-    for (const p of places) {
-      if (!p.lat || !p.lon) continue;
-      L.circle([p.lat, p.lon], {
-        radius: p.radius_m || 100,
-        color: '#5e5ce6', fillColor: '#5e5ce6', fillOpacity: 0.12, weight: 1.5,
-      }).bindPopup(`<b>${p.name}</b><br>${p.visit_count || 0} visits`).addTo(map);
-      L.circleMarker([p.lat, p.lon], { radius: 5, color: '#30d158', fillColor: '#30d158', fillOpacity: 0.8 }).addTo(map);
-      bounds.push([p.lat, p.lon]);
+    if (!map) return;
+
+    if (map.getLayer('places-radius')) map.removeLayer('places-radius');
+    if (map.getLayer('places-center')) map.removeLayer('places-center');
+    if (map.getSource('places-data')) map.removeSource('places-data');
+    if (map.getSource('places-radius-data')) map.removeSource('places-radius-data');
+
+    const valid = places.filter(p => p.lat && p.lon);
+    if (valid.length === 0) return;
+
+    const radiusFeatures = valid.map(p => radiusCircleGeoJSON(p.lon, p.lat, p.radius_m || 100).features[0]);
+    map.addSource('places-radius-data', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: radiusFeatures },
+    });
+    map.addLayer({
+      id: 'places-radius',
+      type: 'fill',
+      source: 'places-radius-data',
+      paint: { 'fill-color': '#5e5ce6', 'fill-opacity': 0.12 },
+    });
+
+    map.addSource('places-data', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: valid.map(p => ({
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: [p.lon, p.lat] },
+          properties: { name: p.name, visits: p.visit_count || 0 },
+        })),
+      },
+    });
+    map.addLayer({
+      id: 'places-center',
+      type: 'circle',
+      source: 'places-data',
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#30d158',
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff',
+      },
+    });
+
+    const lngs = valid.map(p => p.lon);
+    const lats = valid.map(p => p.lat);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 50, maxZoom: 14, duration: 0 },
+    );
+
+    map.on('click', 'places-center', (e) => {
+      const props = e.features?.[0]?.properties;
+      if (props) {
+        new maplibregl.Popup({ offset: 10 })
+          .setLngLat(e.lngLat)
+          .setHTML(`<b>${props.name}</b><br>${props.visits} visits`)
+          .addTo(map!);
+      }
+    });
+    map.on('mouseenter', 'places-center', () => { map!.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'places-center', () => { map!.getCanvas().style.cursor = ''; });
+  }
+
+  function radiusCircleGeoJSON(lng: number, lat: number, radiusM: number) {
+    const steps = 64;
+    const coords: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const angle = (i / steps) * 2 * Math.PI;
+      const dx = radiusM * Math.cos(angle);
+      const dy = radiusM * Math.sin(angle);
+      coords.push([
+        lng + dx / (111320 * Math.cos(lat * Math.PI / 180)),
+        lat + dy / 110540,
+      ]);
     }
-    if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    return {
+      type: 'FeatureCollection' as const,
+      features: [{
+        type: 'Feature' as const,
+        geometry: { type: 'Polygon' as const, coordinates: [coords] },
+        properties: {},
+      }],
+    };
   }
 
   async function savePlace() {
@@ -138,7 +234,7 @@
     <div class="places-main">
       <section class="grouped-section">
         <div class="map-wrap">
-          <LeafletMap onready={setupMap} />
+          <MapLibreMap onready={setupMap} />
         </div>
       </section>
 
@@ -218,14 +314,10 @@
   .subtitle { font-size: 15px; color: var(--label-secondary); margin-top: 2px; }
   .grouped-section { margin-bottom: 20px; }
   .section-header { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; padding: 0 4px; margin-bottom: 8px; }
-
   .places-layout { display: grid; grid-template-columns: 1fr; gap: 0; }
   @media (min-width: 768px) { .places-layout { grid-template-columns: 1fr 1fr; gap: 20px; } }
-
   .map-wrap { height: 300px; border-radius: var(--radius-card); overflow: hidden; }
   @media (min-width: 768px) { .map-wrap { height: 350px; } }
-
-  /* Form */
   .form-hint { font-size: 13px; color: var(--label-tertiary); margin-bottom: 12px; }
   .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
   .form-field { display: flex; flex-direction: column; gap: 4px; }
@@ -234,8 +326,6 @@
   .btn-tint { padding: 10px 24px; border-radius: var(--radius-sm); background: var(--tint); color: white; font-size: 15px; font-weight: 600; border: none; cursor: pointer; }
   .btn-tint:active { opacity: 0.7; }
   .btn-plain { padding: 10px 16px; background: none; color: var(--system-blue); font-size: 15px; border: none; cursor: pointer; }
-
-  /* Places list */
   .places-list { display: flex; flex-direction: column; gap: 6px; }
   .place-row { display: flex; justify-content: space-between; align-items: center; }
   .place-info { flex: 1; min-width: 0; }
@@ -245,7 +335,6 @@
   .icon-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-full); color: var(--label-secondary); transition: background var(--duration-fast); }
   .icon-btn:active { background: var(--fill-tertiary); }
   .icon-btn.destructive { color: var(--system-red); }
-
   .skeleton-card { height: 72px; background: linear-gradient(90deg, var(--system-bg-secondary) 25%, var(--fill-quaternary) 50%, var(--system-bg-secondary) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: var(--radius-card); margin-bottom: 6px; }
   .skeleton-card.short { width: 80%; }
 </style>

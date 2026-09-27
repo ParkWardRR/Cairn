@@ -1,58 +1,58 @@
 /* ============================================================
-   Cairn — Apple HIG Dark Design System
+   Cairn — Apple HIG Design System (Light + Dark)
    iOS 11+ inspired: large titles, tab bar, grouped content,
    vibrancy, SF system fonts, spring animations
    ============================================================ */
 
-/* --- System Tokens (Apple HIG Dark Palette) --- */
+/* --- Light Mode (default) — Apple HIG Light Palette --- */
 :root {
-  /* Backgrounds — elevated surfaces get lighter (Apple dark mode convention) */
-  --system-bg:          #000000;
-  --system-bg-secondary: #1c1c1e;
-  --system-bg-tertiary:  #2c2c2e;
-  --system-bg-grouped:   #000000;
-  --system-bg-grouped-secondary: #1c1c1e;
-  --system-bg-grouped-tertiary:  #2c2c2e;
-  --system-bg-elevated:  #1c1c1e;
-  --system-bg-elevated-secondary: #2c2c2e;
+  /* Backgrounds */
+  --system-bg:          #ffffff;
+  --system-bg-secondary: #f2f2f7;
+  --system-bg-tertiary:  #e5e5ea;
+  --system-bg-grouped:   #f2f2f7;
+  --system-bg-grouped-secondary: #ffffff;
+  --system-bg-grouped-tertiary:  #f2f2f7;
+  --system-bg-elevated:  #ffffff;
+  --system-bg-elevated-secondary: #f2f2f7;
 
   /* Fills */
-  --fill-primary:   rgba(120, 120, 128, 0.36);
-  --fill-secondary: rgba(120, 120, 128, 0.32);
-  --fill-tertiary:  rgba(120, 120, 128, 0.24);
-  --fill-quaternary: rgba(120, 120, 128, 0.18);
+  --fill-primary:   rgba(120, 120, 128, 0.20);
+  --fill-secondary: rgba(120, 120, 128, 0.16);
+  --fill-tertiary:  rgba(120, 120, 128, 0.12);
+  --fill-quaternary: rgba(120, 120, 128, 0.08);
 
-  /* Labels (Apple naming) */
-  --label-primary:    #ffffff;
-  --label-secondary:  rgba(235, 235, 245, 0.6);
-  --label-tertiary:   rgba(235, 235, 245, 0.3);
-  --label-quaternary: rgba(235, 235, 245, 0.18);
+  /* Labels */
+  --label-primary:    #000000;
+  --label-secondary:  rgba(60, 60, 67, 0.6);
+  --label-tertiary:   rgba(60, 60, 67, 0.3);
+  --label-quaternary: rgba(60, 60, 67, 0.18);
 
   /* Separators */
-  --separator:       rgba(84, 84, 88, 0.65);
-  --separator-opaque: #38383a;
+  --separator:       rgba(60, 60, 67, 0.29);
+  --separator-opaque: #c6c6c8;
 
-  /* System Colors — tint colors */
-  --system-red:    #ff453a;
-  --system-orange: #ff9f0a;
-  --system-yellow: #ffd60a;
-  --system-green:  #30d158;
-  --system-teal:   #40c8e0;
-  --system-blue:   #0a84ff;
-  --system-indigo: #5e5ce6;
-  --system-purple: #bf5af2;
-  --system-pink:   #ff375f;
+  /* System Colors — light mode */
+  --system-red:    #ff3b30;
+  --system-orange: #ff9500;
+  --system-yellow: #ffcc00;
+  --system-green:  #34c759;
+  --system-teal:   #5ac8fa;
+  --system-blue:   #007aff;
+  --system-indigo: #5856d6;
+  --system-purple: #af52de;
+  --system-pink:   #ff2d55;
 
-  /* App accent — Cairn's signature red-pink */
-  --tint:        #ff375f;
-  --tint-dim:    rgba(255, 55, 95, 0.15);
-  --tint-active: rgba(255, 55, 95, 0.25);
+  /* App accent */
+  --tint:        #ff2d55;
+  --tint-dim:    rgba(255, 45, 85, 0.12);
+  --tint-active: rgba(255, 45, 85, 0.20);
 
   /* Vibrancy / materials */
-  --material-thin:       rgba(30, 30, 30, 0.55);
-  --material-regular:    rgba(36, 36, 38, 0.72);
-  --material-thick:      rgba(36, 36, 38, 0.85);
-  --material-chrome:     rgba(22, 22, 24, 0.88);
+  --material-thin:       rgba(255, 255, 255, 0.6);
+  --material-regular:    rgba(243, 243, 248, 0.78);
+  --material-thick:      rgba(243, 243, 248, 0.92);
+  --material-chrome:     rgba(247, 247, 252, 0.92);
 
   /* Radii — HIG standard */
   --radius-sm:    8px;
@@ -62,10 +62,10 @@
   --radius-card: 13px;
   --radius-full: 9999px;
 
-  /* Shadows — subtle depth */
-  --shadow-card:  0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --shadow-sheet: 0 -4px 32px rgba(0, 0, 0, 0.35);
+  /* Shadows — light mode */
+  --shadow-card:  0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --shadow-sheet: 0 -4px 32px rgba(0, 0, 0, 0.08);
 
   /* Motion — Apple spring curves */
   --ease-default:   cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -91,6 +91,153 @@
   /* Tab bar specific */
   --tab-bar-height: 49px;
   --tab-bar-total: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px));
+
+  color-scheme: light dark;
+}
+
+/* --- Dark Mode — Apple HIG Dark Palette --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --system-bg:          #000000;
+    --system-bg-secondary: #1c1c1e;
+    --system-bg-tertiary:  #2c2c2e;
+    --system-bg-grouped:   #000000;
+    --system-bg-grouped-secondary: #1c1c1e;
+    --system-bg-grouped-tertiary:  #2c2c2e;
+    --system-bg-elevated:  #1c1c1e;
+    --system-bg-elevated-secondary: #2c2c2e;
+
+    --fill-primary:   rgba(120, 120, 128, 0.36);
+    --fill-secondary: rgba(120, 120, 128, 0.32);
+    --fill-tertiary:  rgba(120, 120, 128, 0.24);
+    --fill-quaternary: rgba(120, 120, 128, 0.18);
+
+    --label-primary:    #ffffff;
+    --label-secondary:  rgba(235, 235, 245, 0.6);
+    --label-tertiary:   rgba(235, 235, 245, 0.3);
+    --label-quaternary: rgba(235, 235, 245, 0.18);
+
+    --separator:       rgba(84, 84, 88, 0.65);
+    --separator-opaque: #38383a;
+
+    --system-red:    #ff453a;
+    --system-orange: #ff9f0a;
+    --system-yellow: #ffd60a;
+    --system-green:  #30d158;
+    --system-teal:   #40c8e0;
+    --system-blue:   #0a84ff;
+    --system-indigo: #5e5ce6;
+    --system-purple: #bf5af2;
+    --system-pink:   #ff375f;
+
+    --tint:        #ff375f;
+    --tint-dim:    rgba(255, 55, 95, 0.15);
+    --tint-active: rgba(255, 55, 95, 0.25);
+
+    --material-thin:       rgba(30, 30, 30, 0.55);
+    --material-regular:    rgba(36, 36, 38, 0.72);
+    --material-thick:      rgba(36, 36, 38, 0.85);
+    --material-chrome:     rgba(22, 22, 24, 0.88);
+
+    --shadow-card:  0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-sheet: 0 -4px 32px rgba(0, 0, 0, 0.35);
+  }
+}
+
+/* --- Manual overrides via data attribute --- */
+[data-theme="dark"] {
+  --system-bg:          #000000;
+  --system-bg-secondary: #1c1c1e;
+  --system-bg-tertiary:  #2c2c2e;
+  --system-bg-grouped:   #000000;
+  --system-bg-grouped-secondary: #1c1c1e;
+  --system-bg-grouped-tertiary:  #2c2c2e;
+  --system-bg-elevated:  #1c1c1e;
+  --system-bg-elevated-secondary: #2c2c2e;
+
+  --fill-primary:   rgba(120, 120, 128, 0.36);
+  --fill-secondary: rgba(120, 120, 128, 0.32);
+  --fill-tertiary:  rgba(120, 120, 128, 0.24);
+  --fill-quaternary: rgba(120, 120, 128, 0.18);
+
+  --label-primary:    #ffffff;
+  --label-secondary:  rgba(235, 235, 245, 0.6);
+  --label-tertiary:   rgba(235, 235, 245, 0.3);
+  --label-quaternary: rgba(235, 235, 245, 0.18);
+
+  --separator:       rgba(84, 84, 88, 0.65);
+  --separator-opaque: #38383a;
+
+  --system-red:    #ff453a;
+  --system-orange: #ff9f0a;
+  --system-yellow: #ffd60a;
+  --system-green:  #30d158;
+  --system-teal:   #40c8e0;
+  --system-blue:   #0a84ff;
+  --system-indigo: #5e5ce6;
+  --system-purple: #bf5af2;
+  --system-pink:   #ff375f;
+
+  --tint:        #ff375f;
+  --tint-dim:    rgba(255, 55, 95, 0.15);
+  --tint-active: rgba(255, 55, 95, 0.25);
+
+  --material-thin:       rgba(30, 30, 30, 0.55);
+  --material-regular:    rgba(36, 36, 38, 0.72);
+  --material-thick:      rgba(36, 36, 38, 0.85);
+  --material-chrome:     rgba(22, 22, 24, 0.88);
+
+  --shadow-card:  0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-sheet: 0 -4px 32px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="light"] {
+  --system-bg:          #ffffff;
+  --system-bg-secondary: #f2f2f7;
+  --system-bg-tertiary:  #e5e5ea;
+  --system-bg-grouped:   #f2f2f7;
+  --system-bg-grouped-secondary: #ffffff;
+  --system-bg-grouped-tertiary:  #f2f2f7;
+  --system-bg-elevated:  #ffffff;
+  --system-bg-elevated-secondary: #f2f2f7;
+
+  --fill-primary:   rgba(120, 120, 128, 0.20);
+  --fill-secondary: rgba(120, 120, 128, 0.16);
+  --fill-tertiary:  rgba(120, 120, 128, 0.12);
+  --fill-quaternary: rgba(120, 120, 128, 0.08);
+
+  --label-primary:    #000000;
+  --label-secondary:  rgba(60, 60, 67, 0.6);
+  --label-tertiary:   rgba(60, 60, 67, 0.3);
+  --label-quaternary: rgba(60, 60, 67, 0.18);
+
+  --separator:       rgba(60, 60, 67, 0.29);
+  --separator-opaque: #c6c6c8;
+
+  --system-red:    #ff3b30;
+  --system-orange: #ff9500;
+  --system-yellow: #ffcc00;
+  --system-green:  #34c759;
+  --system-teal:   #5ac8fa;
+  --system-blue:   #007aff;
+  --system-indigo: #5856d6;
+  --system-purple: #af52de;
+  --system-pink:   #ff2d55;
+
+  --tint:        #ff2d55;
+  --tint-dim:    rgba(255, 45, 85, 0.12);
+  --tint-active: rgba(255, 45, 85, 0.20);
+
+  --material-thin:       rgba(255, 255, 255, 0.6);
+  --material-regular:    rgba(243, 243, 248, 0.78);
+  --material-thick:      rgba(243, 243, 248, 0.92);
+  --material-chrome:     rgba(247, 247, 252, 0.92);
+
+  --shadow-card:  0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+  --shadow-sheet: 0 -4px 32px rgba(0, 0, 0, 0.08);
 }
 
 /* --- Reset --- */
@@ -117,9 +264,11 @@ body {
   overflow-x: hidden;
   font-weight: 400;
   letter-spacing: -0.022em;
+  transition: background-color var(--duration-normal) var(--ease-default),
+              color var(--duration-normal) var(--ease-default);
 }
 
-/* --- Links — system blue tint --- */
+/* --- Links --- */
 a {
   color: var(--tint);
   text-decoration: none;
@@ -162,35 +311,57 @@ input::placeholder {
   color: white;
 }
 
-/* --- Apple-style scrollbar --- */
-::-webkit-scrollbar { width: 0; height: 0; }
+/* --- Scrollbar --- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--fill-secondary); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fill-primary); }
 
-/* --- Leaflet dark overrides --- */
-.leaflet-container { background: var(--system-bg) !important; }
-.leaflet-control-zoom a {
+/* --- MapLibre GL overrides --- */
+.maplibregl-map { font-family: var(--font-system); }
+.maplibregl-ctrl-group {
   background: var(--material-thick) !important;
-  color: var(--label-primary) !important;
-  border-color: var(--separator) !important;
   backdrop-filter: blur(20px) saturate(1.8);
   -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: none !important;
+  box-shadow: var(--shadow-card) !important;
+  border-radius: var(--radius-sm) !important;
+  overflow: hidden;
 }
-.leaflet-control-attribution {
+.maplibregl-ctrl-group button {
+  width: 32px !important;
+  height: 32px !important;
+  border: none !important;
+  border-bottom: 0.5px solid var(--separator) !important;
+}
+.maplibregl-ctrl-group button:last-child { border-bottom: none !important; }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: var(--maplibre-icon-filter, none);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --maplibre-icon-filter: invert(1); }
+}
+[data-theme="dark"] { --maplibre-icon-filter: invert(1); }
+.maplibregl-ctrl-attrib {
   background: var(--material-thin) !important;
   color: var(--label-quaternary) !important;
   font-size: 10px !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
-.leaflet-control-attribution a { color: var(--label-tertiary) !important; }
-.leaflet-popup-content-wrapper {
+.maplibregl-ctrl-attrib a { color: var(--label-tertiary) !important; }
+.maplibregl-popup-content {
   background: var(--material-thick) !important;
   color: var(--label-primary) !important;
   border-radius: var(--radius-lg) !important;
   box-shadow: var(--shadow-float) !important;
   backdrop-filter: blur(20px) saturate(1.8);
   -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  padding: 12px 16px !important;
 }
-.leaflet-popup-tip { background: var(--material-thick) !important; }
+.maplibregl-popup-tip { border-top-color: var(--material-thick) !important; }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--material-thick) !important; }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--material-thick) !important; }
 
 /* --- Animations --- */
 @keyframes fade-in {
