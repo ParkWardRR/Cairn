@@ -1,4 +1,5 @@
 <script lang="ts">
+  import 'maplibre-gl/dist/maplibre-gl.css';
   import '../app.css';
   import Nav from '$lib/components/Nav.svelte';
   import Toast from '$lib/components/Toast.svelte';

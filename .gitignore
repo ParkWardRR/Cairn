@@ -22,4 +22,7 @@ rust/trajectory/target/
 web/node_modules/
 web/.svelte-kit/
 web/build/
+web/static/maplibre/
 .nimbalyst/
+nimbalyst-local/
+firmware/freematics-base/.pio/

@@ -30,9 +30,11 @@ services:
   caddy:
     image: docker.io/library/caddy:2
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "8080:80"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/Caddyfile.podman:/etc/caddy/Caddyfile:ro
+      - ../web/build:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
 

@@ -1,12 +1,11 @@
-# Caddyfile — reverse proxy for Cairn
+# Caddyfile.podman — rootless Podman variant
 #
-# Docker: cairn.local via mDNS with internal TLS
-# Podman: :80 plain HTTP, port-forwarded to 8080 on host
+# Listens on :80 inside the container, port-forwarded to 8080 on the host.
+# API proxied to ingestd on the host via host.containers.internal.
 
-cairn.local {
-	# Ingest API
+:80 {
 	handle /api/v1/* {
-		reverse_proxy ingest:8443
+		reverse_proxy host.containers.internal:8443
 	}
 
 	handle {
@@ -32,6 +31,4 @@ cairn.local {
 		output stdout
 		format console
 	}
-
-	tls internal
 }

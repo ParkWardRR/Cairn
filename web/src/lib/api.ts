@@ -13,8 +13,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (resp.status === 204) return null as T;
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const ct = resp.headers.get('content-type') || '';
-  if (ct.includes('json')) return resp.json();
-  return resp as unknown as T;
+  if (!ct.includes('json')) throw new Error('Expected JSON response');
+  return resp.json();
 }
 
 async function withMockFallback<T>(live: () => Promise<T>, mock: () => T): Promise<T> {

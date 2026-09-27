@@ -3,6 +3,9 @@
   import { mapSettings, getMapStyle } from '$lib/stores/mapSettings';
   import type { MapSettings } from '$lib/stores/mapSettings';
   import * as maplibregl from 'maplibre-gl';
+  import { setWorkerUrl } from 'maplibre-gl';
+
+  setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
 
   let {
     class: className = '',

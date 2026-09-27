@@ -28,57 +28,37 @@ function rasterStyle(tiles: string[], attribution: string, maxZoom = 20): any {
 
 export const TILE_PROVIDERS: TileProvider[] = [
   {
-    id: 'carto-voyager',
-    name: 'CARTO Voyager',
-    group: 'Light',
+    id: 'ofm-liberty',
+    name: 'Liberty',
+    group: 'Vector',
     dark: false,
-    style: () => rasterStyle(
-      ['https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-       'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-       'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'],
-      '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    ),
+    style: () => 'https://tiles.openfreemap.org/styles/liberty',
   },
   {
-    id: 'carto-positron',
-    name: 'CARTO Positron',
-    group: 'Light',
+    id: 'ofm-bright',
+    name: 'Bright',
+    group: 'Vector',
     dark: false,
-    style: () => rasterStyle(
-      ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-       'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-       'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'],
-      '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    ),
+    style: () => 'https://tiles.openfreemap.org/styles/bright',
   },
   {
-    id: 'carto-dark',
-    name: 'CARTO Dark Matter',
-    group: 'Dark',
-    dark: true,
-    style: () => rasterStyle(
-      ['https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-       'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-       'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'],
-      '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    ),
+    id: 'ofm-positron',
+    name: 'Positron',
+    group: 'Vector',
+    dark: false,
+    style: () => 'https://tiles.openfreemap.org/styles/positron',
   },
   {
-    id: 'carto-dark-nolabels',
-    name: 'CARTO Dark (No Labels)',
-    group: 'Dark',
+    id: 'ofm-dark',
+    name: 'Dark Matter',
+    group: 'Vector',
     dark: true,
-    style: () => rasterStyle(
-      ['https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png',
-       'https://b.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png',
-       'https://c.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png'],
-      '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    ),
+    style: () => 'https://tiles.openfreemap.org/styles/dark_matter',
   },
   {
     id: 'osm',
     name: 'OpenStreetMap',
-    group: 'Standard',
+    group: 'Raster',
     dark: false,
     style: () => rasterStyle(
       ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
@@ -89,7 +69,7 @@ export const TILE_PROVIDERS: TileProvider[] = [
   {
     id: 'opentopomap',
     name: 'OpenTopoMap',
-    group: 'Standard',
+    group: 'Raster',
     dark: false,
     style: () => rasterStyle(
       ['https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
@@ -126,7 +106,7 @@ export interface MapSettings {
 const STORAGE_KEY = 'cairn-map-settings';
 
 const defaults: MapSettings = {
-  providerId: 'carto-voyager',
+  providerId: 'ofm-liberty',
   engine: '2d',
   customTileUrl: '',
   customAttribution: '',
