@@ -429,21 +429,21 @@ STOP_CANDIDATE
 
 ### Plugin ABI
 
-- [ ] **Design narrow plugin interface**
-  - [ ] Define versioned input/output schemas
-  - [ ] Deterministic execution — same input always produces same output
-  - [ ] Host validates all plugin results
+- [x] **Design narrow plugin interface**
+  - [x] Define versioned input/output schemas
+  - [x] Deterministic execution — same input always produces same output
+  - [x] Host validates all plugin results
   - [ ] Record plugin version/hash for every derivation
 
 ### Plugins
 
-- [ ] **Trip classifier**
-  - [ ] Input: normalized trip summary + sampled route/motion
-  - [ ] Output: labels (commute, canyon drive, errand, road trip, unknown)
+- [x] **Trip classifier**
+  - [x] Input: normalized trip summary + sampled route/motion
+  - [x] Output: labels (commute, canyon drive, errand, road trip, unknown)
 
-- [ ] **Privacy redactor**
-  - [ ] Input: route + configured privacy zones
-  - [ ] Output: redacted route/endpoint geometry
+- [x] **Privacy redactor**
+  - [x] Input: route + configured privacy zones
+  - [x] Output: redacted route/endpoint geometry
 
 - [ ] **Export transformer**
   - [ ] Input: trip model
@@ -459,11 +459,11 @@ STOP_CANDIDATE
 
 ### Sandbox Constraints
 
-- [ ] No database access
-- [ ] No network access
-- [ ] No filesystem access
-- [ ] No authority to alter raw data
-- [ ] Structured input → structured output only
+- [x] No database access
+- [x] No network access
+- [x] No filesystem access
+- [x] No authority to alter raw data
+- [x] Structured input → structured output only
 
 ---
 

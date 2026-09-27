@@ -10,3 +10,5 @@ emulator/target/
 gleam/trip-orchestrator/build/
 zig/ingest/ingestd
 deploy/ingestd-linux
+plugins/*/target/
+plugins/*/.mooncakes/

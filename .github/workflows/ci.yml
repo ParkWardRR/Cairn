@@ -143,6 +143,35 @@ jobs:
         working-directory: gleam/trip-orchestrator
         run: gleam test
 
+  build-plugins:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit
+        run: |
+          if ! command -v moon &>/dev/null; then
+            curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          fi
+
+      - name: Build trip-classifier
+        working-directory: plugins/trip-classifier
+        run: |
+          moon install
+          moon build --target wasm
+
+      - name: Build privacy-redactor
+        working-directory: plugins/privacy-redactor
+        run: |
+          moon install
+          moon build --target wasm
+
+      - name: Verify WASM outputs
+        run: |
+          find plugins -name '*.wasm' -type f | while read f; do
+            echo "OK: $f ($(wc -c < "$f" | tr -d ' ') bytes)"
+          done
+
   validate-pwa:
     runs-on: [self-hosted, cairn]
     steps:

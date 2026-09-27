@@ -1,0 +1,7 @@
+{
+  "name": "trip-classifier",
+  "version": "0.1.0",
+  "type": "classifier",
+  "entry_function": "classify",
+  "description": "Classifies trips by type: commute, errand, road trip, canyon drive, night drive, loop"
+}
