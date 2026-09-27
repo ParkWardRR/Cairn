@@ -9,6 +9,7 @@
   import Tag from '$lib/components/Tag.svelte';
   import Dialog from '$lib/components/Dialog.svelte';
   import MapLibreMap from '$lib/components/MapLibreMap.svelte';
+  import { tripRouteLayers } from '$lib/map/deckLayers';
   import type { Map as MLMap } from 'maplibre-gl';
 
   const id = page.params.id!;
@@ -20,6 +21,8 @@
   let deleteOpen = $state(false);
   let tags = $state<string[]>([]);
   let newTag = $state('');
+  let deckRouteData = $state<any[]>([]);
+  let mapComponent: MapLibreMap;
 
   onMount(async () => {
     const [tripRes, routeRes, eventsRes] = await Promise.allSettled([
@@ -40,87 +43,11 @@
     if (routeData?.features?.length > 0) {
       const feature = routeData.features[0];
       const coords: number[][] = feature.geometry?.coordinates || [];
-      const speeds: number[] = feature.properties?.speed || [];
 
       if (coords.length > 1) {
-        const maxSpeed = Math.max(...speeds.filter((s: number) => s > 0), 60);
-
-        if (speeds.length > 0) {
-          const segmentFeatures = [];
-          for (let i = 1; i < coords.length; i++) {
-            const ratio = Math.min((speeds[i] || 0) / maxSpeed, 1);
-            segmentFeatures.push({
-              type: 'Feature' as const,
-              geometry: {
-                type: 'LineString' as const,
-                coordinates: [coords[i-1].slice(0, 2), coords[i].slice(0, 2)],
-              },
-              properties: { speed: ratio },
-            });
-          }
-
-          map.addSource('route-segments', {
-            type: 'geojson',
-            data: { type: 'FeatureCollection', features: segmentFeatures },
-          });
-
-          map.addLayer({
-            id: 'route-speed',
-            type: 'line',
-            source: 'route-segments',
-            paint: {
-              'line-width': 4,
-              'line-color': [
-                'interpolate', ['linear'], ['get', 'speed'],
-                0, '#30d158',
-                0.5, '#ffd60a',
-                1, '#ff375f',
-              ],
-              'line-opacity': 0.85,
-            },
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-          });
-        } else {
-          map.addSource('route', {
-            type: 'geojson',
-            data: {
-              type: 'Feature',
-              geometry: { type: 'LineString', coordinates: coords.map(c => c.slice(0, 2)) },
-              properties: {},
-            },
-          });
-          map.addLayer({
-            id: 'route-line',
-            type: 'line',
-            source: 'route',
-            paint: { 'line-color': '#ff375f', 'line-width': 4, 'line-opacity': 0.85 },
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-          });
-        }
-
-        const start = coords[0];
-        const end = coords[coords.length - 1];
-        map.addSource('endpoints', {
-          type: 'geojson',
-          data: {
-            type: 'FeatureCollection',
-            features: [
-              { type: 'Feature', geometry: { type: 'Point', coordinates: [start[0], start[1]] }, properties: { type: 'start' } },
-              { type: 'Feature', geometry: { type: 'Point', coordinates: [end[0], end[1]] }, properties: { type: 'end' } },
-            ],
-          },
-        });
-        map.addLayer({
-          id: 'endpoint-circles',
-          type: 'circle',
-          source: 'endpoints',
-          paint: {
-            'circle-radius': 7,
-            'circle-color': ['match', ['get', 'type'], 'start', '#30d158', '#ff375f'],
-            'circle-stroke-width': 2,
-            'circle-stroke-color': '#ffffff',
-          },
-        });
+        const layers = tripRouteLayers(routeData, { colorBySpeed: true });
+        deckRouteData = layers;
+        mapComponent?.setDeckLayers(layers);
 
         const lngs = coords.map(c => c[0]);
         const lats = coords.map(c => c[1]);
@@ -224,7 +151,7 @@
   <section class="map-section">
     <div class="map-wrap">
       {#if !loading}
-        <MapLibreMap onready={setupMap} />
+        <MapLibreMap bind:this={mapComponent} deckLayers={deckRouteData} onready={setupMap} />
       {/if}
     </div>
     <div class="speed-legend">

@@ -11,6 +11,7 @@
     interactive = true,
     pitch = 0,
     bearing = 0,
+    deckLayers = [],
     onready,
   }: {
     class?: string;
@@ -19,13 +20,33 @@
     interactive?: boolean;
     pitch?: number;
     bearing?: number;
+    deckLayers?: any[];
     onready?: (map: maplibregl.Map) => void;
   } = $props();
 
   let container: HTMLDivElement;
   let map: maplibregl.Map | null = null;
+  let deckOverlay: any = null;
   let currentSettings: MapSettings | null = null;
   let unsubscribe: (() => void) | null = null;
+
+  async function initDeckOverlay() {
+    if (deckLayers.length === 0 || !map) return;
+    try {
+      const { MapboxOverlay } = await import('@deck.gl/mapbox');
+      deckOverlay = new MapboxOverlay({ layers: deckLayers, interleaved: true });
+      map.addControl(deckOverlay as any);
+    } catch {}
+  }
+
+  export function setDeckLayers(layers: any[]) {
+    if (deckOverlay) {
+      deckOverlay.setProps({ layers });
+    } else if (layers.length > 0 && map) {
+      deckLayers = layers;
+      initDeckOverlay();
+    }
+  }
 
   onMount(() => {
     const initialSettings = getSettingsSync();
@@ -53,6 +74,7 @@
     }
 
     map.on('load', () => {
+      if (deckLayers.length > 0) initDeckOverlay();
       onready?.(map!);
     });
 
@@ -79,6 +101,7 @@
 
   onDestroy(() => {
     unsubscribe?.();
+    deckOverlay?.finalize();
     map?.remove();
     map = null;
   });
