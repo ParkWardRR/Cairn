@@ -142,6 +142,13 @@ trip/
   - [ ] Determine if external GNSS antenna or OBD extension cable is needed
   - [ ] Document OBD port location impact on GNSS reception
 
+- [ ] **External antenna & accessory support (exploration)** — see `docs/hardware-accessories.md`
+  - [ ] Bench-test a cheap external L1 active antenna against the onboard ceramic antenna
+  - [ ] Evaluate salvage/donor GPS antennas as a low-cost alternative to buying new
+  - [ ] Determine if the M9/M10 module exposes an antenna feed, or if a module swap is required
+  - [ ] Explore a secondary/redundant GNSS receiver for A/B RF comparison and dropout failover
+  - [ ] Decide whether any of the above graduates from bench tooling into shipped firmware/hardware
+
 ---
 
 ## Phase 2 — Offline Trip Recorder
@@ -475,26 +482,26 @@ STOP_CANDIDATE
 
 ### Deliverables
 
-- [ ] **`trip-inspector`**
-  - [ ] Open local trip bundles
-  - [ ] Inspect metadata, sample timing, GNSS accuracy
-  - [ ] Visualize speed and IMU data
+- [x] **`trip-inspector`**
+  - [x] Open local trip bundles
+  - [x] Inspect metadata, sample timing, GNSS accuracy
+  - [x] Visualize speed and IMU data
 
-- [ ] **`trip-diff`**
-  - [ ] Compare device raw route vs. server-normalized route
-  - [ ] Highlight divergence points
+- [x] **`trip-diff`**
+  - [x] Compare device raw route vs. server-normalized route
+  - [x] Highlight divergence points
 
-- [ ] **`trip-replay`**
-  - [ ] Feed recorded trips into test server
-  - [ ] Support realistic and accelerated timing
+- [x] **`trip-replay`**
+  - [x] Feed recorded trips into test server
+  - [x] Support realistic and accelerated timing
 
-- [ ] **`route-density`**
-  - [ ] Generate heatmap of frequently driven roads
-  - [ ] Local image/vector output
+- [x] **`route-density`**
+  - [x] Generate heatmap of frequently driven roads
+  - [x] Local image/vector output
 
-- [ ] **`sd-recover`**
-  - [ ] Scan pulled microSD card for incomplete trip files
-  - [ ] Rebuild recoverable trip data
+- [x] **`sd-recover`**
+  - [x] Scan pulled microSD card for incomplete trip files
+  - [x] Rebuild recoverable trip data
 
 ---
 

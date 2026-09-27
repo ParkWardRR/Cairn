@@ -130,6 +130,32 @@ jobs:
             echo "Ingest service not running -- skipping emulator tests"
           fi
 
+  build-odin:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Odin tools
+        run: |
+          for tool in trip-inspector trip-diff trip-replay route-density sd-recover; do
+            echo "Building $tool..."
+            odin build "odin/$tool/" -o:speed -out:"odin/$tool/$tool"
+          done
+
+      - name: Smoke test trip-inspector
+        run: |
+          # Generate a test bundle
+          if [ -x emulator/target/release/cairn-emulator ]; then
+            emulator/target/release/cairn-emulator \
+              --scenario normal_commute --speedup 1000 --seed 99 \
+              --output /tmp/ci-odin-test
+            BUNDLE=$(find /tmp/ci-odin-test -name manifest.json -exec dirname {} \;| head -1)
+            odin/trip-inspector/trip-inspector "$BUNDLE"
+            rm -rf /tmp/ci-odin-test
+          else
+            echo "Emulator not available -- skipping smoke test"
+          fi
+
   build-gleam:
     runs-on: [self-hosted, cairn]
     steps:

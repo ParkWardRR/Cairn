@@ -12,3 +12,9 @@ zig/ingest/ingestd
 deploy/ingestd-linux
 plugins/*/target/
 plugins/*/.mooncakes/
+plugins/*/_build/
+odin/*/trip-inspector
+odin/*/trip-diff
+odin/*/trip-replay
+odin/*/route-density
+odin/*/sd-recover
