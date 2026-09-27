@@ -13,6 +13,7 @@ import (
 	"github.com/ParkWardRR/Cairn/ingest/internal/db"
 	"github.com/ParkWardRR/Cairn/ingest/internal/handler"
 	"github.com/ParkWardRR/Cairn/ingest/internal/mqtt"
+	"github.com/ParkWardRR/Cairn/ingest/internal/plugin"
 	"github.com/ParkWardRR/Cairn/ingest/internal/storage"
 )
 
@@ -25,6 +26,7 @@ func main() {
 	databaseURL := envOr("DATABASE_URL", "postgres://cairn@localhost/cairn")
 	bundleDir := envOr("BUNDLE_DIR", "/data/bundles")
 	mqttBroker := os.Getenv("MQTT_BROKER_URL")
+	pluginDir := envOr("PLUGIN_DIR", "/data/plugins")
 	tlsCert := os.Getenv("TLS_CERT")
 	tlsKey := os.Getenv("TLS_KEY")
 
@@ -50,6 +52,14 @@ func main() {
 	mqttPub := mqtt.New(mqttBroker)
 	defer mqttPub.Close()
 
+	// ── plugins ─────────────────────────────────────────────────────────
+
+	pluginHost, err := plugin.NewHost(pluginDir)
+	if err != nil {
+		log.Fatalf("plugin host init failed: %v", err)
+	}
+	defer pluginHost.Close()
+
 	// ── routes ──────────────────────────────────────────────────────────
 
 	mux := http.NewServeMux()
@@ -58,6 +68,7 @@ func main() {
 	uploadHandler.SetMQTT(mqttPub)
 	healthHandler := handler.NewHealthHandler(pool)
 	apiHandler := handler.NewApiHandler(queries)
+	pluginHandler := handler.NewPluginHandler(pluginHost, queries)
 
 	// Ingest endpoints
 	mux.HandleFunc("GET /api/v1/health", healthHandler.Health)
@@ -84,6 +95,12 @@ func main() {
 	mux.HandleFunc("POST /api/v1/places", apiHandler.CreatePlace)
 	mux.HandleFunc("PUT /api/v1/places/{id}", apiHandler.UpdatePlace)
 	mux.HandleFunc("DELETE /api/v1/places/{id}", apiHandler.DeletePlace)
+
+	// Plugin endpoints
+	mux.HandleFunc("GET /api/v1/plugins", pluginHandler.ListPlugins)
+	mux.HandleFunc("POST /api/v1/plugins/{name}/run", pluginHandler.RunPlugin)
+	mux.HandleFunc("POST /api/v1/trips/{id}/classify", pluginHandler.ClassifyTrip)
+	mux.HandleFunc("POST /api/v1/trips/{id}/redact", pluginHandler.RedactTrip)
 
 	// ── server ──────────────────────────────────────────────────────────
 
