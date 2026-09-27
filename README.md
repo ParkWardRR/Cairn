@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/SvelteKit-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="SvelteKit">
   <img src="https://img.shields.io/badge/Zig-F7A41D?style=flat-square&logo=zig&logoColor=white" alt="Zig">
   <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust">
@@ -30,6 +31,13 @@
   <img src="https://img.shields.io/badge/cloud-none-95A5A6?style=flat-square" alt="No Cloud">
   <img src="https://img.shields.io/badge/LTE-disabled-E74C3C?style=flat-square" alt="LTE Disabled">
 </p>
+
+---
+
+<p align="center">
+  <img src="web/static/screenshots/hero-dashboard.png" alt="Cairn Dashboard — Apple HIG dark theme" width="800">
+</p>
+<p align="center"><sub>Today dashboard — Apple HIG dark theme with live sync status, trip stats, route maps, and device health</sub></p>
 
 ---
 
@@ -78,10 +86,10 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 │                                                                     │
 │  ┌──────────────┐   ┌───────────────┐   ┌────────────────────────┐ │
 │  │ Go Ingest    │──▶│ PostgreSQL    │──▶│ Go API (16 endpoints)  │ │
-│  │ mTLS upload  │   │ + PostGIS     │   │ + PWA (dark theme,     │ │
-│  │ resumable    │   │               │   │   Leaflet maps)        │ │
-│  │ dedup/receipt│   └───────┬───────┘   └────────────────────────┘ │
-│  └──────────────┘           │                                      │
+│  │ mTLS upload  │   │ + PostGIS     │   │ + SvelteKit web app    │ │
+│  │ resumable    │   │               │   │   (Apple HIG dark,     │ │
+│  │ dedup/receipt│   └───────┬───────┘   │   Leaflet maps)        │ │
+│  └──────────────┘           │           └────────────────────────┘ │
 │                    ┌────────┼─────────┐                            │
 │                    ▼        ▼         ▼                            │
 │  ┌──────────────┐ ┌─────────────┐ ┌────────────────┐              │
@@ -113,16 +121,24 @@ The core server — receives trip bundles from the device and serves the read AP
 | **Plugins** | WASM plugin host via wazero — classify trips, redact routes, run custom enrichments |
 | **CORS** | Built-in middleware for PWA access |
 
-### PWA (`pwa/`)
+### SvelteKit Web App (`web/`)
 
-Offline-capable dark-theme web UI. No build tools, no npm — vanilla HTML/CSS/JS with Leaflet maps.
+Apple HIG dark-theme web UI built with SvelteKit 2 + Svelte 5. Statically generated via `@sveltejs/adapter-static` — deploys as plain HTML/CSS/JS with no server-side runtime.
 
-- **Today** — most recent trip, last parked location, sync status, device health
-- **Trips** — time-sorted list with map thumbnails, filter by date/device/tag, pagination
-- **Trip detail** — full route on map with speed-colored rendering, timeline, export buttons
-- **Places** — saved locations with configurable radius
-- **Devices** — firmware version, last sync, trip counts
-- **Settings** — data export, trip deletion
+- **Today** — dashboard with trip stats (today/week/month/all time), most recent trip with route map, last parked location, device health, live sync status
+- **Trips** — filterable list with mini route maps, date/device/tag filters, pagination
+- **Trip detail** — full route with speed-colored polyline, events timeline, info table, tags CRUD, GPX/GeoJSON/CSV export
+- **Places** — interactive Leaflet map with click-to-set geofences, CRUD
+- **Devices** — device cards with status indicators, firmware, trip count, total distance
+- **Privacy & Data** — data summary, bulk export, trip management, bulk delete
+
+Design system: Apple HIG 2017 dark mode — `#000000` base, elevated surfaces, SF Pro/Inter font stack, 13px card radii, 0.5px separators, spring animations, vibrancy blur, filled/outlined icon states. Leaflet maps use dark CARTO tiles.
+
+An [animated hero demo](web/static/screenshots/hero-animation.html) cycles through Today → Trips → Devices views.
+
+### Legacy PWA (`pwa/`)
+
+Original vanilla HTML/CSS/JS web UI (no build tools). Superseded by the SvelteKit app above.
 
 ### Gleam Trip Orchestrator (`gleam/trip-orchestrator/`)
 
@@ -187,6 +203,7 @@ Offline trajectory analysis experiments for recorded trip bundles. Five subcomma
 | **Gleam** | Background event processing, job scheduling | Clean distributed-systems model with OTP fault isolation |
 | **MoonBit** | WASM plugins: trip classifier, privacy redactor | Portable sandboxed components via WASM, compiles to 62-94 KB |
 | **Odin** | Offline CLI tools: inspector, diff, replay, density, recovery | Pleasant native tooling with explicit memory, fast compilation |
+| **SvelteKit** | Web UI (Apple HIG dark theme) | Svelte 5 runes, static adapter, zero runtime overhead |
 | **C++** | Freematics ESP32 firmware | Shortest path to real driving data on vendor hardware |
 
 ### Why not Python?
@@ -224,7 +241,16 @@ Cairn/
 │   ├── trip-replay/             #   Replay bundles into ingest server
 │   ├── route-density/           #   SVG heatmap generation
 │   └── sd-recover/              #   MicroSD recovery for incomplete bundles
-├── pwa/                         # Offline-capable dark-theme web UI
+├── web/                         # SvelteKit 2 + Svelte 5 web app (Apple HIG dark)
+│   ├── src/
+│   │   ├── app.css              #   Apple HIG dark design system tokens
+│   │   ├── app.html             #   Shell with Leaflet CDN + Google Fonts
+│   │   ├── lib/                 #   API client, stores, shared components
+│   │   └── routes/              #   SvelteKit pages: today, trips, places, devices, settings, hero
+│   ├── static/                  #   Icons, manifest, hero screenshots
+│   ├── svelte.config.js         #   adapter-static with SPA fallback
+│   └── package.json             #   SvelteKit 2, Svelte 5, Vite 5
+├── pwa/                         # Legacy vanilla HTML/CSS/JS web UI
 │   ├── index.html               #   SPA shell with Leaflet 1.9.4
 │   ├── app.js                   #   Router, API client, 6 views
 │   ├── style.css                #   Dark theme, responsive layout
@@ -369,6 +395,9 @@ cat migrations/001_init.sql migrations/002_functions.sql migrations/003_gleam_ta
 ### Build from Source
 
 ```bash
+# SvelteKit web app
+cd web && npm install && npm run build
+
 # Go ingest service
 cd zig/ingest && go build ./cmd/ingestd/
 
