@@ -6,7 +6,7 @@
     { href: '/trips', label: 'Trips', icon: 'map' },
     { href: '/places', label: 'Places', icon: 'pin' },
     { href: '/devices', label: 'Devices', icon: 'cpu' },
-    { href: '/settings', label: 'Privacy', icon: 'shield' },
+    { href: '/settings', label: 'Settings', icon: 'shield' },
   ] as const;
 
   function isActive(href: string, path: string): boolean {

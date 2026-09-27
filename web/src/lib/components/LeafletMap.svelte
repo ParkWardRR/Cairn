@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { mapSettings, getActiveProvider, TILE_PROVIDERS } from '$lib/stores/mapSettings';
+  import type { MapSettings } from '$lib/stores/mapSettings';
 
   let {
     class: className = '',
@@ -17,9 +19,49 @@
 
   let container: HTMLDivElement;
   let map: any;
+  let currentLayer: any = null;
+  let currentSettings: MapSettings | null = null;
+  let unsubscribe: (() => void) | null = null;
 
-  const DARK_TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+  async function applyTileLayer(settings: MapSettings) {
+    const L = (window as any).L;
+    if (!L || !map) return;
+
+    if (currentLayer) {
+      map.removeLayer(currentLayer);
+      currentLayer = null;
+    }
+
+    if (settings.providerId === 'pmtiles' && settings.pmtilesUrl) {
+      try {
+        const { leafletLayer } = await import('protomaps-leaflet');
+        currentLayer = leafletLayer({
+          url: settings.pmtilesUrl,
+        } as any);
+        currentLayer.addTo(map);
+      } catch {
+        const fallback = TILE_PROVIDERS[0];
+        currentLayer = L.tileLayer(fallback.url, {
+          attribution: fallback.attribution,
+          maxZoom: fallback.maxZoom,
+        });
+        currentLayer.addTo(map);
+      }
+    } else if (settings.providerId === 'custom' && settings.customTileUrl) {
+      currentLayer = L.tileLayer(settings.customTileUrl, {
+        attribution: settings.customAttribution || 'Custom tiles',
+        maxZoom: 20,
+      });
+      currentLayer.addTo(map);
+    } else {
+      const provider = getActiveProvider(settings) ?? TILE_PROVIDERS[0];
+      currentLayer = L.tileLayer(provider.url, {
+        attribution: provider.attribution,
+        maxZoom: provider.maxZoom,
+      });
+      currentLayer.addTo(map);
+    }
+  }
 
   onMount(() => {
     const L = (window as any).L;
@@ -34,13 +76,22 @@
       doubleClickZoom: interactive,
     });
 
-    L.tileLayer(DARK_TILES, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(map);
     map.setView(center, zoom);
+
+    unsubscribe = mapSettings.subscribe((settings) => {
+      if (!currentSettings || settings.providerId !== currentSettings.providerId
+          || settings.customTileUrl !== currentSettings.customTileUrl
+          || settings.pmtilesUrl !== currentSettings.pmtilesUrl) {
+        currentSettings = { ...settings };
+        applyTileLayer(settings);
+      }
+    });
 
     onready?.(map);
   });
 
   onDestroy(() => {
+    unsubscribe?.();
     map?.remove();
   });
 </script>
@@ -53,7 +104,6 @@
     height: 100%;
     border-radius: var(--radius-md);
     overflow: hidden;
-    border: 1px solid var(--border-default);
-    background: var(--bg-base);
+    background: var(--system-bg);
   }
 </style>
