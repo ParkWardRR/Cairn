@@ -223,6 +223,7 @@ docker compose up -d
 | [Threat Model](docs/threat-model.md) | Security boundaries, device identity, and transport security |
 | [Retention & Backup](docs/retention-and-backup.md) | Data lifecycle from device spool to archive |
 | [Home Wi-Fi Deployment](docs/home-wifi-deployment.md) | Network setup, mDNS, certificates, and provisioning |
+| [RTOS Evaluation](docs/rtos-evaluation.md) | Zephyr/NuttX vs. Arduino-ESP-IDF feasibility research (not adopted) |
 | [Roadmap](ROADMAP.md) | Full phased roadmap with checklists |
 | [Test Plan](docs/test-plan.md) | ELI5 testing guide for RPi Zero + Freematics hardware |
 
