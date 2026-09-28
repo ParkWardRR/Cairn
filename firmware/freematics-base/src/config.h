@@ -10,6 +10,11 @@
 // ===========================================================================
 
 // ===========================================================================
+// OBD-II configuration
+// ===========================================================================
+constexpr uint8_t MAX_OBD_ERRORS = 3;
+
+// ===========================================================================
 // GNSS sampling rates (Hz) per device state
 // ===========================================================================
 constexpr uint8_t GNSS_RATE_ACTIVE_HZ      = 5;
@@ -24,6 +29,19 @@ constexpr uint8_t IMU_RATE_ACTIVE_HZ       = 50;
 constexpr uint8_t IMU_RATE_SLOW_HZ         = 25;
 constexpr uint8_t IMU_RATE_STATIONARY_HZ   = 10;
 constexpr uint8_t IMU_RATE_PARKED_HZ       = 0;
+
+// ===========================================================================
+// Adaptive data interval (harvested from stock firmware)
+// Tracks how long vehicle has been motionless, slows logging to save power.
+// ===========================================================================
+constexpr uint16_t STATIONARY_TIME_TABLE[] = {10, 60, 180};
+constexpr uint16_t DATA_INTERVAL_TABLE[]   = {1000, 2000, 5000};
+constexpr uint8_t  STATIONARY_TIERS = 3;
+
+// ===========================================================================
+// GNSS watchdog — reset module after this many seconds with no fix
+// ===========================================================================
+constexpr uint16_t GNSS_RESET_TIMEOUT_S = 300;
 
 // ===========================================================================
 // Sync server
@@ -50,6 +68,7 @@ constexpr uint32_t MAX_TRIP_DURATION_MS = 14400000;
 constexpr float LOW_BATTERY_THRESHOLD_V  = 11.5f;
 constexpr float ENGINE_ON_VOLTAGE_V      = 13.2f;
 constexpr float ENGINE_OFF_VOLTAGE_V     = 12.8f;
+constexpr float JUMPSTART_VOLTAGE_V      = 14.0f;
 
 // ===========================================================================
 // Motion detection
@@ -68,6 +87,8 @@ constexpr uint8_t MIN_SATELLITES = 4;
 // ===========================================================================
 constexpr uint32_t WIFI_SCAN_INTERVAL_MS = 60000;
 constexpr uint16_t UPLOAD_CHUNK_SIZE     = 4096;
+constexpr uint16_t SIGNAL_CHECK_INTERVAL_S = 10;
+constexpr uint16_t PING_BACK_INTERVAL_S   = 900;
 
 // ===========================================================================
 // Data retention
@@ -85,5 +106,32 @@ constexpr float SHARP_TURN_THRESHOLD_G  = 0.6f;
 // Trip storage base path
 // ===========================================================================
 constexpr const char* TRIP_BASE_PATH = "/cairn/trips";
+
+// ===========================================================================
+// Thermal protection
+// ===========================================================================
+constexpr int COOLING_DOWN_TEMP_C = 75;
+
+// ===========================================================================
+// External sensor inputs
+// ===========================================================================
+#define LOG_EXT_SENSORS 0
+// 0 = disabled, 1 = digital GPIO, 2 = analog ADC
+
+// ===========================================================================
+// Standby
+// ===========================================================================
+constexpr bool RESET_AFTER_WAKEUP = true;
+constexpr bool GNSS_ALWAYS_ON     = false;
+
+// ===========================================================================
+// WiFi credentials (default empty — set via BLE or NVS)
+// ===========================================================================
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#endif
+#ifndef WIFI_PASSWORD
+#define WIFI_PASSWORD ""
+#endif
 
 #endif // CAIRN_CONFIG_H

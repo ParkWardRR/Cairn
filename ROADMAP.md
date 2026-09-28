@@ -56,11 +56,13 @@
 
 ```
 trip/
-  manifest.cbor       # Trip metadata, device info, schema version
-  samples.bin.zst     # GNSS + IMU samples (zstd on server; raw on device)
-  events.cbor         # Start/stop/pause/quality markers
-  sha256sums.txt      # Per-file content hashes
-  signature.ed25519   # Device signature over sha256sums.txt
+  manifest.json       # Trip metadata, device info, VIN, DTC codes, schema v2
+  samples.bin         # GNSS samples — 32 bytes each, little-endian
+  imu_summary.bin     # IMU summaries — 24 bytes each, rolling windows
+  obd.bin             # OBD-II snapshots — 20 bytes each (speed, RPM, throttle, etc.)
+  health.bin          # Device health — 16 bytes each (battery, temp, RSSI)
+  events.json         # Start/stop/pause/quality/ECU-off/thermal markers
+  sha256sums.txt      # Per-file content hashes (ESP32 hardware-accelerated)
 ```
 
 ### Data Retention States
@@ -80,58 +82,68 @@ trip/
 
 ## Phase 1 — Bench the Hardware
 
-**Goal:** Prove the Freematics ONE+ Model B can produce reliable local GNSS/IMU logs and reconnect to home Wi-Fi — without OBD data, LTE, or a vendor cloud.
+**Goal:** Prove the Freematics ONE+ Model B can produce reliable local GNSS/IMU/OBD logs and reconnect to home Wi-Fi — without LTE or a vendor cloud.
 
 **Timeline:** Week 1
 
 ### Deliverables
 
 - [x] **Flash baseline firmware**
-  - [x] Set up Arduino IDE / PlatformIO for Freematics ONE+ Model B
-  - [x] HAL integration: all ESP32 hardware accelerators wired into state machine
+  - [x] Set up PlatformIO for Freematics ONE+ Model B (esp-wrover-kit)
+  - [x] Vendor FreematicsPlus library (19 files) + TinyGPS (2 files) — proven hardware drivers
+  - [x] Replace broken custom HAL with vendor library for all peripherals
   - [ ] Successfully erase, flash, and serial-monitor the device
   - [ ] Document recovery procedure for bricked state
-  - [ ] Verify serial debug output is reliable
 
 - [x] **Disable unused radios**
-  - [x] Wi-Fi radio powered off during recording (HAL power management)
-  - [x] Bluetooth powered off except during provisioning
+  - [x] Wi-Fi radio powered off during recording
+  - [x] BLE disabled at build time (ENABLE_BLE=0), code fully wired for future enable
   - [ ] Confirm LTE modem never initializes (no SIM required)
-  - [ ] Verify no unintended radio activity with RF monitor
+
+- [x] **OBD-II engine data** *(harvested from stock firmware)*
+  - [x] Tiered PID polling: speed, RPM, throttle, engine load (every cycle); coolant, intake temp, fuel pressure, timing advance (round-robin)
+  - [x] Car shutdown detection via ECU-off (3 consecutive OBD errors)
+  - [x] VIN retrieval and DTC code reading at startup
+  - [x] OBDSnapshot struct (20 bytes packed) logged to obd.bin
 
 - [x] **GNSS logger**
-  - [x] Write timestamped GNSS samples to microSD via SDMMC 4-bit DMA
+  - [x] Write timestamped GNSS samples to microSD via SPI SD
   - [x] Capture: latitude, longitude, altitude, speed, heading
   - [x] Capture: fix quality, satellite count, HDOP/accuracy
-  - [x] NMEA parsing from UART2 (Freematics GNSS module)
+  - [x] NMEA parsing via TinyGPS (vendor library)
+  - [x] GNSS watchdog — reset module after 300s with no fix
   - [ ] Validate 10 Hz sample rate achievable
   - [ ] Collect first real-world drive data
 
 - [x] **IMU logger**
-  - [x] Capture accelerometer/gyro via SPI-DMA burst reads
+  - [x] Capture accelerometer/gyro via I2C from ICM-42627
+  - [x] Accelerometer bias calibration (1s sampling at startup and before standby)
   - [x] Impact/hard-brake/sharp-turn detection from accel/gyro
   - [ ] Verify timestamp alignment with GNSS samples
   - [ ] Determine useful sample rate (25–50 Hz starting point)
 
 - [x] **Wi-Fi station mode**
-  - [x] BSSID-locked association to trusted home network
-  - [x] HAL Wi-Fi scan/connect with power save modes
+  - [x] WiFi credentials stored in NVS (provisioned via BLE or compile-time)
+  - [x] WiFi.begin() with NVS-stored SSID/password
+  - [x] RSSI logging and connectivity monitoring
   - [ ] Expose local health/status endpoint over HTTP
   - [ ] Verify reconnection after power cycle
 
-- [x] **Power characterization (firmware)**
-  - [x] Dynamic frequency scaling (240/160/80 MHz) per device state
-  - [x] ULP coprocessor motion wake (~150 µA deep sleep)
-  - [x] Hardware brownout detection
-  - [x] ADC battery voltage with factory calibration
-  - [ ] Measure active driving current (GNSS + IMU + microSD write)
-  - [ ] Measure deep sleep current
-  - [ ] Compare against Freematics spec (~10 mA sleep claim)
+- [x] **Power and standby** *(harvested from stock firmware)*
+  - [x] Battery voltage via devType-based reading (ATRV for devType<=12, analogRead for devType>12)
+  - [x] Device temperature monitoring from IMU die temp sensor
+  - [x] Standby: OBD coprocessor ATLP sleep + IMU bias-calibrated motion wake
+  - [x] Voltage jumpstart detection (>14V = engine cranking, wake from standby)
+  - [x] Thermal throttle protection (>75°C)
+  - [x] DeviceHealth struct (16 bytes packed) logged to health.bin
+  - [x] Adaptive data intervals (1Hz moving → 0.5Hz at 10s still → 0.2Hz at 60s → trip end at 180s)
+  - [ ] Measure active driving current (GNSS + IMU + OBD + microSD write)
+  - [ ] Measure standby current
   - [ ] Test in both target vehicles
 
 - [x] **Data durability (firmware)**
   - [x] fsync after every trip finalization for crash consistency
-  - [x] Hardware SHA-256 checksums for all bundle files
+  - [x] Hardware SHA-256 checksums via mbedtls (ESP32 accelerated)
   - [ ] Pull power during active write (hardware test)
   - [ ] Verify previously finalized data survives
   - [ ] Verify partial write is detectable/recoverable

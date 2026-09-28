@@ -66,6 +66,30 @@ struct IMURawSample {
     int16_t  gyro_z_dps10;
 };
 
+// 24 bytes — OBD-II snapshot (logged alongside GNSS/IMU)
+struct OBDSnapshot {
+    uint64_t timestamp_ms;
+    int16_t  speed_kph;         // vehicle speed from ECU
+    int16_t  rpm;               // engine RPM
+    uint8_t  throttle_pct;      // throttle position %
+    uint8_t  engine_load_pct;   // calculated engine load %
+    int8_t   coolant_temp_c;    // engine coolant temp (clamped to -128..127)
+    int8_t   intake_temp_c;     // intake air temp
+    uint16_t fuel_pressure_kpa; // fuel rail pressure
+    int8_t   timing_advance_deg;// ignition timing advance
+    uint8_t  _reserved;
+};
+
+// 8 bytes — device health snapshot (one per logging cycle)
+struct DeviceHealth {
+    uint64_t timestamp_ms;
+    uint16_t battery_mv;        // battery voltage in millivolts
+    int8_t   device_temp_c;     // IMU or chip temperature
+    int8_t   rssi_dbm;          // WiFi RSSI when connected, 0 otherwise
+    uint16_t ext_sensor_1;      // external sensor reading (raw ADC or digital)
+    uint16_t ext_sensor_2;
+};
+
 #pragma pack(pop)
 
 // ---------------------------------------------------------------------------
@@ -74,6 +98,8 @@ struct IMURawSample {
 static_assert(sizeof(GNSSSample)  == 32, "GNSSSample must be 32 bytes");
 static_assert(sizeof(IMUSummary)  == 24, "IMUSummary must be 24 bytes");
 static_assert(sizeof(IMURawSample) == 20, "IMURawSample must be 20 bytes");
+static_assert(sizeof(OBDSnapshot)  == 20, "OBDSnapshot must be 20 bytes");
+static_assert(sizeof(DeviceHealth) == 16, "DeviceHealth must be 16 bytes");
 
 // ---------------------------------------------------------------------------
 // Trip event (not packed -- used only in-memory and serialized to JSON)
@@ -89,7 +115,11 @@ struct TripEvent {
         GNSS_QUALITY_RESTORED,
         POWER_ANOMALY,
         STORAGE_PRESSURE,
-        IMU_EVENT_WINDOW
+        IMU_EVENT_WINDOW,
+        ECU_OFF,
+        ECU_ON,
+        THERMAL_THROTTLE,
+        GNSS_RESET
     };
 
     EventType type;

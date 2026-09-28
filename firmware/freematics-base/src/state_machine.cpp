@@ -5,9 +5,52 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include "mbedtls/sha256.h"
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "driver/adc.h"
+
+// BLE functions declared in FreematicsPlus.h via ble_spp_server.h
+
+static nvs_handle_t nvsHandle;
+static char wifiSSID[32] = WIFI_SSID;
+static char wifiPassword[32] = WIFI_PASSWORD;
+
+// OBD PIDs to poll, organized in tiers (stock firmware pattern)
+struct PIDEntry {
+    byte pid;
+    byte tier;
+    int value;
+    uint32_t ts;
+};
+
+static PIDEntry obdData[] = {
+    {PID_SPEED, 1},
+    {PID_RPM, 1},
+    {PID_THROTTLE, 1},
+    {PID_ENGINE_LOAD, 1},
+    {PID_FUEL_PRESSURE, 2},
+    {PID_TIMING_ADVANCE, 2},
+    {PID_COOLANT_TEMP, 3},
+    {PID_INTAKE_TEMP, 3},
+};
+
+// OBDAdapter idle task — read IMU while waiting for ECU responses
+void OBDAdapter::idleTasks() {}
 
 // ===========================================================================
-// Initialization — using FreematicsPlus for all hardware
+// NVS config loading
+// ===========================================================================
+
+static void loadConfig() {
+    size_t len;
+    len = sizeof(wifiSSID);
+    nvs_get_str(nvsHandle, "WIFI_SSID", wifiSSID, &len);
+    len = sizeof(wifiPassword);
+    nvs_get_str(nvsHandle, "WIFI_PWD", wifiPassword, &len);
+}
+
+// ===========================================================================
+// Initialization
 // ===========================================================================
 
 void StateMachine::init() {
@@ -15,57 +58,143 @@ void StateMachine::init() {
     stateEnteredAt_ = millis();
     gnssSampleCount_ = 0;
     imuSummaryCount_ = 0;
+    obdSampleCount_ = 0;
     eventCount_ = 0;
     memset(currentTripId_, 0, sizeof(currentTripId_));
 
-    // Init OBD coprocessor link (detects device type, sets up UART)
-    if (!sys_.begin(true, false)) {
-        Serial.println("[SYS] Coprocessor init failed — trying without");
-    } else {
-        Serial.printf("[SYS] Device type: %u\n", sys_.devType);
+    // Init NVS
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        nvs_flash_erase();
+        err = nvs_flash_init();
+    }
+    if (nvs_open("storage", NVS_READWRITE, &nvsHandle) == ESP_OK) {
+        loadConfig();
     }
 
-    // Init IMU (ICM-42627 via I2C, address 0x68, SDA=21, SCL=22)
-    mems_ = new ICM_42627;
-    byte memsResult = mems_->begin();
-    memsReady_ = (memsResult > 0);
-    if (memsReady_) {
-        Serial.println("[IMU] ICM-42627 initialized");
-    } else {
-        Serial.println("[IMU] ICM-42627 init failed");
-    }
+    // Init OBD coprocessor link
+    initOBD();
 
-    // Init GNSS (UART to u-blox module, with UBX configuration)
-    gpsReady_ = sys_.gpsBeginExt(GPS_SOFT_BAUDRATE);
-    if (gpsReady_) {
-        Serial.println("[GPS] GNSS module online");
-    } else {
-        Serial.println("[GPS] GNSS init failed — retrying with link passthrough");
-        gpsReady_ = sys_.gpsBegin();
-        if (gpsReady_) {
-            Serial.println("[GPS] GNSS via coprocessor link");
-        } else {
-            Serial.println("[GPS] GNSS not available");
-        }
-    }
+    // Init IMU
+    initMEMS();
+
+    // Init GNSS
+    initGNSS();
 
     // Init SD card (SPI, CS=GPIO5)
     sdReady_ = SD.begin(PIN_SD_CS);
     if (sdReady_) {
-        uint64_t totalBytes = SD.totalBytes();
-        uint64_t usedBytes = SD.usedBytes();
         Serial.printf("[SD] Mounted: %llu MB total, %llu MB used\n",
-                      totalBytes / (1024*1024), usedBytes / (1024*1024));
+                      SD.totalBytes() / (1024*1024), SD.usedBytes() / (1024*1024));
         SD.mkdir(TRIP_BASE_PATH);
     } else {
         Serial.println("[SD] Card mount failed");
     }
 
     // Read initial battery voltage
-    lastBatteryVoltage_ = getBatteryVoltage();
-    Serial.printf("[PWR] Battery: %.1f V\n", lastBatteryVoltage_);
+    batteryVoltage_ = getBatteryVoltage();
+    Serial.printf("[PWR] Battery: %.1f V\n", batteryVoltage_);
 
+#if LOG_EXT_SENSORS == 2
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_DB_11);
+    adc1_config_channel_atten(ADC1_CHANNEL_1, ADC_ATTEN_DB_11);
+#elif LOG_EXT_SENSORS == 1
+    pinMode(PIN_SENSOR1, INPUT);
+    pinMode(PIN_SENSOR2, INPUT);
+#endif
+
+#if ENABLE_BLE
+    ble_init("Cairn");
+#endif
+
+    lastMotionTime_ = millis();
     Serial.println("[STATE] Initialized -> SLEEP");
+}
+
+void StateMachine::initOBD() {
+#if ENABLE_OBD
+    if (sys_.begin()) {
+        Serial.printf("[SYS] Device type: %u\n", sys_.devType);
+        obd_.begin(sys_.link);
+
+        if (obd_.init()) {
+            obdReady_ = true;
+            Serial.println("[OBD] ECU connected");
+
+            char buf[128];
+            if (obd_.getVIN(buf, sizeof(buf))) {
+                memcpy(vin_, buf, sizeof(vin_) - 1);
+                Serial.printf("[OBD] VIN: %s\n", vin_);
+            }
+
+            dtcCount_ = obd_.readDTC(dtcCodes_, sizeof(dtcCodes_) / sizeof(dtcCodes_[0]));
+            if (dtcCount_ > 0) {
+                Serial.printf("[OBD] DTCs: %d\n", dtcCount_);
+            }
+        } else {
+            Serial.println("[OBD] ECU not responding (ignition off?)");
+        }
+    } else {
+        Serial.println("[SYS] Coprocessor init failed");
+        sys_.begin(false, false);
+    }
+#else
+    sys_.begin(false, false);
+#endif
+}
+
+void StateMachine::initMEMS() {
+#if ENABLE_MEMS
+    mems_ = new ICM_42627;
+    byte ret = mems_->begin();
+    if (ret) {
+        memsReady_ = true;
+        Serial.println("[IMU] ICM-42627");
+        calibrateMEMS();
+    } else {
+        delete mems_;
+        mems_ = nullptr;
+        memsReady_ = false;
+        Serial.println("[IMU] No sensor found");
+    }
+#endif
+}
+
+void StateMachine::initGNSS() {
+    if (sys_.gpsBeginExt()) {
+        gpsReady_ = true;
+        Serial.println("[GNSS] OK (external)");
+    } else if (sys_.gpsBegin()) {
+        gpsReady_ = true;
+        Serial.println("[GNSS] OK (internal)");
+    } else {
+        gpsReady_ = false;
+        Serial.println("[GNSS] Not available");
+    }
+    lastGPSTick_ = millis();
+}
+
+void StateMachine::calibrateMEMS() {
+    if (!memsReady_) return;
+    accBias_[0] = accBias_[1] = accBias_[2] = 0;
+    int n = 0;
+    unsigned long t = millis();
+    for (; millis() - t < 1000; n++) {
+        float a[3];
+        if (!mems_->read(a)) continue;
+        accBias_[0] += a[0];
+        accBias_[1] += a[1];
+        accBias_[2] += a[2];
+        delay(10);
+    }
+    if (n > 0) {
+        accBias_[0] /= n;
+        accBias_[1] /= n;
+        accBias_[2] /= n;
+    }
+    Serial.printf("[IMU] Bias: %.2f/%.2f/%.2f (%d samples)\n",
+                  accBias_[0], accBias_[1], accBias_[2], n);
 }
 
 // ===========================================================================
@@ -73,20 +202,25 @@ void StateMachine::init() {
 // ===========================================================================
 
 void StateMachine::update() {
-    // Periodic battery voltage check (every 10s, avoid hammering coprocessor)
     unsigned long now = millis();
+
+    // Periodic battery voltage check
     if (now - lastVoltageRead_ >= 10000) {
-        lastBatteryVoltage_ = getBatteryVoltage();
+        batteryVoltage_ = getBatteryVoltage();
         lastVoltageRead_ = now;
     }
 
+    // Low battery protection
     if (state_ != DeviceState::SLEEP &&
         state_ != DeviceState::LOW_BATTERY_PROTECTION) {
-        if (lastBatteryVoltage_ > 0 && lastBatteryVoltage_ < LOW_BATTERY_THRESHOLD_V) {
+        if (batteryVoltage_ > 0 && batteryVoltage_ < LOW_BATTERY_THRESHOLD_V) {
             transitionTo(DeviceState::LOW_BATTERY_PROTECTION);
             return;
         }
     }
+
+    // BLE command processing
+    processBLE(0);
 
     switch (state_) {
         case DeviceState::SLEEP:                 handleSleep();              break;
@@ -108,15 +242,13 @@ void StateMachine::update() {
 // ===========================================================================
 
 void StateMachine::handleSleep() {
-    // Check for motion via IMU
     if (memsReady_ && detectMotion()) {
         transitionTo(DeviceState::ARMING);
         return;
     }
 
-    // Check for engine start via voltage
-    if (lastBatteryVoltage_ >= ENGINE_ON_VOLTAGE_V) {
-        Serial.printf("[SLEEP] Engine voltage detected: %.1f V\n", lastBatteryVoltage_);
+    if (batteryVoltage_ >= ENGINE_ON_VOLTAGE_V) {
+        Serial.printf("[SLEEP] Engine voltage detected: %.1f V\n", batteryVoltage_);
         transitionTo(DeviceState::ARMING);
         return;
     }
@@ -127,11 +259,22 @@ void StateMachine::handleSleep() {
 void StateMachine::handleArming() {
     unsigned long elapsed = millis() - stateEnteredAt_;
 
+    // Try to connect OBD if not ready (engine may have just started)
+#if ENABLE_OBD
+    if (!obdReady_) {
+        if (obd_.init(PROTO_AUTO, true)) {
+            obdReady_ = true;
+            Serial.println("[OBD] ECU ON");
+            addEvent(TripEvent::ECU_ON, "ECU connected during arming");
+        }
+    }
+#endif
+
     GNSSSample gnss = readGNSS();
     IMUSummary imu  = readIMU();
     float speed     = getSpeedKmh(gnss);
 
-    bool conditionsMet = (speed >= MIN_SPEED_KMH) && isMoving(gnss, imu);
+    bool conditionsMet = (speed >= MIN_SPEED_KMH) || isMoving(gnss, imu);
 
     if (!conditionsMet) {
         if (elapsed > ARMING_DURATION_MS) {
@@ -149,8 +292,10 @@ void StateMachine::handleArming() {
 
         gnssSampleCount_ = 0;
         imuSummaryCount_ = 0;
+        obdSampleCount_ = 0;
         eventCount_ = 0;
         tripStartMs_ = millis();
+        dataInterval_ = DATA_INTERVAL_TABLE[0];
 
         addEvent(TripEvent::TRIP_START, "recording started");
         transitionTo(DeviceState::RECORDING);
@@ -167,26 +312,59 @@ void StateMachine::handleRecording() {
         return;
     }
 
+    // --- OBD polling ---
+#if ENABLE_OBD
+    if (obdReady_) {
+        OBDSnapshot snap = readOBD();
+        writeOBDSnapshot(snap);
+        obdSampleCount_++;
+
+        if (snap.speed_kph >= 2) lastMotionTime_ = now;
+
+        if (obd_.errors >= MAX_OBD_ERRORS) {
+            if (!obd_.init()) {
+                Serial.println("[OBD] ECU OFF");
+                addEvent(TripEvent::ECU_OFF, "ECU stopped responding");
+                obdReady_ = false;
+            }
+        }
+    } else {
+        if (obd_.init(PROTO_AUTO, true)) {
+            obdReady_ = true;
+            Serial.println("[OBD] ECU ON");
+            addEvent(TripEvent::ECU_ON, "ECU reconnected");
+        }
+    }
+#endif
+
+    // --- GNSS ---
     uint16_t gnssIntervalMs = (GNSS_RATE_ACTIVE_HZ > 0) ? (1000 / GNSS_RATE_ACTIVE_HZ) : 0;
     if (gnssIntervalMs > 0 && (now - lastGNSSRead_ >= gnssIntervalMs)) {
         GNSSSample sample = readGNSS();
+        bool gotFix = (sample.satellites > 0 && sample.latitude != 0);
         writeSample(sample);
         gnssSampleCount_++;
         lastGNSSRead_ = now;
 
         float speed = getSpeedKmh(sample);
-        IMUSummary imu = readIMU();
-        writeIMUSummary(imu);
-        imuSummaryCount_++;
-        lastIMURead_ = now;
+        if (speed >= 2) lastMotionTime_ = now;
 
-        if (speed < MIN_SPEED_KMH && !isMoving(sample, imu)) {
-            addEvent(TripEvent::STOP_CANDIDATE_EVT, "speed below threshold");
-            transitionTo(DeviceState::STOP_CANDIDATE);
-            return;
+        // GNSS watchdog
+        if (gotFix) {
+            lastGPSTick_ = now;
+        } else if (GNSS_RESET_TIMEOUT_S > 0 &&
+                   now - lastGPSTick_ > (unsigned long)GNSS_RESET_TIMEOUT_S * 1000) {
+            Serial.println("[GNSS] Watchdog reset");
+            addEvent(TripEvent::GNSS_RESET, "no fix timeout");
+            sys_.gpsEnd();
+            gpsReady_ = false;
+            delay(20);
+            initGNSS();
+            lastGPSTick_ = now;
         }
     }
 
+    // --- IMU ---
     uint16_t imuIntervalMs = (IMU_RATE_ACTIVE_HZ > 0) ? (1000 / IMU_RATE_ACTIVE_HZ) : 0;
     if (imuIntervalMs > 0 && (now - lastIMURead_ >= imuIntervalMs)) {
         IMUSummary imu = readIMU();
@@ -194,6 +372,49 @@ void StateMachine::handleRecording() {
         imuSummaryCount_++;
         lastIMURead_ = now;
     }
+
+    // --- Device health (battery, temp, RSSI, ext sensors) ---
+    DeviceHealth health;
+    memset(&health, 0, sizeof(health));
+    health.timestamp_ms = now;
+    health.battery_mv = (uint16_t)(batteryVoltage_ * 1000);
+    health.device_temp_c = (int8_t)deviceTemp_;
+    health.rssi_dbm = (int8_t)rssi_;
+    processExtInputs(health.ext_sensor_1, health.ext_sensor_2);
+    writeDeviceHealth(health);
+
+    // Thermal throttle
+    if (deviceTemp_ >= COOLING_DOWN_TEMP_C) {
+        Serial.printf("[THERMAL] High device temp: %d C\n", deviceTemp_);
+        addEvent(TripEvent::THERMAL_THROTTLE, "thermal throttle");
+    }
+
+    // --- Adaptive interval / stationary detection ---
+    unsigned int motionlessSec = (now - lastMotionTime_) / 1000;
+    bool stationary = true;
+    for (uint8_t i = 0; i < STATIONARY_TIERS; i++) {
+        dataInterval_ = DATA_INTERVAL_TABLE[i];
+        if (motionlessSec < STATIONARY_TIME_TABLE[i] || STATIONARY_TIME_TABLE[i] == 0) {
+            stationary = false;
+            break;
+        }
+    }
+    if (stationary) {
+        Serial.printf("[RECORDING] Stationary for %u secs — ending trip\n", motionlessSec);
+        addEvent(TripEvent::TRIP_END, "stationary timeout");
+        transitionTo(DeviceState::FINALIZING);
+        return;
+    }
+
+    // RSSI monitoring
+    if (now - lastRSSICheck_ >= (unsigned long)SIGNAL_CHECK_INTERVAL_S * 1000) {
+        if (WiFi.status() == WL_CONNECTED) {
+            rssi_ = WiFi.RSSI();
+        }
+        lastRSSICheck_ = now;
+    }
+
+    processBLE(0);
 }
 
 void StateMachine::handleStopCandidate() {
@@ -214,6 +435,7 @@ void StateMachine::handleStopCandidate() {
 
         float speed = getSpeedKmh(sample);
         if (speed >= MIN_SPEED_KMH || isMoving(sample, imu)) {
+            lastMotionTime_ = now;
             addEvent(TripEvent::TRIP_RESUMED, "motion resumed");
             transitionTo(DeviceState::RECORDING);
             return;
@@ -252,8 +474,8 @@ void StateMachine::handleQueuedForHomeSync() {
     }
 
     if (now - stateEnteredAt_ > WIFI_SCAN_INTERVAL_MS * 10) {
-        Serial.println("[QUEUED] No network found — entering SLEEP");
-        transitionTo(DeviceState::SLEEP);
+        Serial.println("[QUEUED] No network found — entering standby");
+        standby();
     }
 }
 
@@ -284,6 +506,9 @@ void StateMachine::handleLowBatteryProtection() {
     Serial.println("[LOW_BATTERY] Finalizing trip, entering deep sleep");
     addEvent(TripEvent::POWER_ANOMALY, "low battery protection");
     finalizeTripBundle();
+#if ENABLE_OBD
+    obd_.enterLowPowerMode();
+#endif
     esp_deep_sleep_start();
 }
 
@@ -291,6 +516,95 @@ void StateMachine::handleFault() {
     Serial.println("[FAULT] Error state — rebooting in 5s");
     delay(5000);
     esp_restart();
+}
+
+// ===========================================================================
+// Standby — harvested from stock firmware
+// ===========================================================================
+
+void StateMachine::standby() {
+    Serial.println("[STANDBY] Entering standby");
+
+    // Close log file
+    if (sdReady_) {
+        // SD files are closed per-write, nothing to do
+    }
+
+    // Turn off GNSS if configured
+    if (!GNSS_ALWAYS_ON && gpsReady_) {
+        Serial.println("[GNSS] OFF");
+        sys_.gpsEnd(true);
+        gpsReady_ = false;
+        gpsData_ = nullptr;
+    }
+
+    obdReady_ = false;
+
+    // Put coprocessor to sleep
+#if ENABLE_OBD
+    obd_.enterLowPowerMode();
+#endif
+
+    Serial.println("[STANDBY] Waiting for motion or jumpstart...");
+
+    // Calibrate IMU before standby for accurate motion detection
+    calibrateMEMS();
+
+    // Block until motion detected or voltage spike
+    if (memsReady_) {
+        waitMotion(-1);
+    } else {
+        // Fallback: poll voltage for engine crank
+        while (true) {
+            delay(5000);
+            float v = getBatteryVoltage();
+            if (v >= JUMPSTART_VOLTAGE_V) {
+                Serial.printf("[STANDBY] Jumpstart voltage: %.1f V\n", v);
+                break;
+            }
+            processBLE(0);
+        }
+    }
+
+    Serial.println("[STANDBY] WAKEUP");
+    sys_.resetLink();
+
+    if (RESET_AFTER_WAKEUP) {
+#if ENABLE_MEMS
+        if (mems_) mems_->end();
+#endif
+        ESP.restart();
+    }
+
+    // Re-init everything if not resetting
+    initOBD();
+    initGNSS();
+    calibrateMEMS();
+    lastMotionTime_ = millis();
+    state_ = DeviceState::SLEEP;
+    stateEnteredAt_ = millis();
+}
+
+bool StateMachine::waitMotion(long timeout) {
+    if (!memsReady_) return false;
+    unsigned long t = millis();
+    do {
+        float a[3];
+        if (!mems_->read(a)) continue;
+
+        float motion = 0;
+        for (byte i = 0; i < 3; i++) {
+            float m = a[i] - accBias_[i];
+            motion += m * m;
+        }
+
+        processBLE(100);
+
+        if (motion >= MOTION_THRESHOLD_G * MOTION_THRESHOLD_G) {
+            return true;
+        }
+    } while ((long)(millis() - t) < timeout || timeout == -1);
+    return false;
 }
 
 // ===========================================================================
@@ -333,18 +647,21 @@ const char* StateMachine::getStateName(DeviceState state) const {
 }
 
 // ===========================================================================
-// Sensor reads — backed by FreematicsPlus
+// Sensor reads
 // ===========================================================================
 
 bool StateMachine::detectMotion() {
     if (!memsReady_) return false;
 
-    float acc[3] = {0};
-    mems_->read(acc);
+    float a[3] = {0};
+    mems_->read(a);
 
-    float magnitude = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
-    float deviation = fabsf(magnitude - 1.0f);
-    return deviation > MOTION_THRESHOLD_G;
+    float motion = 0;
+    for (byte i = 0; i < 3; i++) {
+        float m = a[i] - accBias_[i];
+        motion += m * m;
+    }
+    return motion >= MOTION_THRESHOLD_G * MOTION_THRESHOLD_G;
 }
 
 GNSSSample StateMachine::readGNSS() {
@@ -352,7 +669,6 @@ GNSSSample StateMachine::readGNSS() {
     memset(&s, 0, sizeof(s));
 
     if (!gpsReady_) return s;
-
     if (!sys_.gpsGetData(&gpsData_)) return s;
     if (!gpsData_) return s;
 
@@ -360,12 +676,14 @@ GNSSSample StateMachine::readGNSS() {
     s.latitude     = (int32_t)(gpsData_->lat * 1e7);
     s.longitude    = (int32_t)(gpsData_->lng * 1e7);
     s.altitude_cm  = (int32_t)(gpsData_->alt * 100);
-    // TinyGPS speed is in knots*100, convert to cm/s (1 knot = 51.4444 cm/s)
     s.speed_cmps   = (uint16_t)(gpsData_->speed * 51.4444f);
     s.heading_cdeg = (uint16_t)(gpsData_->heading * 100);
     s.satellites   = gpsData_->sat;
     s.hdop_tenths  = (uint16_t)(gpsData_->hdop * 10);
     s.fix_quality  = (gpsData_->sat > 0) ? 1 : 0;
+
+    float kph = gpsData_->speed * 1.852f;
+    if (kph >= 2) lastMotionTime_ = millis();
 
     return s;
 }
@@ -376,34 +694,86 @@ IMUSummary StateMachine::readIMU() {
 
     if (!memsReady_) return summary;
 
-    float acc[3] = {0};
-    float gyr[3] = {0};
-    mems_->read(acc, gyr);
+    float temp;
+    mems_->read(acc_, gyr_, nullptr, &temp);
+    deviceTemp_ = (int)temp;
 
     summary.window_start_ms = millis();
     summary.window_duration_ms = 20;
 
-    // acc[] is in g from FreematicsPlus, convert to milli-g
-    summary.accel_peak_x_mg = (int16_t)(acc[0] * 1000.0f);
-    summary.accel_peak_y_mg = (int16_t)(acc[1] * 1000.0f);
-    summary.accel_peak_z_mg = (int16_t)(acc[2] * 1000.0f);
+    summary.accel_peak_x_mg = (int16_t)((acc_[0] - accBias_[0]) * 1000.0f);
+    summary.accel_peak_y_mg = (int16_t)((acc_[1] - accBias_[1]) * 1000.0f);
+    summary.accel_peak_z_mg = (int16_t)((acc_[2] - accBias_[2]) * 1000.0f);
 
-    float mag_mg = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]) * 1000.0f;
+    float dx = acc_[0] - accBias_[0];
+    float dy = acc_[1] - accBias_[1];
+    float dz = acc_[2] - accBias_[2];
+    float mag_mg = sqrtf(dx*dx + dy*dy + dz*dz) * 1000.0f;
     summary.accel_rms_mg = (uint16_t)mag_mg;
 
-    // gyr[] is in dps from FreematicsPlus
-    float gyro_max = fmaxf(fmaxf(fabsf(gyr[0]), fabsf(gyr[1])), fabsf(gyr[2]));
+    float gyro_max = fmaxf(fmaxf(fabsf(gyr_[0]), fabsf(gyr_[1])), fabsf(gyr_[2]));
     summary.gyro_peak_dps = (int16_t)(gyro_max * 10.0f);
 
-    summary.variance = (uint16_t)fabsf(mag_mg - 1000.0f);
+    summary.variance = (uint16_t)mag_mg;
 
     summary.flags = 0;
-    float total_g = sqrtf(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
+    float total_g = sqrtf(acc_[0]*acc_[0] + acc_[1]*acc_[1] + acc_[2]*acc_[2]);
     if (total_g > IMPACT_THRESHOLD_G) summary.flags |= 0x01;
-    if (acc[0] < -HARD_BRAKE_THRESHOLD_G) summary.flags |= 0x02;
-    if (fabsf(acc[1]) > SHARP_TURN_THRESHOLD_G) summary.flags |= 0x04;
+    if (dx < -HARD_BRAKE_THRESHOLD_G) summary.flags |= 0x02;
+    if (fabsf(dy) > SHARP_TURN_THRESHOLD_G) summary.flags |= 0x04;
 
     return summary;
+}
+
+OBDSnapshot StateMachine::readOBD() {
+    OBDSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.timestamp_ms = millis();
+
+#if ENABLE_OBD
+    if (!obdReady_) return snap;
+
+    // Tiered polling — stock firmware pattern
+    static int tierIdx[2] = {0, 0};
+    int tier = 1;
+    for (byte i = 0; i < sizeof(obdData) / sizeof(obdData[0]); i++) {
+        if (obdData[i].tier > tier) {
+            tierIdx[tier - 2] = 0;
+            tier = obdData[i].tier;
+            i += tierIdx[tier - 2]++;
+            if (i >= sizeof(obdData) / sizeof(obdData[0]) || obdData[i].tier != tier) {
+                tierIdx[tier - 2] = 0;
+                i--;
+                continue;
+            }
+        }
+        byte pid = obdData[i].pid;
+        if (!obd_.isValidPID(pid)) continue;
+        int value;
+        if (obd_.readPID(pid, value)) {
+            obdData[i].ts = millis();
+            obdData[i].value = value;
+        } else {
+            break;
+        }
+        if (tier > 1) break;
+    }
+
+    // Map cached values to snapshot
+    for (byte i = 0; i < sizeof(obdData) / sizeof(obdData[0]); i++) {
+        switch (obdData[i].pid) {
+            case PID_SPEED:          snap.speed_kph = obdData[i].value; break;
+            case PID_RPM:            snap.rpm = obdData[i].value; break;
+            case PID_THROTTLE:       snap.throttle_pct = obdData[i].value; break;
+            case PID_ENGINE_LOAD:    snap.engine_load_pct = obdData[i].value; break;
+            case PID_COOLANT_TEMP:   snap.coolant_temp_c = obdData[i].value; break;
+            case PID_INTAKE_TEMP:    snap.intake_temp_c = obdData[i].value; break;
+            case PID_FUEL_PRESSURE:  snap.fuel_pressure_kpa = obdData[i].value; break;
+            case PID_TIMING_ADVANCE: snap.timing_advance_deg = obdData[i].value; break;
+        }
+    }
+#endif
+    return snap;
 }
 
 float StateMachine::getSpeedKmh(const GNSSSample& s) {
@@ -414,6 +784,22 @@ bool StateMachine::isMoving(const GNSSSample& s, const IMUSummary& imu) {
     if (getSpeedKmh(s) >= MIN_SPEED_KMH) return true;
     if (imu.accel_rms_mg > ACCEL_RMS_MOVING_MG) return true;
     return false;
+}
+
+// ===========================================================================
+// External sensor inputs
+// ===========================================================================
+
+void StateMachine::processExtInputs(uint16_t& s1, uint16_t& s2) {
+    s1 = 0;
+    s2 = 0;
+#if LOG_EXT_SENSORS == 1
+    s1 = digitalRead(PIN_SENSOR1);
+    s2 = digitalRead(PIN_SENSOR2);
+#elif LOG_EXT_SENSORS == 2
+    s1 = adc1_get_raw(ADC1_CHANNEL_0);
+    s2 = adc1_get_raw(ADC1_CHANNEL_1);
+#endif
 }
 
 // ===========================================================================
@@ -433,6 +819,8 @@ bool StateMachine::openTripFile(const char* tripId) {
     snprintf(tripDir_, sizeof(tripDir_), "%s/%s", TRIP_BASE_PATH, tripId);
     snprintf(samplesPath_, sizeof(samplesPath_), "%s/samples.bin", tripDir_);
     snprintf(imuPath_, sizeof(imuPath_), "%s/imu_summary.bin", tripDir_);
+    snprintf(obdPath_, sizeof(obdPath_), "%s/obd.bin", tripDir_);
+    snprintf(healthPath_, sizeof(healthPath_), "%s/health.bin", tripDir_);
 
     if (!SD.mkdir(tripDir_)) {
         Serial.printf("[SD] Failed to create trip dir: %s\n", tripDir_);
@@ -460,16 +848,32 @@ bool StateMachine::writeIMUSummary(const IMUSummary& s) {
     return n == sizeof(s);
 }
 
+bool StateMachine::writeOBDSnapshot(const OBDSnapshot& s) {
+    File f = SD.open(obdPath_, FILE_APPEND);
+    if (!f) return false;
+    size_t n = f.write(reinterpret_cast<const uint8_t*>(&s), sizeof(s));
+    f.close();
+    return n == sizeof(s);
+}
+
+bool StateMachine::writeDeviceHealth(const DeviceHealth& h) {
+    File f = SD.open(healthPath_, FILE_APPEND);
+    if (!f) return false;
+    size_t n = f.write(reinterpret_cast<const uint8_t*>(&h), sizeof(h));
+    f.close();
+    return n == sizeof(h);
+}
+
 bool StateMachine::finalizeTripBundle() {
-    if (gnssSampleCount_ == 0) return true;
+    if (gnssSampleCount_ == 0 && obdSampleCount_ == 0) return true;
 
     addEvent(TripEvent::TRIP_END, "finalized");
 
     if (!writeManifest()) return false;
     if (!writeChecksums()) return false;
 
-    Serial.printf("[SD] Bundle finalized: %u GNSS, %u IMU\n",
-                  gnssSampleCount_, imuSummaryCount_);
+    Serial.printf("[SD] Bundle: %u GNSS, %u IMU, %u OBD\n",
+                  gnssSampleCount_, imuSummaryCount_, obdSampleCount_);
     return true;
 }
 
@@ -482,30 +886,40 @@ bool StateMachine::writeManifest() {
 
     uint64_t endMs = millis();
     f.printf("{\n");
-    f.printf("  \"version\": 1,\n");
-    f.printf("  \"schema_version\": 1,\n");
+    f.printf("  \"version\": 2,\n");
+    f.printf("  \"schema_version\": 2,\n");
     f.printf("  \"trip_id\": \"%s\",\n", currentTripId_);
+    f.printf("  \"vin\": \"%s\",\n", vin_);
     f.printf("  \"started_at_ms\": %llu,\n", (unsigned long long)tripStartMs_);
     f.printf("  \"ended_at_ms\": %llu,\n", (unsigned long long)endMs);
     f.printf("  \"duration_ms\": %llu,\n", (unsigned long long)(endMs - tripStartMs_));
     f.printf("  \"gnss_sample_count\": %u,\n", gnssSampleCount_);
     f.printf("  \"imu_summary_count\": %u,\n", imuSummaryCount_);
+    f.printf("  \"obd_sample_count\": %u,\n", obdSampleCount_);
     f.printf("  \"gnss_rate_hz\": %u,\n", GNSS_RATE_ACTIVE_HZ);
-    f.printf("  \"imu_rate_hz\": %u\n", IMU_RATE_ACTIVE_HZ);
+    f.printf("  \"imu_rate_hz\": %u,\n", IMU_RATE_ACTIVE_HZ);
+    if (dtcCount_ > 0) {
+        f.printf("  \"dtc_count\": %d,\n", dtcCount_);
+        f.printf("  \"dtc_codes\": [");
+        for (int i = 0; i < dtcCount_; i++) {
+            f.printf("%s%u", i > 0 ? "," : "", dtcCodes_[i]);
+        }
+        f.printf("],\n");
+    }
+    f.printf("  \"obd_enabled\": %s\n", obdSampleCount_ > 0 ? "true" : "false");
     f.printf("}\n");
     f.close();
     return true;
 }
 
 bool StateMachine::writeChecksums() {
-    // SHA-256 using ESP32 hardware-accelerated mbedtls
     char checksumPath[80];
     snprintf(checksumPath, sizeof(checksumPath), "%s/sha256sums.txt", tripDir_);
 
     File outFile = SD.open(checksumPath, FILE_WRITE);
     if (!outFile) return false;
 
-    const char* files[] = { "samples.bin", "imu_summary.bin", "manifest.json" };
+    const char* files[] = { "samples.bin", "imu_summary.bin", "obd.bin", "health.bin", "manifest.json" };
 
     for (const char* name : files) {
         char filePath[96];
@@ -537,19 +951,17 @@ bool StateMachine::writeChecksums() {
     }
 
     outFile.close();
-    Serial.println("[SD] SHA-256 checksums written");
     return true;
 }
 
 // ===========================================================================
-// Connectivity — ESP32 WiFi
+// Connectivity
 // ===========================================================================
 
 bool StateMachine::scanForTrustedNetwork() {
     int n = WiFi.scanNetworks(false, false, false, 300);
     if (n <= 0) return false;
 
-    // Look for any known network — in production, check NVS-stored SSID/BSSID
     for (int i = 0; i < n; i++) {
         Serial.printf("[WIFI] Found: %s (%d dBm)\n",
                       WiFi.SSID(i).c_str(), WiFi.RSSI(i));
@@ -559,16 +971,34 @@ bool StateMachine::scanForTrustedNetwork() {
 }
 
 bool StateMachine::connectToHome() {
-    // In production, load SSID/PSK from NVS
-    // For now, log the attempt
-    Serial.println("[WIFI] Connect to home network (stub)");
+    if (!wifiSSID[0]) {
+        Serial.println("[WIFI] No SSID configured");
+        return false;
+    }
+
+    Serial.printf("[WIFI] Connecting to %s\n", wifiSSID);
+    WiFi.begin(wifiSSID, wifiPassword);
+
+    unsigned long t = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - t < 10000) {
+        delay(500);
+        processBLE(0);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[WIFI] Connected, IP: %s\n", WiFi.localIP().toString().c_str());
+        rssi_ = WiFi.RSSI();
+        return true;
+    }
+
+    Serial.println("[WIFI] Connection failed");
+    WiFi.disconnect(true);
     return false;
 }
 
 bool StateMachine::uploadBundle(const char* tripId) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
-    // Compute content hash of samples.bin for deduplication
     char samplesFile[80];
     snprintf(samplesFile, sizeof(samplesFile), "%s/%s/samples.bin",
              TRIP_BASE_PATH, tripId);
@@ -576,59 +1006,104 @@ bool StateMachine::uploadBundle(const char* tripId) {
     File f = SD.open(samplesFile, FILE_READ);
     if (!f) return false;
 
-    mbedtls_sha256_context ctx;
-    mbedtls_sha256_init(&ctx);
-    mbedtls_sha256_starts(&ctx, 0);
-
-    uint8_t readBuf[UPLOAD_CHUNK_SIZE];
-    size_t totalSize = 0;
-    while (f.available()) {
-        size_t n = f.read(readBuf, sizeof(readBuf));
-        if (n > 0) {
-            mbedtls_sha256_update(&ctx, readBuf, n);
-            totalSize += n;
-        }
-    }
+    size_t totalSize = f.size();
     f.close();
 
-    uint8_t hash[32];
-    mbedtls_sha256_finish(&ctx, hash);
-    mbedtls_sha256_free(&ctx);
-
-    char hashHex[65];
-    for (int i = 0; i < 32; i++) {
-        snprintf(hashHex + i * 2, 3, "%02x", hash[i]);
-    }
-
-    Serial.printf("[SYNC] Ready to upload %s (%u bytes, hash=%s)\n",
-                  tripId, (unsigned)totalSize, hashHex);
-
-    // TODO: Implement HTTP upload to cairn.local:8443
-    // POST /api/v1/upload/init  { trip_id, content_hash, size }
-    // PUT  /api/v1/upload/{id}/chunk
-    // POST /api/v1/upload/{id}/finalize
-
+    Serial.printf("[SYNC] Ready to upload %s (%u bytes)\n", tripId, (unsigned)totalSize);
+    // TODO: HTTP upload to cairn.local:8443
     return false;
 }
 
 // ===========================================================================
-// Power — via OBD coprocessor ATRV command
+// Power
 // ===========================================================================
 
 float StateMachine::getBatteryVoltage() {
-    if (!sys_.link) return 0;
+#if ENABLE_OBD
+    if (sys_.devType > 12) {
+        return (float)(analogRead(A0) * 45) / 4095;
+    }
+    return obd_.getVoltage();
+#else
+    return 0;
+#endif
+}
 
-    char buf[32];
-    int n = sys_.link->sendCommand("ATRV\r", buf, sizeof(buf), 500);
-    if (n <= 0) return 0;
+// ===========================================================================
+// BLE SPP command interface (harvested from stock firmware)
+// ===========================================================================
 
-    // Response is like "12.5V" or "14.2V\r>"
-    float voltage = 0;
-    char* p = buf;
-    while (*p && (*p < '0' || *p > '9') && *p != '.') p++;
-    if (*p) voltage = atof(p);
+void StateMachine::processBLE(int timeout) {
+#if ENABLE_BLE
+    char* cmd = ble_recv_command(timeout);
+    if (!cmd) return;
 
-    return voltage;
+    char *p = strchr(cmd, '\r');
+    if (p) *p = 0;
+
+    char buf[48];
+    int bufsize = sizeof(buf);
+    int n = 0;
+
+    Serial.printf("[BLE] %s", cmd);
+
+    if (!strcmp(cmd, "UPTIME") || !strcmp(cmd, "TICK")) {
+        n = snprintf(buf, bufsize, "%lu", millis());
+    } else if (!strcmp(cmd, "BATT")) {
+        n = snprintf(buf, bufsize, "%.2f", batteryVoltage_);
+    } else if (!strcmp(cmd, "RESET")) {
+        ESP.restart();
+    } else if (!strcmp(cmd, "OFF")) {
+        standby();
+        n = snprintf(buf, bufsize, "OK");
+    } else if (!strcmp(cmd, "ON?")) {
+        n = snprintf(buf, bufsize, "%u", state_ != DeviceState::SLEEP ? 1 : 0);
+    } else if (!strcmp(cmd, "STATE")) {
+        n = snprintf(buf, bufsize, "%s", getStateName());
+    } else if (!strcmp(cmd, "VIN")) {
+        n = snprintf(buf, bufsize, "%s", vin_[0] ? vin_ : "N/A");
+    } else if (!strcmp(cmd, "TEMP")) {
+        n = snprintf(buf, bufsize, "%d", deviceTemp_);
+    } else if (!strcmp(cmd, "ACC")) {
+        n = snprintf(buf, bufsize, "%.1f/%.1f/%.1f", acc_[0], acc_[1], acc_[2]);
+    } else if (!strcmp(cmd, "GYRO")) {
+        n = snprintf(buf, bufsize, "%.1f/%.1f/%.1f", gyr_[0], gyr_[1], gyr_[2]);
+    } else if (!strcmp(cmd, "GF")) {
+        n = snprintf(buf, bufsize, "%f",
+                     sqrtf(acc_[0]*acc_[0] + acc_[1]*acc_[1] + acc_[2]*acc_[2]));
+    } else if (!strcmp(cmd, "RSSI")) {
+        n = snprintf(buf, bufsize, "%d", rssi_);
+    } else if (!strcmp(cmd, "SSID?")) {
+        n = snprintf(buf, bufsize, "%s", wifiSSID[0] ? wifiSSID : "-");
+    } else if (!strncmp(cmd, "SSID=", 5)) {
+        n = snprintf(buf, bufsize, "%s",
+                     nvs_set_str(nvsHandle, "WIFI_SSID", cmd + 5) == ESP_OK ? "OK" : "ERR");
+        loadConfig();
+    } else if (!strcmp(cmd, "WPWD?")) {
+        n = snprintf(buf, bufsize, "%s", wifiPassword[0] ? wifiPassword : "-");
+    } else if (!strncmp(cmd, "WPWD=", 5)) {
+        n = snprintf(buf, bufsize, "%s",
+                     nvs_set_str(nvsHandle, "WIFI_PWD", cmd + 5) == ESP_OK ? "OK" : "ERR");
+        loadConfig();
+    } else if (!strcmp(cmd, "LAT") && gpsData_) {
+        n = snprintf(buf, bufsize, "%f", gpsData_->lat);
+    } else if (!strcmp(cmd, "LNG") && gpsData_) {
+        n = snprintf(buf, bufsize, "%f", gpsData_->lng);
+    } else if (!strcmp(cmd, "SPD") && gpsData_) {
+        n = snprintf(buf, bufsize, "%d", (int)(gpsData_->speed * 1852 / 1000));
+    } else if (!strcmp(cmd, "SAT") && gpsData_) {
+        n = snprintf(buf, bufsize, "%u", (unsigned)gpsData_->sat);
+    } else {
+        n = snprintf(buf, bufsize, "ERROR");
+    }
+
+    Serial.printf(" -> %s\n", buf);
+    if (n < bufsize - 1) buf[n++] = '\r';
+    buf[n] = 0;
+    ble_send_response(buf, n, cmd);
+#else
+    if (timeout) delay(timeout);
+#endif
 }
 
 // ===========================================================================
@@ -637,12 +1112,9 @@ float StateMachine::getBatteryVoltage() {
 
 void StateMachine::generateTripId(char* buf, size_t len) {
     if (len < 27) { if (len > 0) buf[0] = '\0'; return; }
-
-    // 10 hex chars from millis timestamp + 16 hex chars from esp_random
     uint64_t now = millis();
     uint32_t r1 = esp_random();
     uint32_t r2 = esp_random();
-
     snprintf(buf, len, "%010llX%08lX%08lX",
              (unsigned long long)now,
              (unsigned long)r1,
@@ -651,7 +1123,6 @@ void StateMachine::generateTripId(char* buf, size_t len) {
 
 void StateMachine::addEvent(TripEvent::EventType type, const char* details) {
     if (eventCount_ >= MAX_EVENTS) return;
-
     TripEvent& e = events_[eventCount_++];
     e.type = type;
     e.timestamp_ms = millis();

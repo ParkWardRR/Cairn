@@ -43,14 +43,14 @@
 
 ## What is Cairn?
 
-Cairn is an **offline-first vehicle trip journal** built on the [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/). It captures GPS and motion data while you drive, stores everything locally on the device's microSD card, and syncs to your homelab **only when you return to your home Wi-Fi**.
+Cairn is an **offline-first vehicle trip journal** built on the [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/). It captures GPS, motion, and OBD-II engine data while you drive, stores everything locally on the device's microSD card, and syncs to your homelab **only when you return to your home Wi-Fi**.
 
 No phone. No cloud. No cellular. No subscription. An append-only record of your driving history, owned entirely by you.
 
 | Moment | What Happens |
 |--------|-------------|
 | **Get in and drive** | Device wakes on motion, starts a local trip session |
-| **During the drive** | GNSS + IMU captured at adaptive rates, written to microSD |
+| **During the drive** | GNSS + IMU + OBD-II captured at adaptive rates, written to microSD |
 | **Park away from home** | Trip finalized locally; device sleeps; nothing transmitted |
 | **Return home** | Device detects trusted Wi-Fi, uploads pending trips via mTLS |
 | **After sync** | Server validates, deduplicates, and exposes trips in the web UI |
@@ -72,10 +72,10 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Vehicle                                                            │
 │                                                                     │
-│  Freematics ONE+ Model B (ESP32 + GNSS + IMU + microSD + Wi-Fi)    │
+│  Freematics ONE+ Model B (ESP32 + GNSS + IMU + OBD-II + microSD)   │
 │                                                                     │
-│  [drive]  GNSS/IMU → append-only trip spool on microSD              │
-│  [park]   finalize bundle → SHA-256 + Ed25519 sign → sleep          │
+│  [drive]  GNSS/IMU/OBD → append-only trip spool on microSD          │
+│  [park]   finalize bundle → SHA-256 sign → standby (IMU wake)       │
 │  [home]   join trusted Wi-Fi → mTLS chunked upload → verify ACK     │
 │  [done]   retain until receipt is durable → prune safely             │
 └───────────────────────────────┬─────────────────────────────────────┘
@@ -217,12 +217,12 @@ Every language in this stack was chosen for deterministic resources, strong stat
 ```
 Cairn/
 ├── firmware/                    # ESP32 / Freematics firmware (C++)
-│   ├── freematics-base/         #   Hardware abstraction layer
-│   ├── hal/                     #   HAL drivers (SPI-DMA, SDMMC, UART, Wi-Fi)
-│   ├── trip-recorder/           #   Drive detection + logging state machine
-│   └── wifi-provisioner/        #   Home network provisioning
+│   └── freematics-base/         #   PlatformIO project using vendored FreematicsPlus
+│       ├── lib/FreematicsPlus/  #     Vendored Freematics hardware drivers (BSD)
+│       ├── lib/TinyGPS/         #     Vendored NMEA parser
+│       └── src/                 #     Cairn state machine, config, trip types
 ├── zig/                         # Core services and libraries
-│   ├── common/                  #   Shared types: GnssSample (32B), ImuSummary (24B), Haversine
+│   ├── common/                  #   Shared types: GnssSample (32B), ImuSummary (24B), OBDSnapshot (20B), Haversine
 │   ├── bundle/                  #   Trip bundle parse / validate / sign
 │   ├── ingest/                  #   Go ingest service (mTLS upload, read API, MQTT, plugins)
 │   ├── cli/                     #   tripctl: generate, validate, inspect, export
@@ -299,14 +299,16 @@ Each trip is a self-contained directory on the device's microSD:
 
 ```
 trip/
-  manifest.json       # Trip metadata, device info, schema version
+  manifest.json       # Trip metadata, device info, VIN, DTC codes, schema v2
   samples.bin         # GNSS samples — 32 bytes each, little-endian, fixed-width
   imu_summary.bin     # IMU summaries — 24 bytes each, rolling windows
-  events.json         # Start/stop/pause/quality events with location
-  sha256sums.txt      # Per-file content hashes
+  obd.bin             # OBD-II snapshots — 20 bytes each (speed, RPM, throttle, etc.)
+  health.bin          # Device health — 16 bytes each (battery, temp, RSSI)
+  events.json         # Start/stop/pause/quality/ECU-off/thermal events with location
+  sha256sums.txt      # Per-file content hashes (ESP32 hardware-accelerated SHA-256)
 ```
 
-GNSS samples encode latitude and longitude as `degrees * 10^7` (i32), altitude in centimeters (i32), speed in cm/s (u16), with fix quality, satellite count, HDOP, and accuracy fields. At 1 Hz a 30-minute trip produces ~57 KB of GNSS data.
+GNSS samples encode latitude and longitude as `degrees * 10^7` (i32), altitude in centimeters (i32), speed in cm/s (u16), with fix quality, satellite count, HDOP, and accuracy fields. OBD snapshots capture speed, RPM, throttle, engine load, coolant/intake temp, fuel pressure, and timing advance. At 1 Hz a 30-minute trip produces ~57 KB GNSS + ~36 KB OBD data.
 
 ---
 
@@ -453,7 +455,6 @@ cd rust/trajectory && cargo build --release
 
 | Excluded | Reason |
 |----------|--------|
-| OBD-II diagnostic polling | Bus wake-up/compatibility/power complexity with no product value |
 | LTE / cellular / WAN upload | Cost, external dependency, privacy leakage |
 | Cloud account or third-party backend | Contradicts local-first ownership |
 | Live vehicle tracking | Requires persistent connectivity |
