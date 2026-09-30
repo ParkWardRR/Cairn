@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
+  <a href="https://github.com/ParkWardRR/Cairn/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0_tools-8E44AD?style=flat-square" alt="Release v0.1.0"></a>
   <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_1–9_Active-2ECC71?style=flat-square" alt="Project Status"></a>
   <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
 </p>
@@ -221,6 +222,7 @@ Cairn/
 │       ├── lib/FreematicsPlus/  #     Vendored Freematics hardware drivers (BSD)
 │       ├── lib/TinyGPS/         #     Vendored NMEA parser
 │       └── src/                 #     Cairn state machine, config, trip types
+│           └── secrets.h.example #    Template for untracked local credentials
 ├── zig/                         # Core services and libraries
 │   ├── common/                  #   Shared types: GnssSample (32B), ImuSummary (24B), OBDSnapshot (20B), Haversine
 │   ├── bundle/                  #   Trip bundle parse / validate / sign
@@ -266,6 +268,7 @@ Cairn/
 ├── fixtures/                    # Test data (raw, synthetic, expected)
 ├── docs/                        # Architecture, protocols, threat model
 ├── .github/workflows/ci.yml     # CI: Zig, Go, Rust, Gleam, MoonBit, Odin, PWA
+├── INSTALL.md                   # Install guide for the v0.1.0 tools release
 ├── ROADMAP.md                   # Phased roadmap with checklists
 └── LICENSE                      # Blue Oak Model License 1.0.0
 ```
@@ -371,11 +374,34 @@ All endpoints served by the Go ingest service on port 8443.
 
 ## Quick Start
 
+> **Installing?** See **[INSTALL.md](INSTALL.md)** for the full guide.
+> [**v0.1.0**](https://github.com/ParkWardRR/Cairn/releases/tag/v0.1.0) ships
+> prebuilt CLI tools for macOS arm64 and Linux x86_64 plus the ESP32 firmware
+> image. The server and web UI are not in that release yet — the tools work
+> standalone against bundles on disk, no server required.
+
 ### Prerequisites
 
 - [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/) with microSD card
 - Homelab server (Linux) with Podman or Docker
-- Home Wi-Fi network with a stable SSID/BSSID
+- Home Wi-Fi network on **2.4 GHz** — the ESP32 has no 5 GHz radio
+
+### Firmware Configuration
+
+WiFi credentials and the server hostname live in an untracked `secrets.h`, so
+nothing environment-specific is ever committed:
+
+```bash
+cd firmware/freematics-base
+cp src/secrets.h.example src/secrets.h   # then edit it
+pio run -e freematics
+```
+
+A missing value fails open to "no network configured" and still compiles, so
+flash `pio run -e freematics-selftest` first — it joins WiFi, resolves the
+server and fetches `/api/v1/health` over serial, and on failure lists every SSID
+the radio can see. Note that `cairn.local` requires mDNS, which the ESP32
+resolver does not do; use a name your router's DNS actually serves.
 
 ### Server Setup
 
@@ -499,6 +525,8 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 
 | Document | Description |
 |----------|-------------|
+| [Install Guide](INSTALL.md) | Installing the v0.1.0 tools and flashing firmware |
+| [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
 | [Architecture](docs/architecture.md) | System design, data flow, component responsibilities |
 | [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol |
 | [Trip File Format](docs/trip-file-format.md) | Bundle schema, sample encoding (32-byte GNSS, 24-byte IMU) |

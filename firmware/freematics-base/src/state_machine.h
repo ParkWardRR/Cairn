@@ -79,6 +79,13 @@ private:
     // Running SHA-256 context
     bool hashActive_ = false;
 
+    // Arming ring buffer — captures samples before trip officially starts
+    static constexpr size_t ARMING_BUF_SIZE = 128;
+    GNSSSample armingGnss_[ARMING_BUF_SIZE];
+    IMUSummary armingImu_[ARMING_BUF_SIZE];
+    uint16_t   armingGnssCount_ = 0;
+    uint16_t   armingImuCount_  = 0;
+
     // State handlers
     void handleSleep();
     void handleArming();
@@ -131,6 +138,8 @@ private:
     bool writeChecksums();
     void addEvent(TripEvent::EventType type, const char* details);
     void processExtInputs(uint16_t& s1, uint16_t& s2);
+    void recoverOrphanedTrips();
+    void flushArmingBuffer();
 
     static constexpr size_t MAX_EVENTS = 64;
     TripEvent events_[MAX_EVENTS];

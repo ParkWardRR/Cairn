@@ -26,3 +26,12 @@ web/static/maplibre/
 .nimbalyst/
 nimbalyst-local/
 firmware/freematics-base/.pio/
+
+# Local credentials — never commit. Template: src/secrets.h.example
+firmware/freematics-base/src/secrets.h
+
+# Agent worktrees and local scratch
+.claude/
+
+# Release build staging
+dist/

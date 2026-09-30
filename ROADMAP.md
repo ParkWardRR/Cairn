@@ -92,7 +92,7 @@ trip/
   - [x] Set up PlatformIO for Freematics ONE+ Model B (esp-wrover-kit)
   - [x] Vendor FreematicsPlus library (19 files) + TinyGPS (2 files) — proven hardware drivers
   - [x] Replace broken custom HAL with vendor library for all peripherals
-  - [ ] Successfully erase, flash, and serial-monitor the device
+  - [x] Successfully erase, flash, and serial-monitor the device *(flashed repeatedly over USB from a Raspberry Pi flash station; esptool hash-verified, boot captured at 115200)*
   - [ ] Document recovery procedure for bricked state
 
 - [x] **Disable unused radios**
@@ -126,8 +126,9 @@ trip/
   - [x] WiFi credentials stored in NVS (provisioned via BLE or compile-time)
   - [x] WiFi.begin() with NVS-stored SSID/password
   - [x] RSSI logging and connectivity monitoring
+  - [x] Verify association after power cycle *(joins home AP on every cold boot; -62 dBm on ch11)*
+  - [x] Bench self-test build (`env:freematics-selftest`) — 2.4 GHz scan, DNS resolution, server health fetch over serial
   - [ ] Expose local health/status endpoint over HTTP
-  - [ ] Verify reconnection after power cycle
 
 - [x] **Power and standby** *(harvested from stock firmware)*
   - [x] Battery voltage via devType-based reading (ATRV for devType<=12, analogRead for devType>12)
@@ -288,8 +289,13 @@ STOP_CANDIDATE
   - [x] Prioritize oldest unsynced trips
 
 - [x] **Local discovery**
-  - [x] mDNS (`cairn.local`) for initial deployment
-  - [ ] Static DHCP reservation for production reliability
+  - [x] ~~mDNS (`cairn.local`) for initial deployment~~ — **abandoned.** The ESP32
+        resolver does not do mDNS, so `cairn.local` never resolved from the
+        device. The server is now reached by a name the router's DNS serves.
+  - [x] Server host configurable per-deployment via untracked `secrets.h`
+  - [ ] Static DHCP reservation for production reliability *(the server's lease
+        has already moved twice, which is why the firmware uses a DNS name
+        rather than a hardcoded IP)*
 
 ---
 

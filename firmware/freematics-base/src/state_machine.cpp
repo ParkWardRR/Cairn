@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
 #include "mbedtls/sha256.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -86,7 +87,9 @@ void StateMachine::init() {
     if (sdReady_) {
         Serial.printf("[SD] Mounted: %llu MB total, %llu MB used\n",
                       SD.totalBytes() / (1024*1024), SD.usedBytes() / (1024*1024));
+        SD.mkdir("/cairn");
         SD.mkdir(TRIP_BASE_PATH);
+        recoverOrphanedTrips();
     } else {
         Serial.println("[SD] Card mount failed");
     }
@@ -274,10 +277,20 @@ void StateMachine::handleArming() {
     IMUSummary imu  = readIMU();
     float speed     = getSpeedKmh(gnss);
 
+    // Buffer samples so they aren't lost if trip starts
+    if (armingGnssCount_ < ARMING_BUF_SIZE) {
+        armingGnss_[armingGnssCount_++] = gnss;
+    }
+    if (armingImuCount_ < ARMING_BUF_SIZE) {
+        armingImu_[armingImuCount_++] = imu;
+    }
+
     bool conditionsMet = (speed >= MIN_SPEED_KMH) || isMoving(gnss, imu);
 
     if (!conditionsMet) {
         if (elapsed > ARMING_DURATION_MS) {
+            armingGnssCount_ = 0;
+            armingImuCount_ = 0;
             transitionTo(DeviceState::SLEEP);
         }
         return;
@@ -296,6 +309,8 @@ void StateMachine::handleArming() {
         eventCount_ = 0;
         tripStartMs_ = millis();
         dataInterval_ = DATA_INTERVAL_TABLE[0];
+
+        flushArmingBuffer();
 
         addEvent(TripEvent::TRIP_START, "recording started");
         transitionTo(DeviceState::RECORDING);
@@ -806,10 +821,104 @@ void StateMachine::processExtInputs(uint16_t& s1, uint16_t& s2) {
 // Storage — Arduino SD via SPI
 // ===========================================================================
 
+void StateMachine::flushArmingBuffer() {
+    if (armingGnssCount_ > 0) {
+        Serial.printf("[SD] Flushing %u arming GNSS samples\n", armingGnssCount_);
+        for (uint16_t i = 0; i < armingGnssCount_; i++) {
+            writeSample(armingGnss_[i]);
+            gnssSampleCount_++;
+        }
+        armingGnssCount_ = 0;
+    }
+    if (armingImuCount_ > 0) {
+        Serial.printf("[SD] Flushing %u arming IMU samples\n", armingImuCount_);
+        for (uint16_t i = 0; i < armingImuCount_; i++) {
+            writeIMUSummary(armingImu_[i]);
+            imuSummaryCount_++;
+        }
+        armingImuCount_ = 0;
+    }
+}
+
+void StateMachine::recoverOrphanedTrips() {
+    if (!sdReady_) return;
+
+    File root = SD.open(TRIP_BASE_PATH);
+    if (!root || !root.isDirectory()) return;
+
+    int recovered = 0;
+    File entry;
+    while ((entry = root.openNextFile())) {
+        if (!entry.isDirectory()) { entry.close(); continue; }
+
+        const char* name = entry.name();
+        entry.close();
+
+        char manifestPath[96];
+        snprintf(manifestPath, sizeof(manifestPath), "%s/%s/manifest.json",
+                 TRIP_BASE_PATH, name);
+        char samplesPath[96];
+        snprintf(samplesPath, sizeof(samplesPath), "%s/%s/samples.bin",
+                 TRIP_BASE_PATH, name);
+
+        bool hasManifest = SD.exists(manifestPath);
+        bool hasSamples  = SD.exists(samplesPath);
+
+        if (hasSamples && !hasManifest) {
+            Serial.printf("[RECOVERY] Orphaned trip: %s\n", name);
+
+            // Set up paths so finalize helpers work
+            strncpy(currentTripId_, name, sizeof(currentTripId_) - 1);
+            snprintf(tripDir_, sizeof(tripDir_), "%s/%s", TRIP_BASE_PATH, name);
+            snprintf(samplesPath_, sizeof(samplesPath_), "%s/samples.bin", tripDir_);
+            snprintf(imuPath_, sizeof(imuPath_), "%s/imu_summary.bin", tripDir_);
+            snprintf(obdPath_, sizeof(obdPath_), "%s/obd.bin", tripDir_);
+            snprintf(healthPath_, sizeof(healthPath_), "%s/health.bin", tripDir_);
+
+            // Count samples from file sizes
+            File sf = SD.open(samplesPath_, FILE_READ);
+            gnssSampleCount_ = sf ? (sf.size() / sizeof(GNSSSample)) : 0;
+            if (sf) sf.close();
+
+            File imf = SD.open(imuPath_, FILE_READ);
+            imuSummaryCount_ = imf ? (imf.size() / sizeof(IMUSummary)) : 0;
+            if (imf) imf.close();
+
+            File of = SD.open(obdPath_, FILE_READ);
+            obdSampleCount_ = of ? (of.size() / sizeof(OBDSnapshot)) : 0;
+            if (of) of.close();
+
+            tripStartMs_ = 0;
+            eventCount_ = 0;
+            addEvent(TripEvent::POWER_ANOMALY, "recovered after power loss");
+
+            writeManifest();
+            writeChecksums();
+            recovered++;
+
+            Serial.printf("[RECOVERY] Finalized: %u GNSS, %u IMU, %u OBD\n",
+                          gnssSampleCount_, imuSummaryCount_, obdSampleCount_);
+        }
+    }
+    root.close();
+
+    if (recovered > 0) {
+        Serial.printf("[RECOVERY] Recovered %d orphaned trip(s)\n", recovered);
+    }
+
+    // Clear state so normal operation starts clean
+    memset(currentTripId_, 0, sizeof(currentTripId_));
+    gnssSampleCount_ = 0;
+    imuSummaryCount_ = 0;
+    obdSampleCount_ = 0;
+    eventCount_ = 0;
+}
+
 bool StateMachine::initSD() {
     if (sdReady_) return true;
     sdReady_ = SD.begin(PIN_SD_CS);
     if (sdReady_) {
+        SD.mkdir("/cairn");
         SD.mkdir(TRIP_BASE_PATH);
     }
     return sdReady_;
@@ -996,6 +1105,82 @@ bool StateMachine::connectToHome() {
     return false;
 }
 
+static bool hashFile(const char* path, char* hexOut) {
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+
+    mbedtls_sha256_context ctx;
+    mbedtls_sha256_init(&ctx);
+    mbedtls_sha256_starts(&ctx, 0);
+
+    uint8_t buf[512];
+    while (f.available()) {
+        size_t n = f.read(buf, sizeof(buf));
+        if (n > 0) mbedtls_sha256_update(&ctx, buf, n);
+    }
+    f.close();
+
+    uint8_t hash[32];
+    mbedtls_sha256_finish(&ctx, hash);
+    mbedtls_sha256_free(&ctx);
+
+    for (int i = 0; i < 32; i++) {
+        snprintf(hexOut + i * 2, 3, "%02x", hash[i]);
+    }
+    hexOut[64] = '\0';
+    return true;
+}
+
+static int httpRequest(WiFiClient& client, const char* method,
+                       const char* host, uint16_t port, const char* path,
+                       const char* contentType, const uint8_t* payload, size_t len,
+                       const char* extraHeader, char* respBuf, size_t respBufSize) {
+    if (!client.connect(host, port)) return -1;
+
+    client.printf("%s %s HTTP/1.1\r\n", method, path);
+    client.printf("Host: %s:%u\r\n", host, port);
+    client.printf("Content-Type: %s\r\n", contentType);
+    client.printf("Content-Length: %u\r\n", (unsigned)len);
+    client.print("Connection: close\r\n");
+    if (extraHeader) client.print(extraHeader);
+    client.print("\r\n");
+
+    if (payload && len > 0) client.write(payload, len);
+
+    unsigned long t = millis();
+    while (!client.available() && millis() - t < 10000) delay(10);
+
+    char statusLine[64] = {};
+    if (client.available()) {
+        int sl = client.readBytesUntil('\n', statusLine, sizeof(statusLine) - 1);
+        statusLine[sl] = '\0';
+    }
+
+    int httpCode = 0;
+    char* sp = strchr(statusLine, ' ');
+    if (sp) httpCode = atoi(sp + 1);
+
+    // Skip headers
+    while (client.available()) {
+        String line = client.readStringUntil('\n');
+        if (line == "\r" || line.length() == 0) break;
+    }
+
+    // Read body
+    size_t bodyLen = 0;
+    if (respBuf && respBufSize > 0) {
+        while (client.available() && bodyLen < respBufSize - 1) {
+            int b = client.read();
+            if (b < 0) break;
+            respBuf[bodyLen++] = (char)b;
+        }
+        respBuf[bodyLen] = '\0';
+    }
+
+    client.stop();
+    return httpCode;
+}
+
 bool StateMachine::uploadBundle(const char* tripId) {
     if (WiFi.status() != WL_CONNECTED) return false;
 
@@ -1005,13 +1190,132 @@ bool StateMachine::uploadBundle(const char* tripId) {
 
     File f = SD.open(samplesFile, FILE_READ);
     if (!f) return false;
-
     size_t totalSize = f.size();
     f.close();
 
-    Serial.printf("[SYNC] Ready to upload %s (%u bytes)\n", tripId, (unsigned)totalSize);
-    // TODO: HTTP upload to cairn.local:8443
-    return false;
+    char contentHash[65];
+    if (!hashFile(samplesFile, contentHash)) return false;
+
+    Serial.printf("[SYNC] Uploading %s (%u bytes, hash=%.16s...)\n",
+                  tripId, (unsigned)totalSize, contentHash);
+
+    WiFiClient client;
+    char respBuf[512];
+
+    // --- Step 1: Init ---
+    JsonDocument initDoc;
+    initDoc["device_id"] = WiFi.macAddress().c_str();
+    initDoc["trip_id"] = tripId;
+    initDoc["content_hash"] = contentHash;
+    initDoc["size"] = (int)totalSize;
+
+    char body[256];
+    size_t bodyLen = serializeJson(initDoc, body, sizeof(body));
+
+    int code = httpRequest(client, "POST", SERVER_HOSTNAME, SERVER_PORT,
+                           "/api/v1/upload/init", "application/json",
+                           (const uint8_t*)body, bodyLen, nullptr,
+                           respBuf, sizeof(respBuf));
+
+    if (code != 200) {
+        Serial.printf("[SYNC] Init failed: HTTP %d\n", code);
+        return false;
+    }
+
+    JsonDocument respDoc;
+    if (deserializeJson(respDoc, respBuf)) {
+        Serial.println("[SYNC] Init parse error");
+        return false;
+    }
+
+    const char* uploadId = respDoc["upload_id"];
+    int64_t resumeOffset = respDoc["resume_offset"] | (int64_t)0;
+
+    if (!uploadId) {
+        Serial.println("[SYNC] Init: no upload_id");
+        return false;
+    }
+
+    if (resumeOffset == -1) {
+        Serial.println("[SYNC] Already uploaded (server confirms)");
+        return true;
+    }
+
+    char uploadIdBuf[40];
+    strncpy(uploadIdBuf, uploadId, sizeof(uploadIdBuf) - 1);
+    uploadIdBuf[sizeof(uploadIdBuf) - 1] = '\0';
+
+    Serial.printf("[SYNC] Init OK: id=%s, resume=%lld\n", uploadIdBuf, resumeOffset);
+
+    // --- Step 2: Chunk upload ---
+    f = SD.open(samplesFile, FILE_READ);
+    if (!f) return false;
+
+    if (resumeOffset > 0) f.seek(resumeOffset);
+
+    size_t offset = (size_t)resumeOffset;
+    uint8_t* chunk = (uint8_t*)malloc(UPLOAD_CHUNK_SIZE);
+    if (!chunk) { f.close(); return false; }
+
+    bool uploadOk = true;
+    while (offset < totalSize) {
+        if (WiFi.status() != WL_CONNECTED) { uploadOk = false; break; }
+
+        size_t toRead = totalSize - offset;
+        if (toRead > UPLOAD_CHUNK_SIZE) toRead = UPLOAD_CHUNK_SIZE;
+
+        size_t n = f.read(chunk, toRead);
+        if (n == 0) { uploadOk = false; break; }
+
+        char path[96];
+        snprintf(path, sizeof(path), "/api/v1/upload/%s/chunk", uploadIdBuf);
+
+        char offsetHdr[48];
+        snprintf(offsetHdr, sizeof(offsetHdr), "X-Upload-Offset: %u\r\n", (unsigned)offset);
+
+        code = httpRequest(client, "PUT", SERVER_HOSTNAME, SERVER_PORT,
+                           path, "application/octet-stream",
+                           chunk, n, offsetHdr, respBuf, sizeof(respBuf));
+
+        if (code != 200) {
+            Serial.printf("[SYNC] Chunk failed at %u: HTTP %d\n", (unsigned)offset, code);
+            uploadOk = false;
+            break;
+        }
+
+        offset += n;
+        unsigned pct = (unsigned)((uint64_t)offset * 100 / totalSize);
+        Serial.printf("[SYNC] %u/%u (%u%%)\n", (unsigned)offset, (unsigned)totalSize, pct);
+    }
+
+    free(chunk);
+    f.close();
+
+    if (!uploadOk) return false;
+
+    // --- Step 3: Finalize ---
+    char finPath[96];
+    snprintf(finPath, sizeof(finPath), "/api/v1/upload/%s/finalize", uploadIdBuf);
+
+    JsonDocument finDoc;
+    finDoc["content_hash"] = contentHash;
+    bodyLen = serializeJson(finDoc, body, sizeof(body));
+
+    code = httpRequest(client, "POST", SERVER_HOSTNAME, SERVER_PORT,
+                       finPath, "application/json",
+                       (const uint8_t*)body, bodyLen, nullptr,
+                       respBuf, sizeof(respBuf));
+
+    if (code == 200) {
+        JsonDocument rcptDoc;
+        deserializeJson(rcptDoc, respBuf);
+        const char* receiptId = rcptDoc["receipt_id"];
+        Serial.printf("[SYNC] Finalized, receipt=%s\n", receiptId ? receiptId : "n/a");
+    } else {
+        Serial.printf("[SYNC] Finalize failed: HTTP %d\n", code);
+    }
+
+    return code == 200;
 }
 
 // ===========================================================================

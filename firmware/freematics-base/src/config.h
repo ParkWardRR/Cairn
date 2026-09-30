@@ -4,6 +4,19 @@
 #include <cstdint>
 
 // ===========================================================================
+// Local deployment values (WiFi credentials, server host) live in secrets.h,
+// which is gitignored — this repo is public, so nothing environment-specific
+// belongs in a tracked file. Copy secrets.h.example to secrets.h to set them.
+// Every value below has a safe, generic fallback, so a fresh clone builds
+// without secrets.h present.
+// ===========================================================================
+#if defined(__has_include)
+#  if __has_include("secrets.h")
+#    include "secrets.h"
+#  endif
+#endif
+
+// ===========================================================================
 // Pin assignments come from the vendored FreematicsPlus.h.
 // Do NOT redeclare them here. This file holds only Cairn-specific
 // behavioural thresholds and configuration.
@@ -46,8 +59,17 @@ constexpr uint16_t GNSS_RESET_TIMEOUT_S = 300;
 // ===========================================================================
 // Sync server
 // ===========================================================================
-constexpr char SERVER_HOSTNAME[64] = "cairn.local";
-constexpr uint16_t SERVER_PORT     = 8443;
+// Override CAIRN_SERVER_HOST / CAIRN_SERVER_PORT in secrets.h (or with -D
+// build flags) to point at your own server. The default below is deliberately
+// generic so release builds carry no personal hostname.
+#ifndef CAIRN_SERVER_HOST
+#define CAIRN_SERVER_HOST "cairn.local"
+#endif
+#ifndef CAIRN_SERVER_PORT
+#define CAIRN_SERVER_PORT 8080
+#endif
+constexpr char SERVER_HOSTNAME[64] = CAIRN_SERVER_HOST;
+constexpr uint16_t SERVER_PORT     = CAIRN_SERVER_PORT;
 
 // ===========================================================================
 // State-machine thresholds
@@ -125,7 +147,9 @@ constexpr bool RESET_AFTER_WAKEUP = true;
 constexpr bool GNSS_ALWAYS_ON     = false;
 
 // ===========================================================================
-// WiFi credentials (default empty — set via BLE or NVS)
+// WiFi credentials — set these in secrets.h (included at the top of this file),
+// via -D build flags, or at runtime over BLE into NVS. Empty defaults mean a
+// build without secrets.h simply has no network configured.
 // ===========================================================================
 #ifndef WIFI_SSID
 #define WIFI_SSID ""
