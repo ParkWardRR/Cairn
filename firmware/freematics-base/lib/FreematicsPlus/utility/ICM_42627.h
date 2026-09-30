@@ -61,6 +61,6 @@
 #define GYRO_YOUT_H_REG      		0x27
 #define GYRO_YOUT_L_REG      		0x28
 #define GYRO_ZOUT_H_REG      		0x29
-#define GYRO_ZOUT_L_REG      		0x30
+#define GYRO_ZOUT_L_REG      		0x2A
 
 #endif

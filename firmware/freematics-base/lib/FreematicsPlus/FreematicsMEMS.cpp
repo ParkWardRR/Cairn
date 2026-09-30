@@ -739,7 +739,7 @@ void ICM_42627::init()
   writeByte(GYRO_CONFIG0_REG, GYRO_ODR_1KHZ | GYRO_FS_SEL_250dps);
   delay(100);
 
-  writeByte(SELF_TEST_CONFIG_REG, 0x07);
+  writeByte(SELF_TEST_CONFIG_REG, 0x00);
   delay(100);
 }
 
