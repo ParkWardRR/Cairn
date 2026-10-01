@@ -1,0 +1,17 @@
+{
+  "name": "seq-gap",
+  "description": "A second frame declaring seq 5 instead of 1, with a correct prev_crc32.",
+  "asserts": "SEQ_GAP. The chain is intact and the CRC is valid, so only the sequence check can catch this.",
+  "scan": {
+    "stop_reason": "SEQ_GAP",
+    "frames_retained": 1,
+    "stop_offset": 124,
+    "discarded_tail_bytes": 60,
+    "unknown_type_count": 0,
+    "record_counts": {
+      "GNSS_SAMPLE": 1
+    },
+    "first_seq": 0,
+    "last_seq": 0
+  }
+}

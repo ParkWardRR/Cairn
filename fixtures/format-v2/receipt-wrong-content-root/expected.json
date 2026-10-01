@@ -1,0 +1,12 @@
+{
+  "name": "receipt-wrong-content-root",
+  "description": "A genuinely signed receipt that acknowledges a different bundle.",
+  "asserts": "The signature verifies, but the receipt must still be rejected as an acknowledgement of this upload. Accepting it would let a misconfigured or hostile server induce deletion of data it never received.",
+  "receipt": {
+    "signature_valid": true,
+    "acknowledges_uploaded_root": false,
+    "uploaded_content_root_hex": "5a674015991470856d2686e1ba1ea7733163e52ef08af279bd76a3a97b574c2f",
+    "receipt_content_root_hex": "6744fc640d933335c65cae97de06c1fcd113c0a8487f8cc347cf8d663525cf79",
+    "server_public_key_hex": "a7495c1d6b753bcc868ed5e05e7e62406b7e04582569a05cfe68366525bf8f4c"
+  }
+}

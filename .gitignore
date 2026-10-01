@@ -9,6 +9,8 @@ emulator/output/
 emulator/target/
 gleam/trip-orchestrator/build/
 zig/ingest/ingestd
+server/ingestd
+server/cairn-server
 deploy/ingestd-linux
 plugins/*/target/
 plugins/*/.mooncakes/

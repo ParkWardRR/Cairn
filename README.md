@@ -42,6 +42,27 @@
 
 ---
 
+## Status: v2 rebuild in progress
+
+Two architecture reviews found that v1's design is sound but only correct on the
+happy path. Cross-checking them against the code surfaced three live defects, so
+the core data path is being **rebuilt from a clean slate**. See
+[ROADMAP.md](ROADMAP.md) for the phased plan.
+
+**Known defects in v1 — do not rely on these guarantees:**
+
+| Claim | Reality |
+|---|---|
+| Trip bundles sync to the server | Only `samples.bin` is uploaded. OBD, IMU-summary, health and event data is silently discarded on every sync |
+| mTLS upload on port 8443 | Transport is plain HTTP on port 8080. No TLS, no client certificate, no server identity check |
+| Data is pruned only after a durable receipt | Pruning is not receipt-gated. Retention is measured with `millis()`, which resets on every deep sleep; the Ed25519 receipt signature is never verified |
+
+What is solid today: the [bundle format v2
+specification](docs/bundle-format-v2.md) with its Go reference implementation
+and 20 conformance vectors, the local CLI tooling, and the web UI.
+
+---
+
 ## What is Cairn?
 
 Cairn is an **offline-first vehicle trip journal** built on the [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/). It captures GPS, motion, and OBD-II engine data while you drive, stores everything locally on the device's microSD card, and syncs to your homelab **only when you return to your home Wi-Fi**.
@@ -65,53 +86,112 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 - **Privacy by architecture** — no cloud, no tracking, no third-party data access
 - **Each language earns its place** — every tool and service uses the best language for the job
 
+### Invariants the v2 rebuild enforces
+
+1. **A sealed bundle is never mutated.** It is either locally recoverable,
+   remotely receipt-confirmed, or both.
+2. **No byte is deleted without a locally verified signed receipt.** Time,
+   storage pressure and operator impatience are all insufficient justification.
+3. **Ordering truth is `(boot_id, seq)`, never wall-clock UTC.** GNSS time jumps;
+   UTC is an annotation with an uncertainty, not an index.
+4. **Honest incompleteness beats fabricated continuity.** A trip with a marked
+   GNSS gap is useful; a route interpolated from stale fixes is not.
+
 ---
 
-## Architecture
+## Architecture — v2 target
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  Vehicle                                                            │
+│  Vehicle — Freematics ONE+ Model B (classic ESP32, WROVER + PSRAM)  │
 │                                                                     │
-│  Freematics ONE+ Model B (ESP32 + GNSS + IMU + OBD-II + microSD)   │
+│  Capture plane                                                      │
+│    GNSS/IMU/OBD → framed append-only segments on microSD            │
+│    frame: boot_id + monotonic seq + CRC-32 + prev_crc32 chain       │
 │                                                                     │
-│  [drive]  GNSS/IMU/OBD → append-only trip spool on microSD          │
-│  [park]   finalize bundle → SHA-256 sign → standby (IMU wake)       │
-│  [home]   join trusted Wi-Fi → mTLS chunked upload → verify ACK     │
-│  [done]   retain until receipt is durable → prune safely             │
+│  Seal plane                                                         │
+│    segments → canonical CBOR manifest + chunk hashes + content_root │
+│    Ed25519-signed; atomic state: .open → .sealed                    │
+│                                                                     │
+│  Transfer plane                                                     │
+│    trusted Wi-Fi → mTLS → manifest-first, hash-addressed upload     │
+│    signed receipt verified locally before any prune                 │
+│                                                                     │
+│  Resilience: automatic boot recovery · power-cut safe · OTA A/B     │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │ LAN only
                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Homelab                                                            │
 │                                                                     │
-│  ┌──────────────┐   ┌───────────────┐   ┌────────────────────────┐ │
-│  │ Go Ingest    │──▶│ PostgreSQL    │──▶│ Go API (16 endpoints)  │ │
-│  │ mTLS upload  │   │ + PostGIS     │   │ + SvelteKit web app    │ │
-│  │ resumable    │   │               │   │   (Apple HIG dark,     │ │
-│  │ dedup/receipt│   └───────┬───────┘   │   Leaflet maps)        │ │
-│  └──────────────┘           │           └────────────────────────┘ │
-│                    ┌────────┼─────────┐                            │
-│                    ▼        ▼         ▼                            │
-│  ┌──────────────┐ ┌─────────────┐ ┌────────────────┐              │
-│  │ Gleam/OTP    │ │ WASM Plugin │ │ MQTT → Home    │              │
-│  │ orchestrator │ │ host (wazero│ │ Assistant      │              │
-│  │ 5 actors     │ │ sandbox)    │ │ semantic events│              │
-│  └──────────────┘ └─────────────┘ └────────────────┘              │
+│  Go ingest — validate, store, receipt, return. Nothing more.        │
+│  mTLS identity · chunk verification · dedupe on content_root        │
+│         │                                                           │
+│    ┌────┴──────────────┐                                            │
+│    ▼                   ▼                                            │
+│  Raw object store    Durable ingest outbox                          │
+│  content-addressed         │                                        │
+│  on ZFS                    ▼                                        │
+│                      Decode / normalize workers                     │
+│                            │                                        │
+│      ┌─────────────────────┼──────────────────────┐                │
+│      ▼                     ▼                      ▼                │
+│  PostgreSQL          Derived trips,          MQTT → Home            │
+│  + PostGIS           events, rollups         Assistant              │
+│  raw / normalized                            semantic events only   │
+│  / derived                                                          │
+│      │               Optional edges: Gleam, WASM plugins —          │
+│      ▼               these may fail freely without affecting        │
+│  API + SvelteKit     a drive or a receipt                           │
+│  ledger · maps                                                      │
 │                                                                     │
 │  Local tools: Odin trip-inspector, trip-diff, trip-replay,         │
 │               route-density, sd-recover                             │
-│  Emulator:    Rust cairn-emulator (15 scenarios, 5000x speedup)    │
+│  Emulator:    Rust — protocol, power-loss and network fault tests   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Raw data stays authoritative.** A decoder bug can be fixed and every affected
+trip re-derived without re-uploading anything. Ingest stays boring: it does not
+parse, map, detect events or publish MQTT while the device waits. A failed
+decoder job never implies a failed upload, and a plugin failure is a recorded
+result rather than a reason to reject a valid bundle.
+
+The v1 path — synchronous parse-and-insert on the upload request, plain HTTP,
+time-based pruning — is being replaced phase by phase per [ROADMAP.md](ROADMAP.md).
 
 ---
 
 ## Services and Tools
 
-### Go Ingest Service (`zig/ingest/`)
+### Bundle Format v2 and Go Reference Implementation (`server/`)
 
-The core server — receives trip bundles from the device and serves the read API.
+The foundation of the v2 rebuild. Three implementations — firmware (C), server
+(Go) and emulator (Rust) — must agree byte-for-byte, so the format ships as a
+[normative specification](docs/bundle-format-v2.md) with a reference
+implementation and committed conformance vectors rather than prose.
+
+| Component | Details |
+|---|---|
+| **Spec** | [`docs/bundle-format-v2.md`](docs/bundle-format-v2.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
+| **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
+| **Vectors** | `fixtures/format-v2/` — 20 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors` |
+
+Three identifiers are kept deliberately distinct, because the reviews were right
+that a content hash makes a poor operational handle:
+
+| Identifier | Job |
+|---|---|
+| `bundle_id` | ULID. Retries, receipts, support, directory naming, log correlation |
+| `content_root` | Merkle root over bundle members. Identity of the *data* — deduplication, idempotency, the signed commitment |
+| `transfer_hash` | SHA-256 of a transferred stream. Transport integrity only; never an identity |
+
+### Go Ingest Service (`zig/ingest/` — v1, being replaced)
+
+> The directory name is a historical artifact: it contains Go, not Zig. The v2
+> server lives in `server/`.
+
+The v1 server — receives trip bundles from the device and serves the read API.
 
 | Capability | Details |
 |------------|---------|
@@ -217,6 +297,11 @@ Every language in this stack was chosen for deterministic resources, strong stat
 
 ```
 Cairn/
+├── docs/bundle-format-v2.md     # Normative bundle format spec (v2 rebuild)
+├── server/                      # v2 Go server
+│   ├── format/                  #   Bundle format v2 reference implementation
+│   └── cmd/mkvectors/           #   Deterministic conformance vector generator
+├── fixtures/format-v2/          # 20 conformance vectors with expected verdicts
 ├── firmware/                    # ESP32 / Freematics firmware (C++)
 │   └── freematics-base/         #   PlatformIO project using vendored FreematicsPlus
 │       ├── lib/FreematicsPlus/  #     Vendored Freematics hardware drivers (BSD)
@@ -296,7 +381,11 @@ PostgreSQL + PostGIS:
 | `notifications` | Sync/device/storage issue notifications |
 | `automation_rules` | User-defined trigger/action rules |
 
-## Trip Bundle Format
+## Trip Bundle Format (v1 — superseded)
+
+> Superseded by [Bundle Format v2](docs/bundle-format-v2.md). The layout below
+> has no record framing, so a power cut mid-write cannot be distinguished from
+> valid data, and the firmware only ever uploads `samples.bin`.
 
 Each trip is a self-contained directory on the device's microSD:
 
@@ -511,7 +600,8 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | Job | What it builds/tests |
 |-----|---------------------|
 | `build-zig` | Zig common, bundle, CLI + smoke test |
-| `build-go` | Go ingest service + `go vet` |
+| `build-go` | v1 Go ingest service + `go vet` |
+| `build-server` | v2 server: build, vet, gofmt, tests, and a check that regenerating the conformance vectors produces no diff |
 | `build-rust` | Rust emulator + binary verification |
 | `build-trajectory` | Rust trajectory tool build + tests |
 | `build-gleam` | Gleam trip-orchestrator build + test |
@@ -527,9 +617,10 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 |----------|-------------|
 | [Install Guide](INSTALL.md) | Installing the v0.1.0 tools and flashing firmware |
 | [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
-| [Architecture](docs/architecture.md) | System design, data flow, component responsibilities |
-| [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol |
-| [Trip File Format](docs/trip-file-format.md) | Bundle schema, sample encoding (32-byte GNSS, 24-byte IMU) |
+| **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |
+| [Architecture](docs/architecture.md) | System design, data flow, component responsibilities (describes v1) |
+| [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol (describes v1) |
+| [Trip File Format](docs/trip-file-format.md) | v1 bundle schema — superseded by Bundle Format v2 |
 | [Threat Model](docs/threat-model.md) | Security boundaries, device identity, transport security |
 | [Retention & Backup](docs/retention-and-backup.md) | Data lifecycle from device spool to archive |
 | [Home Wi-Fi Deployment](docs/home-wifi-deployment.md) | Network setup, mDNS, certificates, provisioning |

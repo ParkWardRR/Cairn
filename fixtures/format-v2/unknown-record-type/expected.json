@@ -1,0 +1,18 @@
+{
+  "name": "unknown-record-type",
+  "description": "Record type 0x7F between two GNSS samples.",
+  "asserts": "EOF, three frames retained, unknown_type_count 1. An unknown type is skipped via frame_len, counted and reported — never an error. This is how a newer device stays partially readable by an older decoder, and the frame CRC still applies.",
+  "scan": {
+    "stop_reason": "EOF",
+    "frames_retained": 3,
+    "stop_offset": 234,
+    "discarded_tail_bytes": 0,
+    "unknown_type_count": 1,
+    "record_counts": {
+      "GNSS_SAMPLE": 2,
+      "UNKNOWN(0x7f)": 1
+    },
+    "first_seq": 0,
+    "last_seq": 2
+  }
+}

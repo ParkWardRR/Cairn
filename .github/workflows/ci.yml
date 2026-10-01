@@ -60,6 +60,45 @@ jobs:
         working-directory: zig/ingest
         run: go vet ./...
 
+  # v2 server. Gates the bundle format reference implementation against the
+  # committed conformance vectors, so an accidental format change fails CI
+  # instead of silently diverging from the firmware and emulator.
+  build-server:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: Build
+        working-directory: server
+        run: go build ./...
+
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: Check formatting
+        working-directory: server
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w ."; exit 1; }
+
+      - name: Test
+        working-directory: server
+        run: go test ./...
+
+      - name: Conformance vectors are reproducible
+        working-directory: server
+        run: |
+          go run ./cmd/mkvectors -out ../fixtures/format-v2
+          git diff --exit-code -- ../fixtures/format-v2 || {
+            echo "Regenerating the vectors produced a diff."
+            echo "If the format change is intended, commit the regenerated vectors."
+            exit 1
+          }
+
   build-rust:
     runs-on: [self-hosted, cairn]
     steps:

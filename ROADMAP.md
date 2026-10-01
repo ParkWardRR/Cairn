@@ -5,6 +5,174 @@
 
 ---
 
+# Cairn v2 — Rebuilding the Core Data Path
+
+**Current work.** Two architecture reviews concluded that v1's design is sound
+but only correct on the happy path, and asked for the system to become
+*auditable across failures*. Cross-checking the reviews against the code found
+three of their recommendations were live defects rather than future concerns:
+
+| Defect | Evidence |
+|---|---|
+| Only `samples.bin` is uploaded — OBD, IMU-summary, health and event data is silently discarded on every sync | `firmware/.../state_machine.cpp:1184`; the server falls back to `ParseRawSamples` |
+| Pruning is not receipt-gated. Retention is measured with `millis()`, which resets on every deep sleep; the Ed25519 signature is never verified and the receipt is never persisted | `state_machine.cpp:510`, `:1312` |
+| Transport is plain HTTP on port 8080, not the mTLS on 8443 that the docs claim | `config.h:69` |
+
+Rather than remediate in place, the core data path is being **rebuilt from a
+clean slate**: no format compatibility, no migration, no reissuing of historical
+receipts. The v1 phases further down this document are retained as history.
+
+## Guiding invariants
+
+1. **A sealed bundle is never mutated.** It is either locally recoverable,
+   remotely receipt-confirmed, or both.
+2. **No byte is deleted without a locally verified signed receipt.** Time,
+   storage pressure and operator impatience are all insufficient justification.
+3. **Ordering truth is `(boot_id, monotonic_seq)`, never wall-clock UTC.** GNSS
+   time jumps; UTC is an annotation with an uncertainty, not an index.
+4. **Honest incompleteness beats fabricated continuity.** A trip with a marked
+   GNSS gap is useful; a route interpolated from stale fixes is not.
+
+## Decisions
+
+| Decision | Choice |
+|---|---|
+| Firmware | ESP-IDF application with `arduino-esp32` as a component, keeping the vendored FreematicsPlus drivers. Rebuild the application, not the hardware access — this repo already contains one failed custom HAL |
+| Server | Go, in a top-level `server/` directory (the old `zig/ingest/` contains no Zig) |
+| Rebuilt | Firmware, ingest server, database schema, bundle format, emulator |
+| Kept | SvelteKit web UI, Odin tools, MoonBit plugins, Gleam orchestrator |
+| Stack shape | Core data path is C and Go only; Odin, MoonBit and Gleam remain optional side tooling that must be able to break without affecting a drive |
+
+Target hardware is **classic ESP32** (xtensa LX6, WROVER with PSRAM), not an
+S3. There is no secure element, so flash encryption plus a key in NVS is the
+accepted ceiling for the device signing key.
+
+## Build order
+
+Server and emulator first, so the device targets a server already proven
+against the fault matrix.
+
+### Phase 1 — Bundle format v2 — **complete**
+
+- [x] `docs/bundle-format-v2.md` as a normative spec with byte layouts
+- [x] Go reference implementation (`server/format/`): encode, decode, verify, recover
+- [x] Framed records: `boot_id`, monotonic `seq`, CRC-32, `prev_crc32` chain
+- [x] Deterministic-CBOR manifest, Ed25519-signed over a specified encoding
+- [x] Three distinct identifiers: `bundle_id` (ULID), `content_root` (Merkle root
+      over members), `transfer_hash` (transport integrity only)
+- [x] Nine payload schemas carrying fix type, HDOP, accuracy, satellites and
+      source flags — never inferring precision the receiver did not report
+- [x] UTC as an estimate with its own uncertainty, separate from the ordering key
+- [x] Explicit `GNSS_GAP` record so absence is recorded, never interpolated
+- [x] 20 conformance vectors in `fixtures/format-v2/`, generated deterministically
+- [x] Conformance runner; 60 test cases green
+
+### Phase 2 — Server: raw-first ingest
+
+- [ ] mTLS listener on 8443: private CA, per-device client certificates, denylist
+- [ ] Manifest-first upload; server replies with missing chunk ranges only
+- [ ] Content-addressed chunk acceptance — by hash, never by byte offset
+- [ ] Content-addressed raw store on ZFS, kept object-like for a later MinIO swap
+- [ ] Durable signed receipt, persisted **before** it is returned
+- [ ] Persistent signing key; refuse to start with an ephemeral key outside dev mode
+- [ ] Idempotency keyed on `content_root`, not on connection or request ID
+- [ ] Durable ingest outbox; ingest returns once the raw commit is durable
+- [ ] Per-device rate limits and storage quotas
+
+### Phase 3 — Emulator and fault injection
+
+- [ ] Rebuild around a fault-injection layer: interrupt at a named step, a byte
+      offset, or a seeded random point
+- [ ] Rust implementation of format v2, passing the committed vectors
+- [ ] Power cut at each storage write step
+- [ ] Network loss at each upload chunk
+- [ ] Reboot between receipt and prune
+- [ ] Corrupt chunk, duplicate upload, server crash during commit
+- [ ] Clock reset / GNSS jump; corrupted storage bytes
+- [ ] Decoder upgrade reproducibility; plugin timeout; storage full
+- [ ] Reproducible from a seed, printed on failure; assertions on the journal and
+      database, never stdout
+- [ ] **Standing rule: every later phase adds its own matrix rows before it closes**
+
+### Phase 4 — Schema and decode workers
+
+- [ ] Fresh migrations — raw / normalized / derived layers
+- [ ] Range-partition high-frequency sample tables by event time
+- [ ] Unique `(device_id, content_root)` and unique `bundle_id`
+- [ ] Decode, normalize and enrich workers consuming the outbox
+- [ ] Reprocessing as a queued job, not a synchronous endpoint
+- [ ] MQTT publishes semantic idempotent state only — never raw samples
+
+### Phase 5 — Firmware: ESP-IDF skeleton
+
+- [ ] ESP-IDF project with `arduino-esp32` as a component
+- [ ] **Partition table with A/B OTA slots from the first commit**, replacing `huge_app.csv`
+- [ ] NVS for `boot_id`, policy version and the flash error journal
+- [ ] Flash encryption; device signing key provisioned into NVS
+- [ ] Sensor tasks that only emit facts to a queue
+- [ ] Boot self-test; real `esp_sleep_get_wakeup_cause()`; pulls on wake pins
+
+### Phase 6 — Firmware: capture lifecycle
+
+- [ ] Three independently persisted regions: capture, bundle, connectivity
+- [ ] A single transition controller owns all state; tasks submit facts
+- [ ] Durable journal per transition with trigger, reason code and policy version
+- [ ] Confidence-scored evidence with start/stop hysteresis
+- [ ] 45 s pre-roll buffer written as `pretrip` samples on confirmation
+
+### Phase 7 — Firmware: framed storage and recovery
+
+- [ ] Append-only framed segments per format v2, rotated at a bounded size
+- [ ] Atomic seal: temp file, sync, rename to `.sealed`
+- [ ] C implementation of format v2, passing the committed vectors
+- [ ] Boot recovery runs automatically, not only from a CLI tool
+- [ ] SD write and recovery error counts surfaced as device health
+
+### Phase 8 — Firmware: sync and receipt-gated prune
+
+- [ ] mTLS with the private CA pinned on-device
+- [ ] Resume by content hash, never byte offset
+- [ ] Verify the receipt signature **and** that its `content_root` matches
+- [ ] Receipts persisted outside the bundle directory, retained longer than payloads
+- [ ] Retention watermark persisted — never `millis()`
+- [ ] Transactional prune: `prune_intent` → delete → `prune_complete`, replayed at boot
+- [ ] **Hard invariant with a test: no verified receipt ⇒ never pruned**
+
+### Phase 9 — Degraded states and policy tuning
+
+- [ ] `DEGRADED_GNSS` / `_STORAGE` / `_TIME` / `_NETWORK`, `LOW_POWER`, `RECOVERY_REQUIRED`
+- [ ] Event-adaptive sampling across GNSS, IMU and OBD
+- [ ] Thresholds tuned on real traces, with the policy version journalled
+
+### Phase 10 — Ledger and documentation
+
+- [ ] Admin ledger over the full bundle lifecycle, every transition with a reason code
+- [ ] Rewrite README and the docs against what v2 actually does
+- [ ] Every documented guarantee has a corresponding row in the Phase 3 matrix
+
+### Phase 11 — Secure OTA
+
+- [ ] Signed images verified before swap; post-boot self-test; automatic rollback
+- [ ] Update only while parked and externally powered, never with unreceipted bundles pending
+
+## Deferred deliberately
+
+| Deferred | Reason |
+|---|---|
+| Arbitrary user plugins | Until the raw format, decoder ABI, receipt semantics and replay tooling are stable |
+| MinIO | A CAS directory on ZFS is sufficient; keep the abstraction, skip the daemon |
+| TimescaleDB | Native range partitioning first; adopt only on measured need |
+| `previous_bundle_root` enforcement | Field is populated in v2; detecting deleted historical bundles is a different threat model from detecting corruption |
+
+---
+
+# v1 History
+
+The phases below are the original v1 plan. They are retained as history; the
+v2 rebuild above supersedes Phases 2 through 4 outright and reshapes the rest.
+
+---
+
 ## Phase 0 — Define the Contract
 
 **Goal:** Know precisely what constitutes a trip, what gets stored, and what "sync succeeded" means before writing firmware.
