@@ -67,17 +67,20 @@ against the fault matrix.
 - [x] 20 conformance vectors in `fixtures/format-v2/`, generated deterministically
 - [x] Conformance runner; 60 test cases green
 
-### Phase 2 — Server: raw-first ingest
+### Phase 2 — Server: raw-first ingest — **complete**
 
-- [ ] mTLS listener on 8443: private CA, per-device client certificates, denylist
-- [ ] Manifest-first upload; server replies with missing chunk ranges only
-- [ ] Content-addressed chunk acceptance — by hash, never by byte offset
-- [ ] Content-addressed raw store on ZFS, kept object-like for a later MinIO swap
-- [ ] Durable signed receipt, persisted **before** it is returned
-- [ ] Persistent signing key; refuse to start with an ephemeral key outside dev mode
-- [ ] Idempotency keyed on `content_root`, not on connection or request ID
-- [ ] Durable ingest outbox; ingest returns once the raw commit is durable
-- [ ] Per-device rate limits and storage quotas
+- [x] mTLS listener on 8443: private CA, per-device client certificates, denylist
+- [x] Manifest-first upload; server replies with missing chunk indices only
+- [x] Content-addressed chunk acceptance — by hash, never by byte offset
+- [x] Content-addressed raw store, kept object-like for a later MinIO swap
+- [x] Durable signed receipt, persisted **before** it is returned
+- [x] Persistent signing key; refuses to start with an ephemeral key outside dev mode
+- [x] Idempotency keyed on `content_root`, not on connection or request ID
+- [x] Durable ingest outbox; ingest returns once the raw commit is durable
+- [x] Per-device rate limits and storage quotas
+- [x] Transport identity bound to the manifest's claimed device identity
+- [x] Revocation effective immediately, with no restart
+- [x] Verified end to end over real mTLS with `cmd/cairn-syncdemo`
 
 ### Phase 3 — Emulator and fault injection
 

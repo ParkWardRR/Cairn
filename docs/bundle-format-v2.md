@@ -156,7 +156,7 @@ without misparsing frames. It does not make a future format readable.
 | 3 | 1 | `schema_version` | payload schema version, independent of `format_version` |
 | 4 | 2 | `flags` | §3.5 |
 | 6 | 2 | `reserved` | zero |
-| 8 | 4 | `seq` | u32, strictly increasing by 1 across the whole bundle, not per segment |
+| 8 | 4 | `seq` | u32, strictly increasing by 1 across a chain (§3.2.1), not per segment |
 | 12 | 4 | `monotonic_ms` | u32, milliseconds since the segment header's `opened_monotonic_us` |
 | 16 | 4 | `prev_crc32` | u32, the `crc32` field of the preceding frame; `0` for the bundle's first frame |
 | 20 | 4 | `reserved2` | zero — aligns the payload to a 4-byte boundary |
@@ -168,6 +168,27 @@ maximum is `4096`.
 
 `monotonic_ms` as a 32-bit delta from the segment's open covers 49 days, far
 beyond any segment lifetime, and costs 4 bytes instead of 8.
+
+#### 3.2.1 Chains
+
+A bundle contains **two independent chains**, each with its own `seq` space and
+its own `prev_crc32` linkage:
+
+| Chain | Files | Starts at |
+|---|---|---|
+| **Capture** | `seg-00000000.seg`, `seg-00000001.seg`, … in index order | `seq` 0, `prev_crc32` 0 in segment 0 |
+| **Journal** | `journal.seg` | `seq` 0, `prev_crc32` 0 |
+
+Capture segments continue one chain across a rotation, so verifying segment
+*N+1* requires the final state of segment *N*. The journal is separate because
+it records transitions that occur when no capture segment is open at all —
+waking, sleeping, connecting, uploading, pruning. Forcing it to share a
+sequence space would mean the journal could not be written while capture was
+closed, which is precisely when most of its interesting entries happen.
+
+A verifier must therefore scan the journal from a zero state, independently of
+the capture segments, and must not treat the two chains' sequence numbers as
+comparable.
 
 **`prev_crc32` is the chain.** The review asked for a per-record chain hash;
 a 32-byte SHA-256 per record would double the size of a 32-byte GNSS sample. The
@@ -511,7 +532,44 @@ Manifest-first, content-addressed, resumable by hash.
              device marks the bundle RECEIPT_VERIFIED
 ```
 
-### 6.1 Rules
+### 6.1 The bundle byte stream, and how chunks map to members
+
+Chunks and members are different partitions of the same bytes, so the mapping
+between them must be exact rather than conventional.
+
+The **bundle byte stream** is the concatenation of member contents in canonical
+member order — sorted by raw name bytes ascending, the same order the content
+root uses:
+
+```
+stream = contents(members[0]) || contents(members[1]) || ... || contents(members[n-1])
+```
+
+Chunks partition that stream in order and without gaps or overlap.
+`chunk_descriptors[i]` covers the stream byte range:
+
+```
+start(i) = sum of chunk_descriptors[j].byte_length for j < i
+end(i)   = start(i) + chunk_descriptors[i].byte_length
+```
+
+Two consistency requirements follow, and a server must check both before
+committing:
+
+1. `sum(chunk_descriptors[*].byte_length)` equals `sum(members[*].length)`.
+   A mismatch means the manifest is internally inconsistent, whatever its
+   signature says.
+2. `chunk_descriptors[i].index == i`. Indices are positional, not identifiers.
+
+Member boundaries and chunk boundaries are deliberately independent: a member
+may span several chunks and a chunk may span several members. Tying them
+together would force a re-chunk whenever a member's size changed.
+
+Reassembly is therefore: concatenate chunks in index order to rebuild the
+stream, split the stream at the cumulative member lengths, verify each member's
+SHA-256, then recompute `content_root` and compare it to the signed value.
+
+### 6.2 Rules
 
 - **Chunks are addressed by hash, never by byte offset.** This is what makes
   re-chunking safe and deduplication possible. A byte offset cannot survive
@@ -527,7 +585,7 @@ Manifest-first, content-addressed, resumable by hash.
 - Transport is mTLS on 8443. The device pins the private CA; the server verifies
   per-device client certificates and consults a denylist.
 
-### 6.2 Receipt
+### 6.3 Receipt
 
 Deterministic CBOR, same rules as the manifest.
 

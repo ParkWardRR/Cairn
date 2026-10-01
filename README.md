@@ -59,7 +59,9 @@ the core data path is being **rebuilt from a clean slate**. See
 
 What is solid today: the [bundle format v2
 specification](docs/bundle-format-v2.md) with its Go reference implementation
-and 20 conformance vectors, the local CLI tooling, and the web UI.
+and 20 conformance vectors, the **v2 ingest server** (`server/` — manifest-first
+content-addressed upload over mTLS with receipt-gated durability, verified end
+to end against a running instance), the local CLI tooling, and the web UI.
 
 ---
 
@@ -176,6 +178,51 @@ implementation and committed conformance vectors rather than prose.
 | **Spec** | [`docs/bundle-format-v2.md`](docs/bundle-format-v2.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
 | **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
 | **Vectors** | `fixtures/format-v2/` — 20 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors` |
+
+### v2 Ingest Server (`server/`)
+
+Ingest validates, durably stores, receipts and returns. Nothing else — decoding,
+trip building, event detection and MQTT all happen later, driven by the outbox,
+so request latency never scales with trip length and a decoder bug can never
+fail an upload.
+
+| Component | Role |
+|---|---|
+| `internal/cas` | Content-addressed raw store. Atomic, fsynced writes; digest verified on put and optionally on read, so bit rot is detected rather than passed through |
+| `internal/intake` | The offer → transfer → commit protocol. Verifies the manifest signature against the *enrolled* key, rejects self-contradictory manifests, reassembles members from chunks and recomputes `content_root` before committing |
+| `internal/receipts` | Signs and persists receipts **before** returning them. Refuses to start with an ephemeral key outside dev mode, since that would invalidate every receipt already issued |
+| `internal/devices` | Enrolment and revocation. Reloads on change, so revoking a stolen unit takes effect without a restart |
+| `internal/outbox` | Durable append-only decode queue. Unacknowledged work is redelivered, so a worker crash costs a repeat rather than a lost job |
+| `internal/mtls` | TLS with `RequireAndVerifyClientCert` against a private CA |
+
+Two properties make the transfer protocol crash-safe with no bookkeeping: the
+set of missing chunks is **derived** from the raw store rather than tracked, so
+there is no progress state to lose; and idempotency is keyed on `content_root`,
+so a device that re-offers identical data gets back the receipt it already
+earned no matter how the retry is framed.
+
+```bash
+cd server && go build ./cmd/cairn-server
+
+# Enrol a device (effective immediately, even while the server is running)
+./cairn-server -data /var/lib/cairn -enroll <32-hex-device-id> -enroll-key <64-hex-pubkey>
+
+# Run with mutual TLS
+./cairn-server -data /var/lib/cairn -addr :8443 \
+  -tls-cert server.crt -tls-key server.key -tls-client-ca ca.crt
+
+# Drive a full sync against it with a synthetic bundle
+go run ./cmd/cairn-syncdemo -server https://cairn.example.lan:8443 \
+  -ca ca.crt -cert device.crt -key device.key
+```
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/v2/health` | Status, format version, decode backlog |
+| `GET` | `/api/v2/server/receipt-key` | Receipt verification key, for device provisioning |
+| `POST` | `/api/v2/bundles/offer` | Offer a signed manifest; returns the missing chunk indices |
+| `PUT` | `/api/v2/bundles/{id}/chunks/{sha256}` | Upload one chunk, addressed by content hash |
+| `POST` | `/api/v2/bundles/{id}/commit` | Verify, store, receipt; returns the receipt as raw CBOR |
 
 Three identifiers are kept deliberately distinct, because the reviews were right
 that a content hash makes a poor operational handle:
@@ -300,6 +347,14 @@ Cairn/
 ├── docs/bundle-format-v2.md     # Normative bundle format spec (v2 rebuild)
 ├── server/                      # v2 Go server
 │   ├── format/                  #   Bundle format v2 reference implementation
+│   ├── internal/cas/            #   Content-addressed raw object store
+│   ├── internal/intake/         #   offer -> transfer -> commit protocol
+│   ├── internal/receipts/       #   Receipt signing, persisted before returned
+│   ├── internal/devices/        #   Enrolment, revocation, quotas
+│   ├── internal/outbox/         #   Durable decode queue
+│   ├── internal/mtls/           #   Mutual TLS configuration
+│   ├── cmd/cairn-server/        #   The ingest daemon
+│   ├── cmd/cairn-syncdemo/      #   Reference sync client for verification
 │   └── cmd/mkvectors/           #   Deterministic conformance vector generator
 ├── fixtures/format-v2/          # 20 conformance vectors with expected verdicts
 ├── firmware/                    # ESP32 / Freematics firmware (C++)
@@ -601,7 +656,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 |-----|---------------------|
 | `build-zig` | Zig common, bundle, CLI + smoke test |
 | `build-go` | v1 Go ingest service + `go vet` |
-| `build-server` | v2 server: build, vet, gofmt, tests, and a check that regenerating the conformance vectors produces no diff |
+| `build-server` | v2 server: build, vet, gofmt, 161 tests, and a check that regenerating the conformance vectors produces no diff |
 | `build-rust` | Rust emulator + binary verification |
 | `build-trajectory` | Rust trajectory tool build + tests |
 | `build-gleam` | Gleam trip-orchestrator build + test |
