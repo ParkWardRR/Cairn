@@ -37,3 +37,6 @@ firmware/freematics-base/src/secrets.h
 
 # Release build staging
 dist/
+firmware/cairn-v2/include/secrets.h
+firmware/cairn-v2/.pio/
+firmware/cairn-v2/test/host/build/

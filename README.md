@@ -190,6 +190,31 @@ implementation and committed conformance vectors rather than prose.
 | **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
 | **Vectors** | `fixtures/format-v2/` — 20 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors` |
 
+### v2 Device Firmware (`firmware/cairn-v2/`)
+
+A ground-up rebuild for the Freematics ONE+ Model B. It writes framed, chained,
+CRC-checked segments, signs a manifest over a Merkle root of the bundle's
+members, and **deletes nothing without a locally verified signed receipt**.
+
+| Component | Role |
+|---|---|
+| `lib/cairn_format` | The third implementation of format v2, portable C11 with no IDF dependency — so exactly the code the device runs is compiled natively and checked against the committed vectors. 20/20, clean under ASan and UBSan |
+| `lib/cairn_log` | Verbose dual-sink logging. RAM-buffered before the card mounts so a mount failure is itself diagnosable; capped and self-suspending so a testing aid cannot cost a trip |
+| `lib/cairn_store` | Framed append, segment rotation, crash-safe seal, and a boot recovery that truncates a torn tail and reports the exact byte count |
+| `lib/cairn_sync` | Offer → transfer → commit, then receipt verification against a **pinned** key and a transactional prune |
+| `src/lifecycle.cpp` | Four independent regions — capture, bundle, connectivity, health — each transitioning on its own evidence and journalling the policy version in force |
+
+Two details carry most of the correctness weight. The recovery scan is
+*streaming*, so a segment larger than DRAM is recoverable and the buffer-based
+entry point the vectors drive is a thin wrapper over it — the device and the
+test exercise one body of code, not two that resemble each other. And because
+Ed25519 is deterministic, the vendored signer is checked by reproducing a
+Go-generated signature byte-for-byte, which a verify-only test would not catch.
+
+> Not yet run on hardware. See
+> [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
+> procedure.
+
 ### v2 Ingest Server (`server/`)
 
 Ingest validates, durably stores, receipts and returns. Nothing else — decoding,
@@ -776,6 +801,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 |----------|-------------|
 | [Install Guide](INSTALL.md) | Installing the v0.1.0 tools and flashing firmware |
 | [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
+| **[v2 Firmware Testing](docs/v2-firmware-testing.md)** | **Flashing the v2 firmware, reading its self-test and SD logs, and the destructive tests worth running** |
 | **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |
 | [Architecture](docs/architecture.md) | System design, data flow, component responsibilities (describes v1) |
 | [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol (describes v1) |

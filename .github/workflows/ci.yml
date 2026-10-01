@@ -166,6 +166,23 @@ jobs:
         working-directory: emulator
         run: cargo run --release -- conformance --vectors ../fixtures/format-v2
 
+  # The firmware's own C implementation, compiled natively and run against the
+  # same vectors. This is the implementation that matters most: a disagreement
+  # here means a device writing bundles the server cannot recover, and "it
+  # compiled for ESP32" would not have caught it.
+  firmware-conformance:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Conformance against the committed vectors
+        run: make -C firmware/cairn-v2/test/host
+
+      # Undefined behaviour in the scan path would be a parser reading past a
+      # torn segment — exactly the case the format exists to handle safely.
+      - name: Under AddressSanitizer and UBSan
+        run: make -C firmware/cairn-v2/test/host asan
+
   # The fault-injection property matrix. Local durability rows need no server;
   # protocol rows run against a dev-mode instance.
   #

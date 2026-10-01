@@ -169,40 +169,94 @@ against the fault matrix.
   intact, so a fixed decoder can pick it up later
 - A decoder upgrade re-derives from raw with no device re-uploading anything
 
-### Phase 5 — Firmware: ESP-IDF skeleton
+### Phase 5 — Firmware: project, partitions and logging — **complete**
 
-- [ ] ESP-IDF project with `arduino-esp32` as a component
-- [ ] **Partition table with A/B OTA slots from the first commit**, replacing `huge_app.csv`
-- [ ] NVS for `boot_id`, policy version and the flash error journal
-- [ ] Flash encryption; device signing key provisioned into NVS
-- [ ] Sensor tasks that only emit facts to a queue
-- [ ] Boot self-test; real `esp_sleep_get_wakeup_cause()`; pulls on wake pins
+- [x] Project at `firmware/cairn-v2/` on espressif32 7.1.3. The Arduino core on
+      7.x *is* an ESP-IDF 5.x component bundle, so `framework = arduino` already
+      exposes `esp_ota_ops`, `nvs_flash`, `esp_sleep` and `esp_rom_crc` — the
+      substance of "IDF with arduino-esp32 as a component" without a separate
+      multi-gigabyte framework download, and the vendored FreematicsPlus drivers
+      keep working unchanged
+- [x] **A/B OTA slots from the first commit** (`partitions-ab.csv`), replacing
+      `huge_app.csv`: two 1.69 MB app slots, `otadata`, `nvs_keys`, `errlog` and
+      `coredump`
+- [x] NVS holds the device id (derived from the efuse MAC, so wiping NVS does not
+      change which vehicle the data came from), the signing seed and the boot
+      count
+- [x] Boot self-test (`env:cairn-selftest`) covering CRC-32 through the ROM path,
+      SHA-256, Ed25519 sign/verify/tamper-reject, a framed write to the card, a
+      seal, and a live sync
+- [x] Real `esp_sleep_get_wakeup_cause()`, recorded in every `STATE_TRANSITION`
+- [x] Verbose SD logging: one file per boot, RAM-buffered before the card mounts
+      so a mount failure is itself diagnosable, WARN/ERROR flushed immediately,
+      capped at 16 MiB oldest-first and suspended below 64 MiB free — a testing
+      aid must not be able to cost a trip
+- [ ] Flash encryption — **deliberately not enabled.** Turning it on in release
+      mode is irreversible, which is a poor property for a device already wired
+      into a car. The partition exists so enabling it later needs no repartition
 
-### Phase 6 — Firmware: capture lifecycle
+### Phase 6 — Firmware: capture lifecycle — **complete**
 
-- [ ] Three independently persisted regions: capture, bundle, connectivity
-- [ ] A single transition controller owns all state; tasks submit facts
-- [ ] Durable journal per transition with trigger, reason code and policy version
-- [ ] Confidence-scored evidence with start/stop hysteresis
-- [ ] 45 s pre-roll buffer written as `pretrip` samples on confirmation
+- [x] Four independent regions — capture, bundle, connectivity, health — rather
+      than one flat enum. Independence is the point: losing the network must not
+      end a trip, and a degraded sensor must not stop capture
+- [x] Every transition journalled with trigger, reason code and the **policy
+      version in force**, so a decision in the data stays explainable after the
+      thresholds change
+- [x] Confidence-scored evidence combining IMU RMS, OBD speed and GNSS speed,
+      with separate start/stop thresholds and dwells — stopping requires the
+      *absence* of evidence, which is weaker than its presence
+- [x] Pre-trip samples captured and written with `CAIRN_FLAG_PRETRIP`, so the
+      start of a drive is not lost to the dwell requirement
+- [x] GNSS gaps recorded as `GNSS_GAP` with duration and missed-sample count —
+      silence in the data would be indistinguishable from the device being off
 
-### Phase 7 — Firmware: framed storage and recovery
+### Phase 7 — Firmware: framed storage and recovery — **complete**
 
-- [ ] Append-only framed segments per format v2, rotated at a bounded size
-- [ ] Atomic seal: temp file, sync, rename to `.sealed`
-- [ ] C implementation of format v2, passing the committed vectors
-- [ ] Boot recovery runs automatically, not only from a CLI tool
-- [ ] SD write and recovery error counts surfaced as device health
+- [x] Append-only framed segments per format v2, rotated at 1 MiB, with one chain
+      across all `seg-*` files and a separate chain for `journal.seg` (§3.2.1)
+- [x] C implementation of format v2 (`lib/cairn_format`, portable C11, no IDF
+      dependency) passing **all 20 committed vectors** on the host, clean under
+      ASan and UBSan
+- [x] Ed25519 vendored from TweetNaCl because mbedTLS has no Ed25519 signing, and
+      checked *two* ways: verification against a Go-produced signature, and
+      signing compared byte-for-byte against it. Ed25519 is deterministic, so a
+      subtly wrong field implementation cannot survive that
+- [x] The recovery scan is streaming (`cairn_scan_segment_stream`), so a segment
+      far larger than DRAM is recoverable with one frame resident. The buffer
+      entry point is a thin wrapper over it, so the device and the conformance
+      vectors drive **one** body of code
+- [x] Crash-safe seal: the manifest is written *before* the directory is moved,
+      so an interrupted seal leaves either a capture holding a valid manifest —
+      finished at the next boot without re-signing — or a completed bundle
+- [x] Boot recovery runs automatically, truncates a torn tail to the last valid
+      frame, and carries the exact discarded byte count into the manifest with
+      `recovery_state` raised
+- [x] SD write and recovery error counts surfaced in `DEVICE_HEALTH`
 
-### Phase 8 — Firmware: sync and receipt-gated prune
+### Phase 8 — Firmware: sync and receipt-gated prune — **complete**
 
-- [ ] mTLS with the private CA pinned on-device
-- [ ] Resume by content hash, never byte offset
-- [ ] Verify the receipt signature **and** that its `content_root` matches
-- [ ] Receipts persisted outside the bundle directory, retained longer than payloads
-- [ ] Retention watermark persisted — never `millis()`
-- [ ] Transactional prune: `prune_intent` → delete → `prune_complete`, replayed at boot
-- [ ] **Hard invariant with a test: no verified receipt ⇒ never pruned**
+- [x] Manifest-first offer, chunks addressed **by hash** rather than byte offset,
+      streamed from the card so a 256 KiB chunk never needs to fit in DRAM
+- [x] Verify the receipt signature against a **pinned** server key **and** that
+      its `content_root` matches what was uploaded. A valid signature over a
+      different bundle is not an acknowledgement of this one
+- [x] Receipts persisted outside the bundle directory, and stored *before* being
+      acted on — the receipt is the durable evidence, the bundle bytes are not
+- [x] Transactional prune: `prune_intent` → delete → completion, replayed at boot
+- [x] An unconfigured key prunes **nothing**. A full card loses nothing; a
+      wrongly authorized prune loses a trip permanently
+- [ ] mTLS with the private CA pinned on-device — transport is plain HTTP for
+      now. The receipt signature, not the transport, is what authorizes deletion,
+      so this governs who can *read* an upload rather than whether a prune is
+      legitimate
+
+> **Not yet run on hardware.** Phases 5–8 compile for the target (62.7% of the
+> A slot, 25.2% RAM) and the format agrees byte-for-byte with the Go and Rust
+> implementations on the host. That rules out a large class of bugs but not
+> driver or timing problems. See
+> [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
+> procedure, including the destructive tests that are the actual point.
 
 ### Phase 9 — Degraded states and policy tuning
 
