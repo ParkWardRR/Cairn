@@ -243,6 +243,7 @@ fail an upload.
 | `internal/store` | PostgreSQL persistence. Every write upserts on a deterministic key or deletes-then-inserts in one transaction |
 | `internal/worker` | Drains the outbox in its own process, so a decoder bug cannot affect a sync |
 | `internal/mqtt` | Semantic state only — never raw samples |
+| `cmd/cairn-verify` | Verifies bundles straight off an SD card with no server — separates "did the firmware record this correctly" from "did the upload work", which look identical in the device's own logs |
 
 Two properties make the transfer protocol crash-safe with no bookkeeping: the
 set of missing chunks is **derived** from the raw store rather than tracked, so
