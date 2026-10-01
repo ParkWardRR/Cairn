@@ -166,16 +166,22 @@ jobs:
         working-directory: emulator
         run: cargo run --release -- conformance --vectors ../fixtures/format-v2
 
-  # The firmware's own C implementation, compiled natively and run against the
-  # same vectors. This is the implementation that matters most: a disagreement
-  # here means a device writing bundles the server cannot recover, and "it
-  # compiled for ESP32" would not have caught it.
+  # The firmware's own C code, compiled natively. Two suites:
+  #
+  #   conformance  lib/cairn_format against the committed vectors. This is the
+  #                implementation that matters most — a disagreement means a
+  #                device writing bundles the server cannot recover, and "it
+  #                compiled for ESP32" would not have caught it.
+  #   faults       lib/cairn_store, lib/cairn_prune and the pre-roll over a
+  #                POSIX filesystem, with files torn mid-frame and receipts
+  #                forged. Properties about crash and adversarial behaviour,
+  #                which neither compiling nor a good drive tests.
   firmware-conformance:
     runs-on: [self-hosted, cairn]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Conformance against the committed vectors
+      - name: Format vectors and the storage property matrix
         run: make -C firmware/cairn-v2/test/host
 
       # Undefined behaviour in the scan path would be a parser reading past a

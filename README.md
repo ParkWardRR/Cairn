@@ -201,15 +201,24 @@ members, and **deletes nothing without a locally verified signed receipt**.
 | `lib/cairn_format` | The third implementation of format v2, portable C11 with no IDF dependency — so exactly the code the device runs is compiled natively and checked against the committed vectors. 20/20, clean under ASan and UBSan |
 | `lib/cairn_log` | Verbose dual-sink logging. RAM-buffered before the card mounts so a mount failure is itself diagnosable; capped and self-suspending so a testing aid cannot cost a trip |
 | `lib/cairn_store` | Framed append, segment rotation, crash-safe seal, and a boot recovery that truncates a torn tail and reports the exact byte count |
-| `lib/cairn_sync` | Offer → transfer → commit, then receipt verification against a **pinned** key and a transactional prune |
+| `lib/cairn_prune` | The receipt gate. Portable C, away from the HTTP code, because a wrongly authorized prune deletes data permanently and reports success |
+| `lib/cairn_fs` | Filesystem and key-value abstraction — SD/NVS on the device, POSIX under test, so the storage layer's crash claims are testable rather than asserted |
+| `lib/cairn_sync` | Offer → transfer → commit, with chunks addressed by hash and streamed from the card |
 | `src/lifecycle.cpp` | Four independent regions — capture, bundle, connectivity, health — each transitioning on its own evidence and journalling the policy version in force |
+| `src/sensor_task.cpp` | Sensing on its own core, reporting facts. One controller owns all state and is the only thing that touches the card |
+| `src/preroll.c` | 45 s pre-trip ring, so the start of a drive is not lost to the start dwell |
 
-Two details carry most of the correctness weight. The recovery scan is
+Three details carry most of the correctness weight. The recovery scan is
 *streaming*, so a segment larger than DRAM is recoverable and the buffer-based
 entry point the vectors drive is a thin wrapper over it — the device and the
-test exercise one body of code, not two that resemble each other. And because
+test exercise one body of code, not two that resemble each other. Because
 Ed25519 is deterministic, the vendored signer is checked by reproducing a
 Go-generated signature byte-for-byte, which a verify-only test would not catch.
+And the storage layer is portable C over a filesystem abstraction, so a
+**20-row property matrix** tears real files mid-frame, forges receipts and
+interrupts seals against exactly the code the device runs. It is
+mutation-checked: deleting the receipt signature check fails two rows, skipping
+the torn-tail truncation fails three.
 
 > Not yet run on hardware. See
 > [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench

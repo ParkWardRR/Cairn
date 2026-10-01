@@ -206,10 +206,26 @@ against the fault matrix.
 - [x] Confidence-scored evidence combining IMU RMS, OBD speed and GNSS speed,
       with separate start/stop thresholds and dwells — stopping requires the
       *absence* of evidence, which is weaker than its presence
-- [x] Pre-trip samples captured and written with `CAIRN_FLAG_PRETRIP`, so the
-      start of a drive is not lost to the dwell requirement
 - [x] GNSS gaps recorded as `GNSS_GAP` with duration and missed-sample count —
       silence in the data would be indistinguishable from the device being off
+- [x] **45 s pre-roll ring** (`src/preroll.c`), 128 slots sized against the
+      combined GNSS/IMU/OBD record rate. Records captured before a trip is
+      confirmed are held and flushed with `CAIRN_FLAG_PRETRIP`; if the motion
+      does not persist the ring is dropped, so a parked car produces nothing
+      while a real drive still recovers its first seconds
+- [x] **One transition controller owns all state; sensing only reports facts**
+      (`src/facts.h`, `src/sensor_task.cpp`). This is a correctness fix, not a
+      structural preference: the IMU used to be read in the same loop pass that
+      wrote frames, so during a 30 ms card write no samples were taken and the
+      RMS and peak a window reported were computed over whatever moments
+      happened to miss I/O. Sensing is now pinned to core 0 and its rate no
+      longer depends on the controller. The fact queue is bounded, and drops are
+      reported in `DEVICE_HEALTH` rather than hidden
+
+> **Correction.** The previous commit marked this phase complete while the
+> pre-roll and the controller split were not implemented —
+> `CAIRN_PRETRIP_RING_SAMPLES` was defined and never read. Both are now built
+> and carry property rows.
 
 ### Phase 7 — Firmware: framed storage and recovery — **complete**
 
@@ -233,6 +249,36 @@ against the fault matrix.
       frame, and carries the exact discarded byte count into the manifest with
       `recovery_state` raised
 - [x] SD write and recovery error counts surfaced in `DEVICE_HEALTH`
+- [x] **A 20-row property matrix** (`test/host/faults.c`). The storage layer is
+      portable C over a filesystem abstraction (`lib/cairn_fs`), so the host
+      tests tear real files mid-frame and mid-header, flip payload bytes, forge
+      receipts and interrupt seals — against exactly the code the device runs,
+      not a parallel implementation. Mutation-checked: removing the receipt
+      signature check fails 2 rows, skipping the torn-tail truncation fails 3
+
+#### The rows
+
+| Family | Property |
+|---|---|
+| seal | A clean capture seals; the manifest verifies and its content root recomputes from the members on disk |
+| seal | An interrupted seal completes at the next boot without re-signing, and twice changes nothing |
+| seal | A capture with no manifest is a live capture, not an interrupted seal |
+| seal | A sealed bundle is never overwritten, even by a colliding id |
+| recovery | A tear mid-frame truncates to the last valid frame; the discarded count is the surviving prefix, not the bytes that never arrived |
+| recovery | A tear mid-header — too few bytes even for a length prefix — is still a torn tail, not a condemned segment |
+| recovery | A flipped payload byte isolates to one record; the four frames before it survive and the state is `SALVAGED`, distinct from a clean tail recovery |
+| recovery | One chain spans segment rotation; sequence numbers stay contiguous across the boundary |
+| recovery | The journal chain is independent — four journal writes do not appear as a gap in the capture sequence |
+| prune | A receipt signed by an untrusted key deletes nothing |
+| prune | A genuine receipt for *different* content deletes nothing |
+| prune | A malformed receipt deletes nothing |
+| prune | No pinned key, or the all-zero placeholder, deletes nothing |
+| prune | A verified receipt deletes the bundle, keeps the receipt and clears the intent |
+| prune | An interrupted prune resumes; an intent with no receipt keeps the data and clears the intent |
+| preroll | Nothing is written while the trip is unconfirmed |
+| preroll | Flush writes in observation order, every frame flagged `PRETRIP`, and the flag does not leak past confirmation |
+| preroll | A wrapped ring keeps the newest window and counts what it dropped |
+| preroll | An oversized payload is refused rather than truncated into a different observation |
 
 ### Phase 8 — Firmware: sync and receipt-gated prune — **complete**
 
