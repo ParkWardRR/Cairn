@@ -82,20 +82,55 @@ against the fault matrix.
 - [x] Revocation effective immediately, with no restart
 - [x] Verified end to end over real mTLS with `cmd/cairn-syncdemo`
 
-### Phase 3 — Emulator and fault injection
+### Phase 3 — Emulator and fault injection — **complete**
 
-- [ ] Rebuild around a fault-injection layer: interrupt at a named step, a byte
-      offset, or a seeded random point
-- [ ] Rust implementation of format v2, passing the committed vectors
-- [ ] Power cut at each storage write step
-- [ ] Network loss at each upload chunk
-- [ ] Reboot between receipt and prune
-- [ ] Corrupt chunk, duplicate upload, server crash during commit
-- [ ] Clock reset / GNSS jump; corrupted storage bytes
-- [ ] Decoder upgrade reproducibility; plugin timeout; storage full
-- [ ] Reproducible from a seed, printed on failure; assertions on the journal and
-      database, never stdout
-- [ ] **Standing rule: every later phase adds its own matrix rows before it closes**
+- [x] Rust implementation of format v2 (`emulator/src/format/`), **20/20
+      committed vectors pass** — byte-identical to the Go reference, including
+      the strict manifest canonical-encoding digest
+- [x] Fault-injection layer with named interrupt points (`emulator/src/v2/fault.rs`)
+- [x] Device lifecycle model: framed capture, atomic seal, boot recovery,
+      manifest-first sync, local receipt verification, transactional prune
+- [x] Power cut at each capture frame boundary and each sealing step
+- [x] Torn write: a partial frame on the medium, at three truncation depths
+- [x] Network loss after each upload chunk boundary
+- [x] Reboot after receipt, after prune intent, and after payload delete
+- [x] Corrupt chunk in transit; duplicate upload; receipt lost in transit
+- [x] Clock reset / GNSS jump; corrupted storage bytes
+- [x] Server crash during commit, including a signing-key rotation case
+      (`tests/server-crash-during-commit.sh`)
+- [x] Reproducible from a seed, printed on failure; assertions against the
+      device's durable state and the server's reported state, never stdout
+- [x] **16 matrix rows pass, 0 skipped.** CI gates conformance and the matrix
+- [ ] Decoder upgrade reproducibility; plugin timeout; storage full — these need
+      Phase 4's workers and Phase 9's degraded modes to exist
+- [x] **Standing rule: every later phase adds its own matrix rows before it closes**
+
+#### What the matrix proves
+
+| Row | Property |
+|---|---|
+| `power-cut-during-capture` | Every frame durably written is recoverable; only an incomplete tail is lost, and the bundle is not marked sealed |
+| `power-cut-during-seal` | A sealing failure never discards captured data — all 25 capture frames and 4 journal frames survive a cut at each step |
+| `torn-tail` | A partial frame is isolated; the 9 preceding frames survive and the discarded byte count is exact |
+| `corrupted-storage-bytes` | A single flipped bit is detected at its own frame; earlier frames remain usable |
+| `clock-reset-gnss-jump` | A 30 s backwards UTC jump leaves all frames in sequence, flagged `ESTIMATED_UTC` with accuracy unknown, monotonic time still advancing |
+| `prune-without-receipt` | No verified receipt ⇒ never pruned; the payload stays fully intact |
+| `reboot-after-receipt-before-prune` | Payload and receipt both survive; the prune simply happens later |
+| `reboot-mid-prune` | Fully present or fully pruned; the journal explains which, and the receipt outlives the payload |
+| `network-loss-per-chunk` | The device resumes rather than restarts and eventually earns a receipt |
+| `corrupt-chunk-in-transit` | Rejected by the server; the retry succeeds with no operator action |
+| `duplicate-upload` | Same receipt, zero chunks re-sent, decode backlog unchanged |
+| `receipt-lost-in-transit` | A retry returns the already-committed receipt rather than minting a second |
+| server crash during commit | Un-receipted or durably recoverable; a retry always converges to exactly one receipt |
+| signing-key rotation | A rotated key cannot induce a prune — the device refuses the receipt |
+
+#### What the harness found
+
+| Finding | Significance |
+|---|---|
+| A clock-jump test that edited a frame after the fact was rejected as `CHAIN_BREAK` | The `prev_crc32` chain works. A jumped sample must be *written during capture*, not patched in afterwards |
+| The crash test, run with `-dev`, lost receipt verification across a restart | The ephemeral signing key had rotated — independently reproducing the hazard `receipts.Open` refuses by default. It became a deliberate matrix case |
+| A `FaultPoint` variant declared but never constructed | A missing matrix row (the window between verifying a receipt and beginning the prune), not dead code |
 
 ### Phase 4 — Schema and decode workers
 

@@ -57,11 +57,18 @@ the core data path is being **rebuilt from a clean slate**. See
 | mTLS upload on port 8443 | Transport is plain HTTP on port 8080. No TLS, no client certificate, no server identity check |
 | Data is pruned only after a durable receipt | Pruning is not receipt-gated. Retention is measured with `millis()`, which resets on every deep sleep; the Ed25519 receipt signature is never verified |
 
-What is solid today: the [bundle format v2
-specification](docs/bundle-format-v2.md) with its Go reference implementation
-and 20 conformance vectors, the **v2 ingest server** (`server/` — manifest-first
-content-addressed upload over mTLS with receipt-gated durability, verified end
-to end against a running instance), the local CLI tooling, and the web UI.
+What is solid today:
+
+- the [bundle format v2 specification](docs/bundle-format-v2.md), with **two
+  independent implementations** (Go and Rust) that agree byte-for-byte across 20
+  committed conformance vectors;
+- the **v2 ingest server** (`server/`) — manifest-first content-addressed upload
+  over mTLS with receipt-gated durability, verified end to end against a running
+  instance;
+- a **fault-injection property matrix** (`emulator/`) — 16 rows proving what
+  survives power cuts, torn writes, network loss, duplicate uploads, clock jumps
+  and reboots mid-prune;
+- the local CLI tooling and the web UI.
 
 ---
 
@@ -303,9 +310,49 @@ Five standalone CLI tools for offline bundle inspection and debugging:
 | **route-density** | SVG heatmap from GNSS data with configurable grid size and heat/blue color schemes |
 | **sd-recover** | Scan microSD for incomplete bundles, detect truncation/corruption, reconstruct manifests and hashes |
 
-### Rust Emulator (`emulator/`)
+### Rust Emulator and Fault Matrix (`emulator/`)
 
-Full device emulator producing realistic trip bundles with proper binary format, SHA-256 integrity, and chunked upload support. 15 driving scenarios from normal commutes to power-loss edge cases. Tested against the live ingest service at 5000x speedup.
+An independent Rust implementation of bundle format v2, plus the property matrix
+that proves the architecture's failure behaviour. The architecture's value lives
+at failure boundaries, not on the happy path, so the harness interrupts the
+device at named points and asserts what survived — against durable state, never
+against stdout.
+
+```bash
+cd emulator
+
+# Does this implementation agree with the specification?
+cargo run --release -- conformance --vectors ../fixtures/format-v2
+
+# Local durability rows need no server
+cargo run --release -- fault-matrix --verbose
+
+# Protocol rows need a running instance
+cargo run --release -- fault-matrix --server http://cairn.example.lan:8443
+
+# Server crash during commit, including signing-key rotation
+../tests/server-crash-during-commit.sh
+```
+
+| Row | Property proven |
+|---|---|
+| `power-cut-during-capture` | Every frame durably written is recoverable; only an incomplete tail is lost |
+| `power-cut-during-seal` | A sealing failure never discards captured data |
+| `torn-tail` | A partial frame is isolated; preceding frames survive and the discarded byte count is exact |
+| `corrupted-storage-bytes` | A flipped bit is detected at its own frame; earlier frames remain usable |
+| `clock-reset-gnss-jump` | A backwards UTC jump leaves ordering intact, flagged, with accuracy marked unknown |
+| `prune-without-receipt` | **No verified receipt ⇒ never pruned** |
+| `reboot-after-receipt-before-prune` | Payload and receipt both survive; the prune happens later |
+| `reboot-mid-prune` | Fully present or fully pruned; the journal explains which |
+| `network-loss-per-chunk` | The device resumes rather than restarts, and earns a receipt |
+| `corrupt-chunk-in-transit` | Rejected; the retry succeeds with no operator action |
+| `duplicate-upload` | Same receipt, zero chunks re-sent, decode backlog unchanged |
+| `receipt-lost-in-transit` | A retry returns the already-committed receipt |
+| server crash during commit | Un-receipted or durably recoverable; a retry converges to exactly one receipt |
+| signing-key rotation | A rotated key cannot induce a prune |
+
+The driving-scenario path (`cargo run -- scenario`) still uses the v1 capture
+format and is retired as the v2 device lands in the firmware phases.
 
 ### Rust Trajectory Tool (`rust/trajectory/`)
 
@@ -369,7 +416,11 @@ Cairn/
 │   ├── ingest/                  #   Go ingest service (mTLS upload, read API, MQTT, plugins)
 │   ├── cli/                     #   tripctl: generate, validate, inspect, export
 │   └── api/                     #   Legacy Zig API (superseded by Go endpoints in ingest)
-├── emulator/                    # Rust device emulator (15 scenarios, chunked upload)
+├── emulator/                    # Rust emulator: format v2 impl + fault matrix
+│   └── src/
+│       ├── format/              #   Independent Rust implementation of format v2
+│       ├── conformance.rs       #   Runner against the committed vectors
+│       └── v2/                  #   Device lifecycle, fault injection, matrix
 ├── rust/
 │   └── trajectory/              # Rust trajectory analysis CLI (5 subcommands)
 ├── gleam/
@@ -639,7 +690,7 @@ cd rust/trajectory && cargo build --release
 | Normal week | Every meaningful drive appears on the dashboard after returning home |
 | No phone | Trips work with no phone paired, carried, or charged |
 | No internet | WAN disconnected; local sync and UI still work |
-| Power interruption | Previously finalized data survives; incomplete trip recoverable via `sd-recover` |
+| Power interruption | Previously finalized data survives; incomplete trip recoverable — proven by the fault matrix |
 | Multi-day trip | Device retains all data without attempting WAN upload |
 | Return home | Pending trips upload once; no duplicates after retries/reboots |
 | Bad GNSS | Garage/tunnel segments marked uncertain, not fabricated |
@@ -657,6 +708,8 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | `build-zig` | Zig common, bundle, CLI + smoke test |
 | `build-go` | v1 Go ingest service + `go vet` |
 | `build-server` | v2 server: build, vet, gofmt, 161 tests, and a check that regenerating the conformance vectors produces no diff |
+| `format-conformance` | The emulator's Rust format implementation against the same committed vectors |
+| `fault-matrix` | 16 property rows plus the server-crash-during-commit test |
 | `build-rust` | Rust emulator + binary verification |
 | `build-trajectory` | Rust trajectory tool build + tests |
 | `build-gleam` | Gleam trip-orchestrator build + test |
