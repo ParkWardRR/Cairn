@@ -12,10 +12,10 @@ Where to find the suites:
 
 | Suite | Command | Count |
 |---|---|---|
-| Format conformance (Go) | `go test ./format/` | 20 vectors |
-| Format conformance (Rust) | `cargo run -- conformance --vectors ../fixtures/format-v2` | 20 vectors |
-| Format conformance (C) | `make -C firmware/cairn-v2/test/host conformance` | 20 vectors |
-| Firmware storage matrix (C) | `make -C firmware/cairn-v2/test/host faults` | 27 rows |
+| Format conformance (Go) | `go test ./format/` | 25 vectors |
+| Format conformance (Rust) | `cargo run -- conformance --vectors ../fixtures/format-v2` | 22 vectors, 3 skipped |
+| Format conformance (C) | `make -C firmware/cairn-v2/test/host conformance` | 25 vectors |
+| Firmware storage matrix (C) | `make -C firmware/cairn-v2/test/host faults` | 28 rows |
 | Fault-injection matrix (Rust) | `cargo run -- matrix` | 9 rows |
 | Server unit and integration | `go test ./...` | — |
 | Decode pipeline (needs PostGIS) | `CAIRN_TEST_DSN=… go test ./internal/store/` | 11 rows |
@@ -33,7 +33,11 @@ Where to find the suites:
 
 | Claim | Verified by |
 |---|---|
-| Three implementations agree byte-for-byte | The same 20 vectors run against Go, Rust and C |
+| Three implementations agree byte-for-byte | The same 25 vectors run against Go and C. Rust runs 22 and **reports the 3 it skips**: it implements frames, manifests and receipts, not record payloads or OTA descriptors. A silent skip would look exactly like a pass, which is the drift the vectors exist to prevent |
+| A policy snapshot encodes identically across implementations | Vector `policy-snapshot` commits the payload; Go and C both decode it *and* re-encode to the same bytes. Mutation-checked: changing one encoded value fails the vector |
+| Trip events decode with position and detail intact, unknown types included | Vector `trip-event-types` covers all eight defined types plus an undefined one, which must be named rather than discarded |
+| Degraded bitmaps survive, including reserved bits | Vector `health-bitmap` covers none, one, several at once, and the reserved bit |
+| An OTA descriptor verifies against the pinned update key, and a tampered one does not | Vectors `update-descriptor-valid` and `update-descriptor-bad-signature` |
 | The manifest signature covers exactly `manifest.cbor`, with nothing to strip | Vector `manifest-valid` checks the re-encoded digest; C additionally reproduces the Go signature byte-for-byte, which only a deterministic signer can do |
 | Deterministic CBOR: a decoder rejects what it would not have produced | `TestDecoderRejectsNonMinimalIntegers`, `TestDecoderRejectsIndefiniteLength`, `TestManifestTrailingBytesRejected`; C `cairn_manifest_decode` re-encodes and compares |
 | Merkle: an odd node is promoted, never duplicated | `TestMerkleOddLeavesPromoteNotDuplicate`, vector `merkle-odd-leaves` |

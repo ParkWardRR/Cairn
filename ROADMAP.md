@@ -84,7 +84,7 @@ against the fault matrix.
 
 ### Phase 3 — Emulator and fault injection — **complete**
 
-- [x] Rust implementation of format v2 (`emulator/src/format/`), **20/20
+- [x] Rust implementation of format v2 (`emulator/src/format/`), **22/22
       committed vectors pass** — byte-identical to the Go reference, including
       the strict manifest canonical-encoding digest
 - [x] Fault-injection layer with named interrupt points (`emulator/src/v2/fault.rs`)
@@ -232,7 +232,7 @@ against the fault matrix.
 - [x] Append-only framed segments per format v2, rotated at 1 MiB, with one chain
       across all `seg-*` files and a separate chain for `journal.seg` (§3.2.1)
 - [x] C implementation of format v2 (`lib/cairn_format`, portable C11, no IDF
-      dependency) passing **all 20 committed vectors** on the host, clean under
+      dependency) passing **all 25 committed vectors** on the host, clean under
       ASan and UBSan
 - [x] Ed25519 vendored from TweetNaCl because mbedTLS has no Ed25519 signing, and
       checked *two* ways: verification against a Go-produced signature, and

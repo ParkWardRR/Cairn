@@ -189,7 +189,7 @@ implementation and committed conformance vectors rather than prose.
 |---|---|
 | **Spec** | [`docs/bundle-format-v2.md`](docs/bundle-format-v2.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
 | **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
-| **Vectors** | `fixtures/format-v2/` — 20 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors` |
+| **Vectors** | `fixtures/format-v2/` — 25 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors`. Go and C run all 25; Rust runs 22 and reports the 3 it skips rather than hiding them |
 
 ### v2 Device Firmware (`firmware/cairn-v2/`)
 
@@ -199,7 +199,7 @@ members, and **deletes nothing without a locally verified signed receipt**.
 
 | Component | Role |
 |---|---|
-| `lib/cairn_format` | The third implementation of format v2, portable C11 with no IDF dependency — so exactly the code the device runs is compiled natively and checked against the committed vectors. 20/20, clean under ASan and UBSan |
+| `lib/cairn_format` | The third implementation of format v2, portable C11 with no IDF dependency — so exactly the code the device runs is compiled natively and checked against the committed vectors. 25/25, clean under ASan and UBSan |
 | `lib/cairn_log` | Verbose dual-sink logging. RAM-buffered before the card mounts so a mount failure is itself diagnosable; capped and self-suspending so a testing aid cannot cost a trip |
 | `lib/cairn_store` | Framed append, segment rotation, crash-safe seal, and a boot recovery that truncates a torn tail and reports the exact byte count |
 | `lib/cairn_prune` | The receipt gate. Portable C, away from the HTTP code, because a wrongly authorized prune deletes data permanently and reports success |

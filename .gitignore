@@ -11,6 +11,11 @@ gleam/trip-orchestrator/build/
 zig/ingest/ingestd
 server/ingestd
 server/cairn-server
+server/cairn-verify
+server/cairn-ledger
+server/cairn-signfw
+server/cairn-worker
+server/mkvectors
 deploy/ingestd-linux
 plugins/*/target/
 plugins/*/.mooncakes/
