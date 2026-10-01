@@ -349,11 +349,39 @@ against the fault matrix.
       blocked on bench data by design; tuning against guesses would be worse
       than leaving the defaults
 
-### Phase 10 — Ledger and documentation
+### Phase 10 — Ledger and documentation — **complete**
 
-- [ ] Admin ledger over the full bundle lifecycle, every transition with a reason code
-- [ ] Rewrite README and the docs against what v2 actually does
-- [ ] Every documented guarantee has a corresponding row in the Phase 3 matrix
+- [x] Admin ledger over the bundle lifecycle, every transition with a reason
+      (`internal/ledger`, read by `cmd/cairn-ledger`).
+
+  Append-only on disk rather than in PostgreSQL, deliberately: ingest has no
+  database dependency — a Postgres outage delays the derived view and nothing
+  more — and making the audit trail a database write would quietly give it one.
+  A nil ledger disables recording rather than failing an upload, because an
+  audit trail with veto power over the data it audits is the wrong shape.
+
+  Every refusal must carry a reason, enforced in `Append` rather than trusted to
+  call sites — the entries that need one are written on error paths where it is
+  easiest to forget, and a refusal without a reason is the one entry nobody can
+  act on. Verified end-to-end: an unenrolled device's 403 now appears as
+  `device_unknown` with the reason, which is exactly the ambiguity that made
+  "403 means unenrolled, not unreachable" worth documenting.
+
+- [x] Every documented guarantee mapped to the row that verifies it, in
+      [docs/guarantee-audit.md](docs/guarantee-audit.md), together with an
+      explicit list of what is **not** covered.
+
+  Writing it found two documented guarantees with no test at all. Revocation
+  taking effect without a restart had none, and the mTLS certificate binding was
+  worse than missing: a comment in the test harness deferred to
+  `TestClientIdentityBinding` as though it existed. It did not. Both are now
+  written and both are mutation-checked — disabling `refreshIfChanged` fails the
+  first, removing the CommonName comparison fails the second.
+
+- [x] Docs brought in line with what v2 actually does: the README describes the
+      v2 firmware, the verifier, the ledger and OTA, and the audit records where
+      the v1 documents are superseded rather than leaving them to be mistaken
+      for current
 
 ### Phase 11 — Secure OTA — **complete**
 

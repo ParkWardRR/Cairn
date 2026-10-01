@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
   <a href="https://github.com/ParkWardRR/Cairn/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0_tools-8E44AD?style=flat-square" alt="Release v0.1.0"></a>
-  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase_1–9_Active-2ECC71?style=flat-square" alt="Project Status"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phases_1–11_Complete-2ECC71?style=flat-square" alt="Project Status"></a>
   <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
 </p>
 
@@ -171,7 +171,8 @@ decoder job never implies a failed upload, and a plugin failure is a recorded
 result rather than a reason to reject a valid bundle.
 
 The v1 path — synchronous parse-and-insert on the upload request, plain HTTP,
-time-based pruning — is being replaced phase by phase per [ROADMAP.md](ROADMAP.md).
+time-based pruning — has been replaced: all eleven v2 phases are complete per
+[ROADMAP.md](ROADMAP.md). The firmware has not yet run on hardware.
 
 ---
 
@@ -243,6 +244,9 @@ fail an upload.
 | `internal/store` | PostgreSQL persistence. Every write upserts on a deterministic key or deletes-then-inserts in one transaction |
 | `internal/worker` | Drains the outbox in its own process, so a decoder bug cannot affect a sync |
 | `internal/mqtt` | Semantic state only — never raw samples |
+| `cmd/cairn-ledger` | Reads the lifecycle ledger — what happened to a bundle and why. The refusals matter most: an unenrolled device, a quota, a bad signature and a self-contradictory manifest all look identical from the device's side |
+| `cmd/cairn-signfw` | Signs firmware images offline with the update key, which deliberately never lives on the server |
+| `internal/ledger` | Append-only lifecycle record. On disk, not in PostgreSQL, so the audit trail cannot give ingest a database dependency |
 | `cmd/cairn-verify` | Verifies bundles straight off an SD card with no server — separates "did the firmware record this correctly" from "did the upload work", which look identical in the device's own logs |
 
 Two properties make the transfer protocol crash-safe with no bookkeeping: the
@@ -812,6 +816,8 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | [Install Guide](INSTALL.md) | Installing the v0.1.0 tools and flashing firmware |
 | [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
 | **[v2 Firmware Testing](docs/v2-firmware-testing.md)** | **Flashing the v2 firmware, reading its self-test and SD logs, and the destructive tests worth running** |
+| **[Guarantee Audit](docs/guarantee-audit.md)** | **Every documented guarantee mapped to the test row that verifies it — and an explicit list of what is not covered** |
+| [Secure OTA](docs/ota.md) | Update descriptor format, the four preconditions, and the ordering argument |
 | [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
 | **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |
 | [Architecture](docs/architecture.md) | System design, data flow, component responsibilities (describes v1) |
