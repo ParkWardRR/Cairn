@@ -76,6 +76,8 @@ Where to find the suites:
 | A decoder upgrade re-derives from raw with no device involvement | `TestDecoderUpgradeReDerivesFromRaw` |
 | A reused bundle id with different content is reported, not swallowed | `TestBundleIDConflictIsReported` |
 | Every ledger refusal carries a reason | `internal/ledger`: `TestRejectionsRequireAReason` |
+| The ledger covers the whole lifecycle, in causal order | Verified end-to-end: `offered` → `committed` → `receipt_issued` → `decode_queued`, with `decode_succeeded` written after the outbox ack and `decode_failed` only when a job is *parked* — a retry is not an outcome |
+| Trip events are attributed from evidence, or admit they are not | C matrix: *trip events round-trip through the card*. `HARSH_MOTION` exists precisely because braking and cornering are indistinguishable without orientation or a speed signal |
 
 > The decode-pipeline rows are gated behind `CAIRN_TEST_DSN` and skip silently
 > without PostGIS. CI supplies it in the `decode-pipeline` job; a local
@@ -117,12 +119,11 @@ The honest part. These are documented behaviours with no corresponding row.
 
 - Threshold tuning against real traces. Deliberately deferred: tuning against
   guesses would be worse than the current defaults.
-- The ledger is written by `intake` but not yet by the decode worker, so
-  `decode_succeeded` and `decode_failed` are defined and never emitted.
 - No staged rollout or per-device firmware pinning; every enrolled device sees
   the same `latest`.
-- `IMU_RAW_WINDOW` and `TRIP_EVENT` are defined in the format and exercised by
-  the vectors, but the firmware never emits them.
+- `IMU_RAW_WINDOW` is defined in the format and exercised by the vectors, but
+  the firmware never emits it. Raw windows are large and the summary carries the
+  statistics that matter; this would be opt-in for a diagnostic build.
 
 **Deliberately out of scope**, with the reasoning recorded where the decision
 lives:

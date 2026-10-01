@@ -376,6 +376,29 @@ ECU reported 0 kph" from "the ECU did not answer".
 `lat_e7`/`lon_e7` are zero when no valid fix was available; position validity is
 carried by the nearest `GNSS_SAMPLE`, never assumed.
 
+| `event_type` | Name | Meaning |
+|---:|---|---|
+| 1 | `TRIP_START` | A trip was confirmed. Written once, after `POLICY_SNAPSHOT` |
+| 2 | `TRIP_END` | The stop dwell expired and the bundle is being sealed |
+| 3 | `HARSH_BRAKE` | Decisive deceleration, attributed from a large negative speed change |
+| 4 | `HARSH_ACCELERATION` | Decisive acceleration, attributed from a large positive speed change |
+| 5 | `HARSH_CORNERING` | High lateral acceleration with little speed change |
+| 6 | `IMPACT` | Acceleration far beyond any driving manoeuvre |
+| 7 | `HARSH_MOTION` | Decisive dynamics that could **not** be attributed to a cause |
+| 8 | `CAPTURE_RECOVERED` | This bundle resumed after an interrupted write; see the manifest's `recovery_state` |
+
+Type 7 exists because attribution requires evidence the device may not have.
+Distinguishing braking from cornering needs either the mounting orientation —
+which is unknown without calibration — or a speed signal, which requires the
+ECU to be answering. When neither is available the dynamics are still real and
+still worth recording, so they are recorded as what they are: decisive motion
+of unattributed cause. Guessing between brake and corner would produce a label
+indistinguishable from a measured one.
+
+A decoder must treat an unknown `event_type` as an event it does not understand
+rather than discarding the record, so a newer device's events still appear in
+an older decoder's output with their position and timing intact.
+
 ### 4.7 `STATE_TRANSITION` — 20 bytes
 
 The lifecycle journal record. Written to `journal.seg`, and additionally in-band
