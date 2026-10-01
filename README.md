@@ -811,6 +811,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | [Install Guide](INSTALL.md) | Installing the v0.1.0 tools and flashing firmware |
 | [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
 | **[v2 Firmware Testing](docs/v2-firmware-testing.md)** | **Flashing the v2 firmware, reading its self-test and SD logs, and the destructive tests worth running** |
+| [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
 | **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |
 | [Architecture](docs/architecture.md) | System design, data flow, component responsibilities (describes v1) |
 | [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol (describes v1) |
