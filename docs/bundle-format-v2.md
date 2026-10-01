@@ -418,6 +418,49 @@ A deterministic CBOR map (§5) of the active detection thresholds, written once
 per bundle at `CONFIRMING_TRIP`. Makes every bundle self-describing with respect
 to the policy that produced it, so a retune is reconstructable after the fact.
 
+`policy_version` alone is not enough. It identifies a policy but does not
+describe it, so interpreting an old bundle would mean finding the firmware build
+that defined that version. Recording the values themselves means a bundle
+captured under thresholds nobody remembers is still explainable from the bundle.
+
+| Key | Field | Units |
+|---:|---|---|
+| 1 | `policy_version` | u8, matches `STATE_TRANSITION.policy_version` and the manifest |
+| 2 | `gnss_period_ms` | nominal GNSS sampling period |
+| 3 | `imu_window_ms` | IMU summary window |
+| 4 | `obd_period_ms` | nominal OBD polling period |
+| 5 | `health_period_ms` | health record period |
+| 6 | `start_score_threshold_e2` | evidence score × 100 required to suspect motion |
+| 7 | `stop_score_threshold_e2` | evidence score × 100 required to suspect rest |
+| 8 | `start_dwell_ms` | how long motion must persist before a trip is declared |
+| 9 | `stop_dwell_ms` | how long rest must persist before a trip is sealed |
+| 10 | `motion_accel_rms_mg` | accelerometer RMS treated as motion |
+| 11 | `motion_speed_cmps` | speed treated as motion |
+| 12 | `preroll_window_ms` | pre-trip retention window |
+| 13 | `preroll_ring_samples` | pre-trip ring capacity, in records |
+| 14 | `segment_max_bytes` | segment rotation size |
+| 15 | `adaptive_sampling` | u8, 1 when event-adaptive rates are active (§4.9.1) |
+
+Keys ascend and are encoded per §5, so the map is byte-identical for identical
+policy — which is what lets a reader group bundles by policy without trusting
+the version number.
+
+#### 4.9.1 Event-adaptive sampling
+
+When `adaptive_sampling` is 1, the nominal periods above are upper bounds rather
+than fixed rates: the device may sample *faster* when the vehicle is doing
+something worth resolving, and no slower than nominal while a trip is active.
+
+The direction is deliberate. A reader may assume a record every
+`gnss_period_ms` at worst during a trip, so a gap longer than that is still a
+gap and still recorded as one (§4.8). Adaptation can only add detail, never
+remove it, which keeps the guarantee a bundle makes independent of what the
+device decided at the time.
+
+Rates are not themselves recorded per sample. The frames carry their own
+monotonic timestamps, so the achieved rate is recoverable from the data rather
+than needing to be asserted alongside it.
+
 
 ### 4.10 Degraded-state bitmap
 
