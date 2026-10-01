@@ -355,10 +355,46 @@ against the fault matrix.
 - [ ] Rewrite README and the docs against what v2 actually does
 - [ ] Every documented guarantee has a corresponding row in the Phase 3 matrix
 
-### Phase 11 — Secure OTA
+### Phase 11 — Secure OTA — **complete**
 
-- [ ] Signed images verified before swap; post-boot self-test; automatic rollback
-- [ ] Update only while parked and externally powered, never with unreceipted bundles pending
+- [x] Signed images verified before swap, with a **separate update key**. The
+      receipt key says "this data is safe to delete"; the update key says "this
+      code is safe to run". A server compromised enough to issue false receipts
+      costs stored trips; one that could also sign firmware owns the device, so
+      the update key never lives on the server — `cairn-signfw` signs offline
+- [x] The ordering, which is the part that matters:
+      verify the descriptor signature **before** downloading (otherwise a
+      hostile server can make the device write megabytes into its spare slot on
+      demand); hash the image **read back out of flash**, not the bytes as they
+      arrived (hashing the download proves the transfer, not the write, and a
+      partially programmed slot that hashed correctly in RAM is exactly what
+      produces a boot loop); set the boot partition **last**
+- [x] Post-boot self-test and automatic rollback. The image marks itself valid
+      only after the card mounts and the tree is confirmed — an image that boots
+      but cannot reach its storage is not a working image, and letting it mark
+      itself valid would strand the device one reboot from working. The firmware
+      logs loudly when the running slot differs from the configured boot
+      partition, since that is the otherwise-invisible signature of a rollback
+- [x] Never updates with unreceipted bundles pending, mid-trip, or on an
+      unhealthy supply — including when the supply voltage is *unknown*, because
+      updating on the strength of a reading the device could not take is the
+      wrong direction. Each condition blocks on its own and is named in the log;
+      "blocked" without a reason is unactionable
+- [x] Version ordering **refuses rather than guesses**: an unparseable version
+      on either side, or a pre-release suffix, blocks the update. Guessing an
+      order is how a device installs something older than itself
+- [ ] ESP-IDF secure boot — deliberately not enabled, the same reasoning that
+      keeps flash encryption off: it is irreversible, which is a poor property
+      for hardware already in a vehicle. This verifies the application
+      signature, so a physically present attacker can still flash over serial
+
+> `docs/ota.md` records the protocol, the four preconditions and the ordering
+> argument. Verified end-to-end on the host: `cairn-signfw` signs a real 1.1 MB
+> image, the C implementation verifies that exact descriptor and rejects both a
+> tampered signature and a tampered descriptor, and the server serves the
+> descriptor with its detached signature plus the image addressed by hash.
+> Three property rows cover the preconditions, version ordering and descriptor
+> strictness. The on-device install itself is unexercised — it needs hardware.
 
 ## Deferred deliberately
 
