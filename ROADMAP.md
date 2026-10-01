@@ -101,8 +101,9 @@ against the fault matrix.
 - [x] Reproducible from a seed, printed on failure; assertions against the
       device's durable state and the server's reported state, never stdout
 - [x] **16 matrix rows pass, 0 skipped.** CI gates conformance and the matrix
-- [ ] Decoder upgrade reproducibility; plugin timeout; storage full — these need
-      Phase 4's workers and Phase 9's degraded modes to exist
+- [x] Decoder upgrade reproducibility — closed by Phase 4's decode pipeline
+- [ ] Plugin timeout; storage full — these need Phase 9's degraded modes and the
+      plugin queue to exist
 - [x] **Standing rule: every later phase adds its own matrix rows before it closes**
 
 #### What the matrix proves
@@ -132,14 +133,41 @@ against the fault matrix.
 | The crash test, run with `-dev`, lost receipt verification across a restart | The ephemeral signing key had rotated — independently reproducing the hazard `receipts.Open` refuses by default. It became a deliberate matrix case |
 | A `FaultPoint` variant declared but never constructed | A missing matrix row (the window between verifying a receipt and beginning the prune), not dead code |
 
-### Phase 4 — Schema and decode workers
+### Phase 4 — Schema and decode workers — **complete**
 
-- [ ] Fresh migrations — raw / normalized / derived layers
-- [ ] Range-partition high-frequency sample tables by event time
-- [ ] Unique `(device_id, content_root)` and unique `bundle_id`
-- [ ] Decode, normalize and enrich workers consuming the outbox
-- [ ] Reprocessing as a queued job, not a synchronous endpoint
-- [ ] MQTT publishes semantic idempotent state only — never raw samples
+- [x] Fresh migrations in `deploy/migrations/v2/` — raw / normalized / derived
+      layers, no `ALTER`s against the v1 schema
+- [x] Range-partitioned sample tables with on-demand monthly partitions and a
+      default partition, so a decode can never fail for want of one
+- [x] Unique `(device_id, content_root)`; `bundle_id` unique as the primary key,
+      and a reused ID with different content is **reported**, not swallowed
+- [x] `geom` as a stored generated column, so the geometry cannot drift from the
+      coordinates it represents
+- [x] Decode worker (`cmd/cairn-worker`) consuming the outbox, in its own process
+- [x] Reprocessing as a queued job: `-reprocess <root>` and `-reprocess-all`
+- [x] Derived trip builder with drive/stop/gap segmentation, event detector and
+      daily rollups
+- [x] MQTT publishes semantic idempotent state only — verified against a real
+      Mosquitto broker
+- [x] Explicit retention policy table
+- [x] 11 database integration tests against real PostGIS; 172 Go tests green
+
+#### The two properties that matter
+
+| Property | How it is enforced |
+|---|---|
+| **Idempotent** | Every write either upserts on a deterministic key or deletes the bundle's rows before reinserting, all in one transaction. A redelivered job costs a repeat, never a duplicate — asserted by re-decoding four times and comparing row counts |
+| **Reproducible** | `derived.decode_runs.output_digest` hashes the derived output. Re-decoding at the same version must give the same digest; 20 consecutive decodes verified identical. A decoder upgrade appears as a second row at a higher version, so comparing digests shows exactly which bundles a change altered |
+
+#### Failure isolation, verified
+
+- A sync completes and yields a verifiable receipt **with the database closed** —
+  ingest has no database dependency, so a Postgres outage delays the derived
+  view and nothing more
+- A decode failure leaves the job unacknowledged, the receipt untouched and
+  every raw member retrievable. A parked job is never dropped: the raw bundle is
+  intact, so a fixed decoder can pick it up later
+- A decoder upgrade re-derives from raw with no device re-uploading anything
 
 ### Phase 5 — Firmware: ESP-IDF skeleton
 

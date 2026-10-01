@@ -68,6 +68,10 @@ What is solid today:
 - a **fault-injection property matrix** (`emulator/`) — 16 rows proving what
   survives power cuts, torn writes, network loss, duplicate uploads, clock jumps
   and reboots mid-prune;
+- the **decode pipeline** (`server/internal/decode`, `cmd/cairn-worker`) — a
+  three-layer schema with partitioned sample tables, an idempotent and
+  reproducible decoder, derived trips and semantic MQTT, verified against real
+  PostGIS and a real broker;
 - the local CLI tooling and the web UI.
 
 ---
@@ -201,6 +205,10 @@ fail an upload.
 | `internal/devices` | Enrolment and revocation. Reloads on change, so revoking a stolen unit takes effect without a restart |
 | `internal/outbox` | Durable append-only decode queue. Unacknowledged work is redelivered, so a worker crash costs a repeat rather than a lost job |
 | `internal/mtls` | TLS with `RequireAndVerifyClientCert` against a private CA |
+| `internal/decode` | Raw bundle → normalized samples + derived trips. Idempotent and reproducible: a digest over the output makes re-derivation checkable |
+| `internal/store` | PostgreSQL persistence. Every write upserts on a deterministic key or deletes-then-inserts in one transaction |
+| `internal/worker` | Drains the outbox in its own process, so a decoder bug cannot affect a sync |
+| `internal/mqtt` | Semantic state only — never raw samples |
 
 Two properties make the transfer protocol crash-safe with no bookkeeping: the
 set of missing chunks is **derived** from the raw store rather than tracked, so
@@ -230,6 +238,48 @@ go run ./cmd/cairn-syncdemo -server https://cairn.example.lan:8443 \
 | `POST` | `/api/v2/bundles/offer` | Offer a signed manifest; returns the missing chunk indices |
 | `PUT` | `/api/v2/bundles/{id}/chunks/{sha256}` | Upload one chunk, addressed by content hash |
 | `POST` | `/api/v2/bundles/{id}/commit` | Verify, store, receipt; returns the receipt as raw CBOR |
+
+### Decode Pipeline (`server/internal/decode`, `cmd/cairn-worker`)
+
+A separate process from ingest, deliberately. Ingest validates, stores, receipts
+and returns with **no database dependency at all**; the expensive, fallible work
+happens here. A crash loop, a decoder bug or a Postgres outage therefore delays
+the derived view and nothing more — a sync still completes and still yields a
+verifiable receipt.
+
+Two properties define the decoder, and both are tested rather than asserted:
+
+| Property | How |
+|---|---|
+| **Idempotent** | One transaction that deletes the bundle's rows before reinserting. Re-decoding four times leaves identical row counts |
+| **Reproducible** | `derived.decode_runs.output_digest` hashes the output; 20 consecutive decodes give an identical digest. A decoder upgrade is a second row at a higher version, so comparing digests shows exactly which bundles a change altered |
+
+That second property is what makes a decoder bug tractable: fix it, re-derive
+everything from raw, and no device re-uploads a byte.
+
+```bash
+cd deploy/migrations/v2 && for f in *.sql; do psql -d cairn -f "$f"; done
+
+cd server && go build ./cmd/cairn-worker
+./cairn-worker -data /var/lib/cairn -dsn postgres://cairn@localhost/cairn   -mqtt localhost:1883
+
+# After fixing a decoder bug: re-derive everything from raw
+./cairn-worker -data ... -dsn ... -reprocess-all
+```
+
+#### Schema
+
+| Layer | Tables | Notes |
+|---|---|---|
+| **raw** | `bundles`, `bundle_members`, `bundle_chunks`, `ingest_receipts`, `devices`, `audit_events` | Written once, never mutated. Authoritative |
+| **norm** | `position_samples`, `imu_samples`, `obd_samples`, `device_status`, `state_transitions` | Range-partitioned by month; `geom` is a generated column so it cannot drift from the coordinates |
+| **derived** | `trips`, `trip_segments`, `events`, `gaps`, `daily_rollups`, `decode_runs`, `retention_policy` | Recomputable. Dashboard cards read rollups rather than scanning telemetry |
+
+Every OBD column is nullable, and NULL means *the ECU did not answer* — distinct
+from a reported zero. GNSS accuracy fields are NULL where the receiver gave no
+estimate, never a plausible guess. A `GNSS_GAP` record survives into
+`derived.gaps` and becomes its own trip segment, so a map renders a
+discontinuity instead of joining across it.
 
 Three identifiers are kept deliberately distinct, because the reviews were right
 that a content hash makes a poor operational handle:
@@ -708,6 +758,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | `build-zig` | Zig common, bundle, CLI + smoke test |
 | `build-go` | v1 Go ingest service + `go vet` |
 | `build-server` | v2 server: build, vet, gofmt, 161 tests, and a check that regenerating the conformance vectors produces no diff |
+| `decode-pipeline` | v2 schema + decode worker against a real PostGIS service container |
 | `format-conformance` | The emulator's Rust format implementation against the same committed vectors |
 | `fault-matrix` | 16 property rows plus the server-crash-during-commit test |
 | `build-rust` | Rust emulator + binary verification |

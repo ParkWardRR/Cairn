@@ -99,6 +99,53 @@ jobs:
             exit 1
           }
 
+  # The v2 schema and decode pipeline, against a real PostGIS.
+  #
+  # No mock here: partitioning, geography columns, generated columns and
+  # ON CONFLICT behaviour are exactly the things a fake would get wrong while
+  # reporting success.
+  decode-pipeline:
+    runs-on: [self-hosted, cairn]
+    needs: [build-server]
+
+    services:
+      postgres:
+        image: imresamu/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: cairn
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: Apply the v2 migrations
+        env:
+          PGPASSWORD: test
+        run: |
+          set -euo pipefail
+          for f in deploy/migrations/v2/*.sql; do
+            echo "applying $f"
+            psql -h 127.0.0.1 -U postgres -d cairn -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Decode pipeline tests
+        env:
+          CAIRN_TEST_DSN: postgres://postgres:test@127.0.0.1:5432/cairn
+        working-directory: server
+        run: go test ./internal/store/ -count=1 -v
+
   # The emulator's independent Rust implementation of bundle format v2, checked
   # against the same committed vectors the Go reference passes. The vectors are
   # bytes and expected verdicts, not code, so neither implementation can quietly
