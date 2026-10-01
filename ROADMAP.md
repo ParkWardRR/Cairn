@@ -314,11 +314,40 @@ against the fault matrix.
 > [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
 > procedure, including the destructive tests that are the actual point.
 
-### Phase 9 — Degraded states and policy tuning
+### Phase 9 — Degraded states and policy tuning — **in progress**
 
-- [ ] `DEGRADED_GNSS` / `_STORAGE` / `_TIME` / `_NETWORK`, `LOW_POWER`, `RECOVERY_REQUIRED`
+- [x] `DEGRADED_GNSS` / `_STORAGE` / `_TIME` / `_NETWORK`, `LOW_POWER`,
+      `RECOVERY_REQUIRED`, `DEGRADED_SENSING`, defined as a **bitmap** in
+      spec §4.10 and implemented across firmware and Go
+
+  The spec already declared `DEVICE_HEALTH.health_state` as a "bitmap of active
+  degraded states (§4.7)" — but §4.7 is `STATE_TRANSITION` and never defined
+  one, so the cross-reference was broken and the bitmap existed nowhere. The
+  firmware was writing a scalar `0/1/2` into a field every decoder would read as
+  a bitmap.
+
+  A bitmap rather than a severity is the whole point: degradation is not
+  ordered. A low battery, a missing fix and a full card are different problems
+  with different fixes, and a scalar forces a priority between them and
+  discards the rest — the old code reported `Critical` for the battery while
+  silently losing the fact that position was unavailable too.
+
+  Each bit is set from observed conditions, never inference. `DEGRADED_TIME` is
+  set before the first fix of every trip, which is normal rather than
+  exceptional — saying so is what stops a reader treating monotonic-only
+  timestamps as UTC. Decoders preserve unknown bits rather than masking them,
+  so a bundle from newer firmware stays interpretable.
+
+  Covered by a storage-matrix row asserting the bitmap round-trips through a
+  real segment with every bit independently recoverable, four Go unit tests
+  including the unknown-bit rule, and `cairn-verify`, which now reports the
+  union of conditions a bundle recorded. Verified end-to-end: the C firmware
+  writes the bitmap and the Go reference reads it back by name.
+
 - [ ] Event-adaptive sampling across GNSS, IMU and OBD
-- [ ] Thresholds tuned on real traces, with the policy version journalled
+- [ ] Thresholds tuned on real traces, with the policy version journalled —
+      blocked on bench data by design; tuning against guesses would be worse
+      than leaving the defaults
 
 ### Phase 10 — Ledger and documentation
 

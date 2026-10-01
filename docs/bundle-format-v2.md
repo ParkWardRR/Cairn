@@ -358,7 +358,7 @@ ECU reported 0 kph" from "the ECU did not answer".
 | 7 | 1 | `rssi_dbm` | i8, `0` when not associated |
 | 8 | 2 | `ext_sensor_1` | u16 |
 | 10 | 2 | `ext_sensor_2` | u16 |
-| 12 | 1 | `health_state` | bitmap of active degraded states (§4.7) |
+| 12 | 1 | `health_state` | bitmap of active degraded states (§4.10) |
 | 13 | 1 | `reboot_count` | u8, consecutive abnormal reboots |
 | 14 | 2 | `reserved` | zero |
 
@@ -417,6 +417,46 @@ discontinuity; it must never join the route across it.
 A deterministic CBOR map (§5) of the active detection thresholds, written once
 per bundle at `CONFIRMING_TRIP`. Makes every bundle self-describing with respect
 to the policy that produced it, so a retune is reconstructable after the fact.
+
+
+### 4.10 Degraded-state bitmap
+
+`DEVICE_HEALTH.health_state` is a bitmap, not an enum.
+
+That choice is the point of the field. Degradation is not ordered: a vehicle
+can be low on battery *and* without a GNSS fix *and* out of card space at the
+same time, and these have different causes and different fixes. A scalar
+severity would force a priority between them and silently discard the rest —
+reporting "critical" for the battery while losing the fact that position was
+also unavailable. Every active condition is therefore its own bit, and a reader
+can recover the full set.
+
+| Bit | Value | Name | Meaning |
+|---:|---:|---|---|
+| 0 | `0x01` | `DEGRADED_GNSS` | No usable position: the receiver is absent, unresponsive, or has reported no fix for longer than one sample period |
+| 1 | `0x02` | `DEGRADED_STORAGE` | Writes are failing, or free space has fallen below the floor reserved for capture |
+| 2 | `0x04` | `DEGRADED_TIME` | No UTC basis has been established, so sample times are monotonic-only |
+| 3 | `0x08` | `DEGRADED_NETWORK` | Bundles are awaiting a receipt and the server could not be reached |
+| 4 | `0x10` | `LOW_POWER` | Supply voltage is below the threshold at which capture is still trusted |
+| 5 | `0x20` | `RECOVERY_REQUIRED` | The open capture could not be safely extended and must be sealed as-is |
+| 6 | `0x40` | `DEGRADED_SENSING` | A sensor other than GNSS is unavailable, or sensor readings were dropped before being recorded |
+| 7 | `0x80` | — | Reserved, zero |
+
+`0x00` means no degraded condition is active. It is not the same as "healthy in
+every respect this device could measure" — it means nothing on this list is
+true, which is the only claim the device is in a position to make.
+
+Two rules follow for writers:
+
+1. A bit is set from *observed* conditions, never from inference. `DEGRADED_GNSS`
+   means no fix arrived, not that one seems unlikely.
+2. `DEGRADED_TIME` is set whenever the UTC basis is absent, including before the
+   first fix of a trip. This is normal rather than exceptional, and saying so is
+   what stops a reader treating monotonic-only timestamps as if they were UTC.
+
+A decoder must preserve unknown bits rather than masking them off, so a bundle
+from newer firmware stays interpretable for the conditions an older decoder does
+understand.
 
 ---
 
