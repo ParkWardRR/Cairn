@@ -292,10 +292,20 @@ against the fault matrix.
 - [x] Transactional prune: `prune_intent` → delete → completion, replayed at boot
 - [x] An unconfigured key prunes **nothing**. A full card loses nothing; a
       wrongly authorized prune loses a trip permanently
-- [ ] mTLS with the private CA pinned on-device — transport is plain HTTP for
-      now. The receipt signature, not the transport, is what authorizes deletion,
-      so this governs who can *read* an upload rather than whether a prune is
-      legitimate
+- [x] mTLS with the private CA pinned on-device. The CA is compiled into
+      firmware because it is the trust anchor — one read from the card could be
+      swapped by anyone holding the card — while the client certificate and key
+      live on the card, since they are rotatable and the certificate's
+      CommonName must be the device id, which is not known until the hardware
+      has booted once. Falls back to HTTP with an explicit error naming what is
+      missing; it never silently downgrades.
+      `deploy/make-certs.sh` issues the chain and emits the CA as a C literal.
+      Verified end-to-end against the real server: with a client certificate the
+      request succeeds and the server reads the CN as the device id, without one
+      the handshake is refused. Running it that way found a defect the script
+      would otherwise have shipped — macOS LibreSSL defaults to SHA-1, which Go
+      rejects as `insecure algorithm ECDSA-SHA1` while sending the client a
+      misleading `unknown ca` alert
 
 > **Not yet run on hardware.** Phases 5–8 compile for the target (62.7% of the
 > A slot, 25.2% RAM) and the format agrees byte-for-byte with the Go and Rust
