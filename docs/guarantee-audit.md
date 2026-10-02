@@ -88,6 +88,8 @@ any diff — so "the vectors are deterministic" is enforced rather than asserted
 | A reused bundle id with different content is reported, not swallowed | `TestBundleIDConflictIsReported` |
 | The vectors are generated deterministically | CI job `vector-determinism`. Mutation-checked: editing one threshold in the generator without regenerating fails it |
 | The firmware compiles for its target | CI job `firmware-build`, all three configurations — capture, self-test, and OTA-enabled, since the install path is behind `CAIRN_OTA_AVAILABLE` and is otherwise never compiled |
+| Standby never strands unsent data | C matrix: *standby never strands unsent data*. Each gate checked on its own — a blocker that only works in combination is one that gets removed by accident. Mutation-checked: removing the pending-bundle gate fails it |
+| Waking favours the earliest reliable signal | C matrix: *waking favours the earliest reliable signal*. Engine voltage beats motion because the rail rises before the vehicle moves, which is what lets the pre-roll cover the start of a drive |
 | Every ledger refusal carries a reason | `internal/ledger`: `TestRejectionsRequireAReason` |
 | The ledger covers the whole lifecycle, in causal order | Verified end-to-end: `offered` → `committed` → `receipt_issued` → `decode_queued`, with `decode_succeeded` written after the outbox ack and `decode_failed` only when a job is *parked* — a retry is not an outcome |
 | Trip events are attributed from evidence, or admit they are not | C matrix: *trip events round-trip through the card*. `HARSH_MOTION` exists precisely because braking and cornering are indistinguishable without orientation or a speed signal |
@@ -124,6 +126,11 @@ The honest part. These are documented behaviours with no corresponding row.
 - `COBD::getVoltage()` units. Assumed volts; the firmware multiplies by 1000.
 - The fact queue under real load, and therefore whether the drop counter ever
   fires in practice.
+- **Parked current draw.** Standby powers the radio and GNSS down, puts the
+  coprocessor in its low-power mode, clocks to 80 MHz and light-sleeps between
+  polls. Which conditions permit standby is tested; how many milliamps result is
+  not, and cannot be without a multimeter. This is the measurement most worth
+  taking first on hardware.
 - Whether adaptive sampling's rate changes are actually achieved, as opposed to
   requested. The frames carry their own timestamps so this is recoverable from a
   real bundle, but no run has produced one yet.

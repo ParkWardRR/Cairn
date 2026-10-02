@@ -432,6 +432,7 @@ against the fault matrix.
 | MinIO | A CAS directory on ZFS is sufficient; keep the abstraction, skip the daemon |
 | TimescaleDB | Native range partitioning first; adopt only on measured need |
 | `previous_bundle_root` enforcement | Field is populated in v2; detecting deleted historical bundles is a different threat model from detecting corruption |
+| ESP32 deep sleep | Not possible on this board: the IMU interrupt is not routed to an RTC-capable GPIO, so there is no wake-on-motion source. The official Freematics firmware polls for the same reason. Timer-wake deep sleep would reset on every wake, and this firmware's boot mounts the card and runs a recovery scan — more costly than the polling it would replace. Standby instead powers peripherals down, clocks the CPU to 80 MHz and light-sleeps between polls |
 
 ---
 
