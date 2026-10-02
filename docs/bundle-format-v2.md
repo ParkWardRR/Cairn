@@ -422,6 +422,35 @@ Recording both evidence scores and the `policy_version` at every transition is
 what makes a retune attributable and lets `trip-replay` prove *why* a trip
 started, continued, split, finalized, retried or was retained.
 
+#### 4.7.1 Power transitions in the health region
+
+Standby is journalled in the health region as a **matched pair** of transitions
+with `trigger_event = 4`:
+
+| | `from_state` | `to_state` | `reason_code` |
+|---|---:|---:|---|
+| entering standby | 0 (awake) | 1 (standby) | 0 |
+| leaving standby | 1 (standby) | 0 (awake) | wake reason |
+
+Wake reasons: `0` none, `1` motion, `2` engine voltage, `3` periodic health.
+
+The duration of a standby window is the difference between the two frames'
+`monotonic_ms`, and carries no field of its own. On the ESP32 standby is light
+sleep rather than deep sleep, so the millisecond clock runs straight through it —
+that continuity is what makes the subtraction valid, and it is the reason a
+reader must not substitute UTC here.
+
+**Both records are required to measure parked power consumption.** A supply
+voltage series from `DEVICE_HEALTH` cannot on its own distinguish a device that
+slept for six hours from one that sat awake for six hours, and those differ by
+roughly an order of magnitude in current. With the windows recorded, each voltage
+sample is attributable to the state the device was actually in, and the decay
+slope across a long park becomes a measurement rather than an estimate.
+
+An unmatched entry — a device that announced standby and never recorded a
+return — is itself meaningful: it means the device lost power while asleep, or
+reset instead of waking. It must be reported, not repaired by assuming a wake.
+
 ### 4.8 `GNSS_GAP` — 12 bytes
 
 | Offset | Size | Field |
