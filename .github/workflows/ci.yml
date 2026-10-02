@@ -166,6 +166,36 @@ jobs:
         working-directory: emulator
         run: cargo run --release -- conformance --vectors ../fixtures/format-v2
 
+  # The vectors are generated deterministically, which is what makes them usable
+  # as a shared input rather than one implementation's output. Regenerating must
+  # produce no diff — otherwise a vector could drift between the generator and
+  # what is committed, and the implementations would be agreeing with a stale
+  # file instead of with each other.
+  vector-determinism:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+
+      - name: Regenerate the vectors
+        working-directory: server
+        run: go run ./cmd/mkvectors -out ../fixtures/format-v2
+
+      - name: The committed vectors must be unchanged
+        run: |
+          if ! git diff --quiet -- fixtures/format-v2; then
+            echo "Regenerating the vectors changed committed files."
+            echo "Either the generator is not deterministic, or a change to it"
+            echo "was committed without regenerating. Run:"
+            echo "  cd server && go run ./cmd/mkvectors -out ../fixtures/format-v2"
+            git diff --stat -- fixtures/format-v2
+            exit 1
+          fi
+
   # The firmware's own C code, compiled natively. Two suites:
   #
   #   conformance  lib/cairn_format against the committed vectors. This is the
@@ -188,6 +218,50 @@ jobs:
       # torn segment — exactly the case the format exists to handle safely.
       - name: Under AddressSanitizer and UBSan
         run: make -C firmware/cairn-v2/test/host asan
+
+  # Compiling for the actual target, which the host suites do not do.
+  #
+  # The host suites prove the portable code is *correct*; this proves the whole
+  # firmware still *builds* for Xtensa. They catch different things: a C++
+  # linkage mistake, a missing IDF header, or a library that only resolves on
+  # the host all pass the host suites and fail here.
+  #
+  # Both configurations are built because they are genuinely different code
+  # paths — the OTA install path is behind CAIRN_OTA_AVAILABLE and is otherwise
+  # never compiled.
+  firmware-build:
+    runs-on: [self-hosted, cairn]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PlatformIO
+        run: |
+          python3 -m pip install --user --upgrade platformio
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # The template verbatim. Its placeholder values only affect runtime
+      # behaviour — an all-zero receipt key refuses to prune, it does not change
+      # what compiles — so there is nothing to override for a build check.
+      - name: Provide build-time configuration
+        working-directory: firmware/cairn-v2
+        run: cp include/secrets.h.example include/secrets.h
+
+      # Capped to one job: this runner is memory-constrained and an uncapped
+      # parallel build has wedged it before.
+      - name: Build the capture image
+        working-directory: firmware/cairn-v2
+        run: pio run -e cairn -j 1
+
+      - name: Build the self-test image
+        working-directory: firmware/cairn-v2
+        run: pio run -e cairn-selftest -j 1
+
+      - name: Build with OTA enabled
+        working-directory: firmware/cairn-v2
+        env:
+          PLATFORMIO_BUILD_FLAGS: >-
+            -DCAIRN_UPDATE_KEY_HEX='"0000000000000000000000000000000000000000000000000000000000000001"'
+        run: pio run -e cairn -j 1
 
   # The fault-injection property matrix. Local durability rows need no server;
   # protocol rows run against a dev-mode instance.

@@ -10,6 +10,11 @@ sections at the end list what is *not* covered, which is the part worth reading.
 
 Where to find the suites:
 
+All of these run in CI. Two jobs exist specifically to protect claims this file
+makes: `firmware-build` compiles all three ESP32 configurations, which the host
+suites do not do, and `vector-determinism` regenerates the vectors and fails on
+any diff — so "the vectors are deterministic" is enforced rather than asserted.
+
 | Suite | Command | Count |
 |---|---|---|
 | Format conformance (Go) | `go test ./format/` | 25 vectors |
@@ -19,6 +24,8 @@ Where to find the suites:
 | Fault-injection matrix (Rust) | `cargo run -- matrix` | 9 rows |
 | Server unit and integration | `go test ./...` | — |
 | Decode pipeline (needs PostGIS) | `CAIRN_TEST_DSN=… go test ./internal/store/` | 11 rows |
+| Firmware target build | `pio run` in `firmware/cairn-v2` | 3 configurations |
+| Vector determinism | regenerate, then `git diff --exit-code -- fixtures/` | — |
 
 ## The four invariants
 
@@ -79,6 +86,8 @@ Where to find the suites:
 | A decode failure leaves raw data and the receipt intact | `TestDecodeFailureLeavesRawAndReceiptIntact` |
 | A decoder upgrade re-derives from raw with no device involvement | `TestDecoderUpgradeReDerivesFromRaw` |
 | A reused bundle id with different content is reported, not swallowed | `TestBundleIDConflictIsReported` |
+| The vectors are generated deterministically | CI job `vector-determinism`. Mutation-checked: editing one threshold in the generator without regenerating fails it |
+| The firmware compiles for its target | CI job `firmware-build`, all three configurations — capture, self-test, and OTA-enabled, since the install path is behind `CAIRN_OTA_AVAILABLE` and is otherwise never compiled |
 | Every ledger refusal carries a reason | `internal/ledger`: `TestRejectionsRequireAReason` |
 | The ledger covers the whole lifecycle, in causal order | Verified end-to-end: `offered` → `committed` → `receipt_issued` → `decode_queued`, with `decode_succeeded` written after the outbox ack and `decode_failed` only when a job is *parked* — a retry is not an outcome |
 | Trip events are attributed from evidence, or admit they are not | C matrix: *trip events round-trip through the card*. `HARSH_MOTION` exists precisely because braking and cornering are indistinguishable without orientation or a speed signal |
