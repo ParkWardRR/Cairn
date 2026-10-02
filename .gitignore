@@ -45,3 +45,6 @@ dist/
 firmware/cairn-v2/include/secrets.h
 firmware/cairn-v2/.pio/
 firmware/cairn-v2/test/host/build/
+
+# Compiled server binaries (see server/Makefile)
+server/bin/
