@@ -477,11 +477,39 @@ for a long time.
 > undetectable from inside the device, and the device was the only thing that
 > could reveal it.
 
-**Not yet verified, and both need physical access:** parked current draw, and
-the device's own mutual TLS. The server is ready and the client certificate is
-issued, but the device needs one reflash to pin the CA plus `client.crt` /
-`client.key` on its card. Until then it falls back to plain HTTP, which is
-logged explicitly and names the missing files.
+**Mutual TLS verified on hardware**, same evening, once the card could be moved
+to a workstation to receive its client certificate:
+
+```
+mTLS ready: CA pinned in firmware, client credentials from the card
+protocol: https, host: cairn.alpina.casa port: 8443 url: /api/v2/bundles/offer
+offer 0000000000Y7VB098FJR5E1YQ6: 1 of 1 chunks missing
+chunk 1/1 sent (2452 bytes, 5267e4d2..)
+pruned 0000000000Y7VB098FJR5E1YQ6 (receipt verified against the pinned key)
+sync done: 1 offered, 1 receipted, 1 pruned, 1 chunks sent, 0 receipts rejected
+```
+
+All three protocol steps ran over HTTPS on 8443, and the server attributed them
+to `device=8777228e` — which it can only know from the TLS client certificate's
+CommonName. The identity binding is therefore proven against mbedTLS on the real
+device rather than only against the Go test client. Ledger: 17 entries, **0
+refusals or failures**.
+
+**Standby and wake-on-motion also verified**, found in the card logs rather than
+over serial, which is the point of writing them to the card:
+
+```
+[PWR] WARN  entering standby
+[SENS] INFO GNSS powered down for standby
+[PWR] WARN  woke after 62015 ms and 50 polls: MOTION
+[LIFE] WARN resumed after 20383 ms standby (MOTION); 2 standby period(s) totalling 82398 ms
+```
+
+A `GNSS_GAP` record was written unprompted when the receiver dropped out across
+a standby cycle — honest incompleteness, recorded rather than interpolated.
+
+**Still not verified:** parked current draw. It needs a meter, not a terminal,
+and remains the single most useful measurement left in the system.
 
 ## Deferred deliberately
 

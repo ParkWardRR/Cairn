@@ -119,8 +119,13 @@ The honest part. These are documented behaviours with no corresponding row.
   valid. The *decisions* are tested; the flash operations are not.
 - The signature-before-download ordering. It is a property of the code's
   structure, and a test would need a server that counts image requests.
-- The mTLS handshake on-device, including whether ~40 KB of heap is available at
-  handshake time.
+- ~~The mTLS handshake on-device~~ — **verified 2026-10-01.** The device
+  completed offer, chunk upload and commit over HTTPS on 8443 against the
+  private CA, and the server attributed all three to `device=8777228e`, which it
+  can only derive from the client certificate's CommonName. So the identity
+  binding holds against mbedTLS on real hardware and not only against the Go
+  test client. Heap at handshake time was not a problem: free heap was 235 KB at
+  boot and the sync completed without a drop.
 - GNSS date and time decoding. The civil-from-days arithmetic has never seen a
   real fix, and the driver's `date`/`time` encoding is assumed.
 - `COBD::getVoltage()` units. Assumed volts; the firmware multiplies by 1000.

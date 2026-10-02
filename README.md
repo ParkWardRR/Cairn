@@ -84,9 +84,15 @@ refuses to capture if either disagrees with the specification** — a device who
 primitives are wrong cannot produce a verifiable bundle, so refusing is the
 honest outcome. Measured stack headroom is logged after every seal.
 
-**Still outstanding:** parked current draw is unmeasured, and the device needs
-one reflash plus a client certificate on its card before it can use mutual TLS —
-both need physical access to the hardware.
+Mutual TLS is verified on the device itself, not just server-side: it ran offer,
+chunk upload and commit over HTTPS on 8443, and the server attributed all three
+to `device=8777228e`, which it can only know from the client certificate's
+CommonName. Standby and wake-on-motion are verified too — `woke after 62015 ms
+and 50 polls: MOTION`, found in the card logs rather than over serial, which is
+the reason those logs exist.
+
+**Still outstanding:** parked current draw. It needs a meter rather than a
+terminal, and is the single most useful measurement left.
 
 ---
 
