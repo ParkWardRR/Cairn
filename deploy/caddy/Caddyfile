@@ -1,37 +1,63 @@
-# Caddyfile — reverse proxy for Cairn
+# Caddyfile — browser-facing HTTPS for the Cairn web UI.
 #
-# Docker: cairn.local via mDNS with internal TLS
-# Podman: :80 plain HTTP, port-forwarded to 8080 on host
+# Caddy serves the UI and nothing else. It deliberately does NOT proxy the
+# device ingest API, which is the one thing the v1 version of this file did.
+#
+# Why: the ingest handler authenticates a device by reading the TLS client
+# certificate off the connection — r.TLS.PeerCertificates[0].Subject.CommonName,
+# compared against the device id inside the signed manifest, so a stolen card
+# cannot upload as a different device. Terminating TLS in Caddy makes r.TLS nil
+# at the handler, and the only way to recover the identity is for Caddy to
+# forward it in a header that the server then has to trust. Anything able to
+# reach the backend could set that header. A reverse proxy cannot sit in front
+# of mutual TLS without dissolving the mutual half.
+#
+# So cairn-server terminates its own TLS on :8443 against a private CA, via
+# deploy/systemd/cairn-server.service. There is a second reason to keep that
+# path free of ACME: the device has to be able to deliver a trip when the
+# internet is down, and a certificate that needs renewing from Let's Encrypt is
+# a dependency on the internet being up.
+#
+# TLS here follows the house pattern — Let's Encrypt over the Cloudflare DNS-01
+# challenge, so an internal hostname gets a publicly trusted certificate without
+# being publicly reachable. Requires CF_API_TOKEN in /etc/caddy/env and a Caddy
+# built with the cloudflare DNS module:
+#
+#   caddy add-package github.com/caddy-dns/cloudflare
 
-cairn.local {
-	# Ingest API
-	handle /api/v1/* {
-		reverse_proxy ingest:8443
+cairn.alpina.casa {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 8.8.8.8
 	}
 
-	handle {
-		root * /srv
-		try_files {path} /index.html
-		file_server
-		encode gzip zstd
+	root * /srv/cairn-web
+	try_files {path} /index.html
+	file_server
+	encode gzip zstd
 
-		header {
-			X-Content-Type-Options "nosniff"
-			X-Frame-Options "DENY"
-			Referrer-Policy "strict-origin-when-cross-origin"
-		}
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
 
-		@immutable path /_app/immutable/*
-		header @immutable Cache-Control "public, max-age=31536000, immutable"
+	# SvelteKit emits content-hashed assets under /_app/immutable, so those are
+	# safe to cache forever and everything else must not be.
+	@immutable path /_app/immutable/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
 
-		@notimmutable not path /_app/immutable/*
-		header @notimmutable Cache-Control "no-cache"
+	@notimmutable not path /_app/immutable/*
+	header @notimmutable Cache-Control "no-cache"
+
+	# A device that mistakenly points at :443 should get a clear refusal rather
+	# than an HTML page it will try to parse as CBOR.
+	handle /api/* {
+		respond "device ingest is on :8443 with mutual TLS, not through this proxy" 421
 	}
 
 	log {
 		output stdout
 		format console
 	}
-
-	tls internal
 }

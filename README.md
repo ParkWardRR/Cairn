@@ -42,37 +42,51 @@
 
 ---
 
-## Status: v2 rebuild in progress
+## Status: v2 running on real hardware
 
-Two architecture reviews found that v1's design is sound but only correct on the
-happy path. Cross-checking them against the code surfaced three live defects, so
-the core data path is being **rebuilt from a clean slate**. See
-[ROADMAP.md](ROADMAP.md) for the phased plan.
+All eleven v2 phases are complete, and as of **2026-10-01** the whole loop has
+run end to end on the actual dongle: capture → seal → offer → commit → receipt
+issued → receipt verified against the pinned key → prune, with the server ledger
+reporting **0 refusals or failures**. See [ROADMAP.md](ROADMAP.md) for the
+phased plan and [docs/deploying.md](docs/deploying.md) for what is deployed.
 
-**Known defects in v1 — do not rely on these guarantees:**
+What is verified:
 
-| Claim | Reality |
-|---|---|
-| Trip bundles sync to the server | Only `samples.bin` is uploaded. OBD, IMU-summary, health and event data is silently discarded on every sync |
-| mTLS upload on port 8443 | Transport is plain HTTP on port 8080. No TLS, no client certificate, no server identity check |
-| Data is pruned only after a durable receipt | Pruning is not receipt-gated. Retention is measured with `millis()`, which resets on every deep sleep; the Ed25519 receipt signature is never verified |
-
-What is solid today:
-
-- the [bundle format v2 specification](docs/bundle-format-v2.md), with **two
-  independent implementations** (Go and Rust) that agree byte-for-byte across 20
-  committed conformance vectors;
-- the **v2 ingest server** (`server/`) — manifest-first content-addressed upload
-  over mTLS with receipt-gated durability, verified end to end against a running
-  instance;
-- a **fault-injection property matrix** (`emulator/`) — 16 rows proving what
-  survives power cuts, torn writes, network loss, duplicate uploads, clock jumps
-  and reboots mid-prune;
+- the [bundle format v2 specification](docs/bundle-format-v2.md), with **three
+  independent implementations** — Go, Rust and the firmware's portable C — that
+  agree byte-for-byte across **25** committed conformance vectors;
+- the **v2 ingest server** (`server/`), running as a hardened systemd unit with
+  mutual TLS on `:8443` against a private CA, receipt-gated durability, and a
+  client certificate bound to the device id inside the signed manifest;
+- **fault-injection property matrices** — 22 rows in Rust (`emulator/`) and 30
+  in the firmware's host suite — proving what survives power cuts, torn writes,
+  network loss, duplicate uploads, clock jumps and reboots mid-prune;
 - the **decode pipeline** (`server/internal/decode`, `cmd/cairn-worker`) — a
   three-layer schema with partitioned sample tables, an idempotent and
   reproducible decoder, derived trips and semantic MQTT, verified against real
   PostGIS and a real broker;
 - the local CLI tooling and the web UI.
+
+### What first contact with hardware actually found
+
+Worth recording, because every one of these was invisible to a green test suite
+and three of the four are the kind that stay invisible until much later.
+
+| Defect | Why nothing caught it sooner |
+|---|---|
+| The ESP32 ROM CRC-32 wrapper dropped the final xorout, returning the raw shift register | Internally consistent: frames written with the wrong CRC scan back cleanly on the same device. Only a cross-implementation check disagrees — and the server would have rejected every trip ever recorded |
+| Sealing overflowed Arduino's 8 KB loop-task stack and tripped the canary | Needs the real Merkle + CBOR + Ed25519 path on the real stack. Because the firmware resumes its capture at boot, the panic became a reboot loop that re-appended frames each cycle |
+| The standby blocker logged every 20 ms — 160 KB of a 174 KB capture | Correct output, wrong volume. It buried every transition and sync result around it, and would roll the 16 MiB card log long before anything useful could be found |
+| `-dev` minted an ephemeral receipt key even when a persistent seed existed | Both sides behaved exactly as written. The server signed receipts under a key no device had pinned, the device rejected all of them and never pruned, and nothing logged an error |
+
+The firmware now runs a **known-answer check on CRC-32 and SHA-256 at boot and
+refuses to capture if either disagrees with the specification** — a device whose
+primitives are wrong cannot produce a verifiable bundle, so refusing is the
+honest outcome. Measured stack headroom is logged after every seal.
+
+**Still outstanding:** parked current draw is unmeasured, and the device needs
+one reflash plus a client certificate on its card before it can use mutual TLS —
+both need physical access to the hardware.
 
 ---
 
@@ -256,19 +270,40 @@ so a device that re-offers identical data gets back the receipt it already
 earned no matter how the retry is framed.
 
 ```bash
-cd server && go build ./cmd/cairn-server
+# Builds with GOAMD64=v3 where the CPU supports it, falling back to v1 with a
+# warning. Worth +15.7% on segment scanning; see server/Makefile for the table.
+cd server && make build
+
+# The receipt-signing key a device pins. Losing the seed behind this means
+# reflashing every device, so back up /var/lib/cairn/keys/receipt.seed.
+./bin/cairn-server -data /var/lib/cairn -print-receipt-key
 
 # Enrol a device (effective immediately, even while the server is running)
-./cairn-server -data /var/lib/cairn -enroll <32-hex-device-id> -enroll-key <64-hex-pubkey>
+./bin/cairn-server -data /var/lib/cairn -enroll <32-hex-device-id> -enroll-key <64-hex-pubkey>
+
+# Issue the mTLS chain. The client CommonName must be the device id, or the
+# server returns a 403 that looks nothing like a certificate problem.
+../deploy/make-certs.sh init cairn.example.lan
+../deploy/make-certs.sh device <32-hex-device-id>
 
 # Run with mutual TLS
-./cairn-server -data /var/lib/cairn -addr :8443 \
-  -tls-cert server.crt -tls-key server.key -tls-client-ca ca.crt
+./bin/cairn-server -data /var/lib/cairn -addr :8443 \
+  -tls-cert certs/server.pem -tls-key certs/server-key.pem \
+  -tls-client-ca certs/ca.pem
 
 # Drive a full sync against it with a synthetic bundle
 go run ./cmd/cairn-syncdemo -server https://cairn.example.lan:8443 \
   -ca ca.crt -cert device.crt -key device.key
 ```
+
+In production it runs from `deploy/systemd/cairn-server.service` as a dedicated
+`cairn` system user, with flags in `/etc/cairn/server.env` so switching
+transport does not mean editing a unit. **The ingest listener is deliberately
+not behind a reverse proxy:** the handler authenticates a device by reading
+`r.TLS.PeerCertificates` off the connection, and terminating TLS upstream
+reduces that to trusting a forwardable header. Caddy serves the web UI only.
+[docs/deploying.md](docs/deploying.md) covers the reasoning and the failure
+modes.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -492,7 +527,7 @@ Cairn/
 │   ├── cmd/cairn-server/        #   The ingest daemon
 │   ├── cmd/cairn-syncdemo/      #   Reference sync client for verification
 │   └── cmd/mkvectors/           #   Deterministic conformance vector generator
-├── fixtures/format-v2/          # 20 conformance vectors with expected verdicts
+├── fixtures/format-v2/          # 25 conformance vectors with expected verdicts
 ├── firmware/                    # ESP32 / Freematics firmware (C++)
 │   └── freematics-base/         #   PlatformIO project using vendored FreematicsPlus
 │       ├── lib/FreematicsPlus/  #     Vendored Freematics hardware drivers (BSD)
@@ -817,6 +852,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | [Flashing & Testing](docs/flashing-and-testing.md) | Hardware profile, bench results, bugs found and fixed |
 | **[v2 Firmware Testing](docs/v2-firmware-testing.md)** | **Flashing the v2 firmware, reading its self-test and SD logs, and the destructive tests worth running** |
 | **[Guarantee Audit](docs/guarantee-audit.md)** | **Every documented guarantee mapped to the test row that verifies it — and an explicit list of what is not covered** |
+| **[Deploying](docs/deploying.md)** | **The systemd unit, the mTLS chain, and why a reverse proxy cannot front device ingest** |
 | [Secure OTA](docs/ota.md) | Update descriptor format, the four preconditions, and the ordering argument |
 | [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
 | **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |

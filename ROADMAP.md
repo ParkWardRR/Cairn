@@ -7,10 +7,11 @@
 
 # Cairn v2 — Rebuilding the Core Data Path
 
-**Current work.** Two architecture reviews concluded that v1's design is sound
-but only correct on the happy path, and asked for the system to become
-*auditable across failures*. Cross-checking the reviews against the code found
-three of their recommendations were live defects rather than future concerns:
+**Complete, and running on hardware as of 2026-10-01.** Two architecture reviews
+concluded that v1's design is sound but only correct on the happy path, and
+asked for the system to become *auditable across failures*. Cross-checking the
+reviews against the code found three of their recommendations were live defects
+rather than future concerns:
 
 | Defect | Evidence |
 |---|---|
@@ -64,7 +65,7 @@ against the fault matrix.
       source flags — never inferring precision the receiver did not report
 - [x] UTC as an estimate with its own uncertainty, separate from the ordering key
 - [x] Explicit `GNSS_GAP` record so absence is recorded, never interpolated
-- [x] 20 conformance vectors in `fixtures/format-v2/`, generated deterministically
+- [x] 25 conformance vectors in `fixtures/format-v2/`, generated deterministically
 - [x] Conformance runner; 60 test cases green
 
 ### Phase 2 — Server: raw-first ingest — **complete**
@@ -423,6 +424,64 @@ against the fault matrix.
 > descriptor with its detached signature plus the image addressed by hash.
 > Three property rows cover the preconditions, version ordering and descriptor
 > strictness. The on-device install itself is unexercised — it needs hardware.
+
+### Phase 12 — Hardware bring-up and deployment — **complete**
+
+First contact with the real dongle, 2026-10-01. Four defects, none of which a
+green test suite could have found, and three of which would have stayed hidden
+for a long time.
+
+- [x] Flashed over the Mac's USB (CH340 at 460800; 921600 fails with a message
+      that reads like a wiring fault). Old v1 trip data and the 4 MB flash image
+      backed up before erasing
+- [x] **Fixed: the ESP32 ROM CRC-32 wrapper.** `~esp_rom_crc32_le(~0u, ...)`
+      applies the inversions the ROM API documents but drops CRC-32/ISO-HDLC's
+      final xorout, returning the raw shift register —
+      `CRC-32("123456789")` came back `2dfd2d88` against the required
+      `cbf43926`. Internally consistent, so the device never notices: frames
+      written with the wrong CRC scan back cleanly. Every trip it recorded would
+      have been rejected by the verifier
+- [x] **Fixed: sealing overflowed the 8 KB loop-task stack.** Merkle tree, CBOR
+      manifest and Ed25519 on one task. The canary panic became a *reboot loop*,
+      because boot resumes the open capture and re-appends frames each cycle —
+      the boot counter reached 92. Measured headroom is now logged after every
+      seal, in production as well as the bench build: 8220 bytes free of 16384,
+      so the old default was insufficient rather than marginal
+- [x] **Fixed: the standby blocker logged every 20 ms** — 160 KB of a 174 KB
+      capture, burying every transition and sync result and rolling the 16 MiB
+      card log long before anything useful could be found. Logged on change now;
+      same window produces 13.5 KB
+- [x] **Fixed: `-dev` minted an ephemeral receipt key** even with a persistent
+      seed on disk. The server would sign receipts under a key no device had
+      pinned; the device would reject all of them and never prune; nothing on
+      either side logged an error
+- [x] **Known-answer gate promoted into the real firmware.** CRC-32 and SHA-256
+      are checked against the specification at boot and capture is *refused* on
+      disagreement. Both primitives are platform-configurable — ROM CRC,
+      mbedTLS SHA — so neither is covered by the host conformance run, which
+      compiles the portable fallback
+- [x] Full loop verified on hardware: capture → seal → offer → commit → receipt
+      issued → receipt verified against the pinned key → prune. Server ledger:
+      5 entries, **0 refusals or failures**
+- [x] Deployed as a hardened systemd unit under a dedicated `cairn` user, with
+      mutual TLS on `:8443` against a private CA, replacing a transient
+      `systemd-run --user` instance that did not survive a reboot
+- [x] `GOAMD64=v3` with a CPU-feature guard — **+15.7%** on segment scanning.
+      The primitives do not move because they were never compiled Go: CRC-32
+      dispatches to PCLMULQDQ and SHA-256 to SHA-NI, measured at 32 GB/s and
+      2 GB/s respectively
+
+> The methodology that paid for itself: check documented claims against the
+> code, and mutation-test every new test. The CRC defect is the clearest
+> argument for cross-implementation conformance vectors existing at all — it was
+> undetectable from inside the device, and the device was the only thing that
+> could reveal it.
+
+**Not yet verified, and both need physical access:** parked current draw, and
+the device's own mutual TLS. The server is ready and the client certificate is
+issued, but the device needs one reflash to pin the CA plus `client.crt` /
+`client.key` on its card. Until then it falls back to plain HTTP, which is
+logged explicitly and names the missing files.
 
 ## Deferred deliberately
 

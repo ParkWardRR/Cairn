@@ -1,11 +1,16 @@
 # Caddyfile.podman — rootless Podman variant
 #
 # Listens on :80 inside the container, port-forwarded to 8080 on the host.
-# API proxied to ingestd on the host via host.containers.internal.
+#
+# The API is NOT proxied here, and that is a correctness requirement rather than
+# a simplification: device ingest authenticates by reading the TLS client
+# certificate off the connection, so a proxy that terminates TLS reduces the
+# check to trusting a forwarded header. See the note in ./Caddyfile. The device
+# talks to cairn-server on :8443 directly.
 
 :80 {
-	handle /api/v1/* {
-		reverse_proxy host.containers.internal:8443
+	handle /api/* {
+		respond "device ingest is on :8443 with mutual TLS, not through this proxy" 421
 	}
 
 	handle {
