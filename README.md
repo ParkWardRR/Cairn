@@ -44,11 +44,11 @@
 
 ## Status: v2 running on real hardware
 
-All eleven v2 phases are complete, and as of **2026-10-01** the whole loop has
+The v2 rebuild (Phases 1–12) is built, with Phase 9's tuning items still open, and as of **2026-10-01** the whole loop has
 run end to end on the actual dongle: capture → seal → offer → commit → receipt
 issued → receipt verified against the pinned key → prune, with the server ledger
-reporting **0 refusals or failures**. See [ROADMAP.md](ROADMAP.md) for the
-phased plan and [docs/deploying.md](docs/deploying.md) for what is deployed.
+reporting **0 refusals or failures**. See [ROADMAP.md](ROADMAP.md) for what is done and what is
+ahead (engine telemetry, the in-memory analytical store, analysis views) and [docs/deploying.md](docs/deploying.md) for what is deployed.
 
 What is verified:
 
@@ -370,6 +370,50 @@ that a content hash makes a poor operational handle:
 | `content_root` | Merkle root over bundle members. Identity of the *data* — deduplication, idempotency, the signed commitment |
 | `transfer_hash` | SHA-256 of a transferred stream. Transport integrity only; never an identity |
 
+### In-Memory Analytical Store (`server/internal/tsdb`, `cmd/cairn-tsdb`)
+
+A derived view for speed, boost and fuel-trim analysis. It copies the committed
+bundles from the server's data directory and any sealed v2 bundles from the SD
+card into a throwaway CAS, decodes each one **twice** through the production
+decoder, and loads the result into an in-memory DuckDB. Nothing is persisted:
+raw bundles stay authoritative, and a restart rebuilds the whole store in well
+under a second.
+
+| Property | How |
+|---|---|
+| Reproducible | Each bundle is decoded twice and the two `OutputDigest`s must match; per-bundle row counts are re-read from the database and compared with what the decoder produced. A build that fails either check is **not served** (`-serve-unreproduced` overrides) |
+| Keyed on `(boot_id, mono_ms)` | Never wall-clock UTC. `observed_at` rides along as an annotation. Ordering truth stays `(boot_id, seq)` |
+| Honest about staleness | `v_telemetry` ASOF-joins boost and GNSS onto each OBD poll and exposes `boost_age_ms` / `gnss_age_ms`, so a stale pick is visible rather than silently interpolated |
+| Deduplicated | Keyed on `content_root`; a bundle on both the card and the server loads once |
+| v1 ignored | The card's `trips/` directory is never read. v1 is dead |
+| Contained | Loopback by default (the data includes GNSS positions); one read-only statement per request; the engine runs with external file/network access disabled and its configuration locked |
+
+```bash
+# Check the SD card reproduces, straight off the card
+cd server && go run ./cmd/cairn-tsdb -sd /Volumes/CAIRN/cairn -verify
+
+# Ask it something
+go run ./cmd/cairn-tsdb -sd /Volumes/CAIRN/cairn -query \
+  "SELECT rpm//500*500 AS rpm, round(avg(boost_psi),1) psi, round(avg(stft_pct),1) stft
+   FROM v_telemetry WHERE boost_age_ms < 1000 GROUP BY 1 ORDER BY 1"
+
+# Serve it (deploy/systemd/cairn-tsdb.service does this on the VM)
+cairn-tsdb -data /var/lib/cairn -sd /var/lib/cairn-tsdb/sd -addr 127.0.0.1:8480
+curl -X POST localhost:8480/query -d 'SELECT count(*) FROM obd'
+curl -X POST localhost:8480/reload   # rebuild from the CAS and the card
+curl localhost:8480/metrics          # Prometheus text: bundles, reproduced, problems, rows
+
+# -watch 5s rebuilds on its own when a receipt or a card bundle appears. A rebuild
+# that fails or does not reproduce leaves the previous store serving.
+
+# Mirror a card to the host and rebuild; additive, so pruned bundles are kept
+deploy/tsdb-mirror.sh user@cairn.example.lan /Volumes/CAIRN/cairn
+```
+
+Tables: `bundles`, `position`, `imu`, `obd`, `boost`, `status`, `transition`,
+`gap`; views `v_telemetry`, `v_reproducibility`. It needs cgo (DuckDB is linked
+statically) so it is built separately from `make build`: `make build-tsdb`.
+
 ### Go Ingest Service (`zig/ingest/` — v1, being replaced)
 
 > The directory name is a historical artifact: it contains Go, not Zig. The v2
@@ -617,8 +661,12 @@ PostgreSQL + PostGIS:
 | `notifications` | Sync/device/storage issue notifications |
 | `automation_rules` | User-defined trigger/action rules |
 
-## Trip Bundle Format (v1 — superseded)
+## Trip Bundle Format (v1 — dead)
 
+> **v1 is dead.** No code reads it, nothing migrates it, and nothing will be
+> written to support it. The `trips/` directories on an SD card are v1 leftovers
+> that every current tool ignores.
+>
 > Superseded by [Bundle Format v2](docs/bundle-format-v2.md). The layout below
 > has no record framing, so a power cut mid-write cannot be distinguished from
 > valid data, and the firmware only ever uploads `samples.bin`.

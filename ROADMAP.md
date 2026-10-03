@@ -1,11 +1,216 @@
 # Cairn Roadmap
 
-> Phased development plan for the Cairn offline-first car journal.
-> Each phase builds on the previous. Items are checked off as they are completed.
+> **v2 is built, deployed and running on the car's dongle. The work now is
+> turning what it records into answers.** Phases 1–12 (the rebuild) are complete
+> and kept below as the record; Phases 13–18 are what is ahead. The v1 plan is
+> dead and lives in [docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md) —
+> nothing in it is scheduled.
+
+Last reviewed 2026-10-03.
+
+## Where Cairn is
+
+| Layer | State |
+|---|---|
+| Bundle format v2 | **Complete.** Three implementations (Go, Rust, firmware C) agree byte-for-byte on 25 conformance vectors |
+| Firmware | **Running on hardware.** Capture → seal → offer → commit → receipt → verified prune; mTLS on 8443; standby with wake-on-motion; secure OTA written, install unexercised |
+| Ingest server | **Deployed** as a hardened systemd unit on the Cairn VM, mutual TLS, receipt-gated |
+| Decode pipeline | **Complete.** Idempotent and reproducible; PostgreSQL/PostGIS derived layer (not currently running on the VM) |
+| Engine telemetry | **Recording** boost, MAP, mixture and fuel trims as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
+| Analytical store | **Deployed 2026-10-03.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; 18 bundles load in ~60 ms and every one reproduces (Phase 14) |
+| Web UI | SvelteKit app exists; reads the PostgreSQL layer, not the analytical store (Phase 16) |
+| Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
+
+## Guiding invariants
+
+1. **A sealed bundle is never mutated.** It is either locally recoverable,
+   remotely receipt-confirmed, or both.
+2. **No byte is deleted without a locally verified signed receipt.** Time,
+   storage pressure and operator impatience are all insufficient justification.
+3. **Ordering truth is `(boot_id, monotonic_seq)`, never wall-clock UTC.** GNSS
+   time jumps; UTC is an annotation with an uncertainty, not an index.
+4. **Honest incompleteness beats fabricated continuity.** A trip with a marked
+   GNSS gap is useful; a route interpolated from stale fixes is not.
+5. **Anything derived is disposable and must prove it reproduces.** Raw bundles
+   are authoritative. A derived store — PostgreSQL or the in-memory one — is
+   rebuilt from them, carries the digest that shows the rebuild matched, and is
+   not served when it does not.
+
+## Decisions
+
+| Decision | Choice |
+|---|---|
+| Firmware | ESP-IDF application with `arduino-esp32` as a component, keeping the vendored FreematicsPlus drivers. Rebuild the application, not the hardware access — this repo already contains one failed custom HAL |
+| Server | Go, in a top-level `server/` directory |
+| Rebuilt | Firmware, ingest server, database schema, bundle format, emulator |
+| Kept | SvelteKit web UI, Odin tools, MoonBit plugins, Gleam orchestrator |
+| Stack shape | Core data path is C and Go only; Odin, MoonBit and Gleam remain optional side tooling that must be able to break without affecting a drive |
+| Analytical store | **In-memory DuckDB**, behind a small Go service. Chosen because the data is tiny (hundreds of KB today) and the useful questions are ASOF joins across streams polled at different rates — OBD against boost against GNSS. InfluxDB 3 was rejected as UTC-keyed and, as far as was checked, without ASOF; QuestDB as a JVM that is memory-mapped rather than in-memory, on a 7.3 GB box shared with the runner and ingest stack |
+| Analytical time key | `(boot_id, mono_ms)`, never UTC. UTC rides along as a column |
+| v1 | **Dead.** No reader, no migration, no compatibility. Tools that scan an SD card ignore `trips/` and load only sealed v2 bundles from `bundles/` |
+
+Target hardware is **classic ESP32** (xtensa LX6, WROVER with PSRAM), not an
+S3. There is no secure element, so flash encryption plus a key in NVS is the
+accepted ceiling for the device signing key.
+
+The car: an N20 428i on a BM3 Stage 1 tune, ~E41. For this car fuel trims
+and mixture say more about engine health than boost does, which is why Phase 15
+leads with them.
 
 ---
 
-# Cairn v2 — Rebuilding the Core Data Path
+# Ahead
+
+## Phase 13 — Engine telemetry on the real car — **in progress**
+
+The recording side. Shipped 2026-10-02/03: boost, mixture and fuel trims as
+`OBD_EXTENDED`; a PID validation firmware build (`pidtest`) that probes what the
+ECU actually answers; lambda scale and raw 0x43/0x44 reads corrected; the
+255 kPa MAP ceiling flagged; a fuel-type and ethanol-content probe; GNSS
+reading-freshness reporting; standby windows recorded so parked draw is
+measurable; parked mode silent on the vehicle bus.
+
+- [x] Boost, MAP, baro, MAF, lambda, STFT/LTFT recorded and decoded
+- [x] MAP saturation (`MAPSaturated`) surfaced rather than reported as a boost
+      reading — a sensor pinned at its ceiling is not a measurement
+- [x] Journal sequence range no longer leaks into the capture's, and the drain
+      rate is guarded
+- [ ] **Establish which PIDs this ECU really answers.** `BOOST_CONTROL` (0x70)
+      reports `support=1` yet returns `NO DATA` in the validation-build log, so
+      "supported" and "answers" are not the same thing; record the supported set for the
+      car in `docs/` so the decoder and the views know what to expect
+- [ ] Ethanol content: confirm whether the ECU answers 0x51/0x52 at all. If not,
+      the ~E41 figure has to come from fuel-trim behaviour (Phase 15), not a PID
+- [ ] Park-draw measurement with a meter, using the recorded standby windows as
+      the timeline
+
+## Phase 14 — In-memory analytical store — **in progress**
+
+`server/internal/tsdb`, `server/cmd/cairn-tsdb`, `deploy/systemd/cairn-tsdb.service`.
+A derived view: the CAS and the SD card are copied into a private scratch CAS,
+each bundle is decoded **twice** through the production decoder, loaded into an
+in-memory DuckDB, and reconciled row for row against what the decoder produced.
+Nothing is persisted; a restart rebuilds.
+
+- [x] Loads committed server bundles (offer + receipt) and sealed v2 bundles
+      from the card, deduplicated on `content_root`
+- [x] Reproducibility gate: second decode must match the first digest, and
+      per-bundle row counts are re-read from the database; a failing build is
+      not served
+- [x] Scratch CAS rather than opening the live one — `cas.Open` clears `tmp/`,
+      which in the server's data directory holds an upload in flight
+- [x] Keyed on `(boot_id, mono_ms)`; `v_telemetry` ASOF-joins boost and GNSS onto
+      each OBD poll and exposes `boost_age_ms` / `gnss_age_ms`
+- [x] Locked down: single read-only statement per request, always-rolled-back
+      transaction, external file/network access disabled, configuration frozen,
+      loopback bind
+- [x] Deployed on the VM: `MemoryMax=3G`, DuckDB capped at 2 GB, hardened unit
+- [x] Measured on the VM at 17.5M synthetic rows: scans 1–20 ms, a double ASOF
+      join across 5M anchors ~0.72 s. Real data today is a few thousand rows, so
+      this is headroom, not a requirement
+- [x] v1 explicitly ignored and documented as dead
+- [x] **Reproducibility in CI.** `go test ./...` in `build-server` already runs
+      the store's tests; the runner is native on the VM, where gcc is present, so
+      cgo builds there. The tests drive synthetic bundles laid out as an SD card
+      through the real snapshot, decode and load path, and also cover: v1 `trips/`
+      ignored, a member failing its manifest digest refused, and dedup on
+      `content_root`
+- [x] **Golden digests.** `output_digest` pinned for two synthetic bundles (one
+      with a GNSS gap and fix-less samples) at decoder Version 1, so a decoder
+      change that alters output fails a test instead of silently shifting every
+      number. Mutation-checked: bumping `Version` fails both. A deliberate bump
+      updates the pins in the same commit
+- [x] **Reload on commit** — `-watch 5s` polls `receipts/` (a receipt is the
+      commit point) and the card mirror, and rebuilds once a change has held still
+      for a full interval. A rebuild that fails or does not reproduce leaves the
+      previous store serving. Verified live: adding and removing a bundle each
+      triggered one rebuild with no `/reload`
+- [ ] **Parity with PostgreSQL.** Decode one bundle set into both layers and
+      assert equal row counts per table. Proves the two derived views agree.
+      Needs Postgres running, which it currently is not on the VM (containers do
+      not auto-start)
+- [x] `/metrics` — build time, bundle and row counts, reproduced count,
+      problems, decoder version, Go heap (DuckDB's native memory is bounded by
+      `-memory` and the unit's `MemoryMax`, not reported here)
+- [x] Mirror of the card: `deploy/tsdb-mirror.sh <user@host> [card-dir]` — additive
+      rsync of `bundles/` as the service user, then reload, then the reproduced
+      counts; a build that does not reproduce fails the script
+- [ ] **Authentication before any non-loopback bind.** Reuse the private CA and
+      mTLS. Until then the endpoint stays on `127.0.0.1` because it carries GNSS
+      positions and runs caller-supplied SQL
+
+**Persisting the store is deliberately out of scope.** Volatility is the design.
+The trigger to reconsider is a measured one: if a rebuild exceeds ~5 s.
+
+## Phase 15 — Analysis views for the car — **planned**
+
+Views in `internal/tsdb/schema.go`, not code, each with a test on a synthetic
+bundle whose answer is known in advance.
+
+- [ ] `v_trim_map` — STFT/LTFT binned by load and RPM. For an ethanol blend the
+      long-term trim is the honest signal; this is the view that estimates drift
+      from the ~E41 baseline
+- [ ] `v_pulls` — detect wide-open-throttle pulls (throttle high, RPM rising) and
+      summarise each: RPM range, peak boost, boost at fixed RPM bands, lambda
+      under load, trims during the pull
+- [ ] `v_boost_curve` — boost against RPM across pulls, excluding rows whose
+      boost reading is stale or MAP-saturated
+- [ ] `v_speed_agreement` — OBD speed against GNSS speed, per drive; a persistent
+      ratio is a tyre-size or speedometer error, a growing one is a sensor
+- [ ] `v_drive_summary` — per boot: duration, distance, max speed, gaps, warnings
+- [ ] Every view filters on the `*_age_ms` columns it relies on and says so —
+      an ASOF join always finds *something*, so staleness has to be an explicit
+      predicate, never a default
+
+## Phase 16 — Surfacing it — **planned**
+
+- [ ] SvelteKit reads the store through its own server side, never from the
+      browser, and through **canned endpoints** rather than arbitrary SQL
+- [ ] Cards for the Phase 15 views; each shows its sample count and the age
+      threshold it applied
+- [ ] Decide which reads move off PostgreSQL. Rule: PostgreSQL keeps what needs
+      PostGIS and durable derived state (trips, geometry); the in-memory store
+      takes aggregate and cross-stream reads. Writes to either remain the
+      decoder's alone
+
+## Phase 17 — Close out Phase 9 with real traces — **planned**
+
+Phase 9's two open items were blocked on bench data by design. Real drives and
+the analytical store remove the block.
+
+- [ ] Tune start/stop thresholds against recorded `transition` rows: query the
+      scores around each journalled transition for false starts and late stops,
+      then change the policy and **bump the policy version** so a decision in the
+      data stays explainable
+- [ ] Event-adaptive sampling across GNSS, IMU and OBD, once the traces show
+      which events matter and what rate they need
+
+## Phase 18 — Hardening — **planned**
+
+- [ ] Plugin timeout and storage-full matrix rows (open since Phase 3)
+- [ ] Exercise the OTA install on the device; it has only been verified on the
+      host
+- [ ] Decide on flash encryption and secure boot once the hardware is no longer
+      being reflashed weekly — both are irreversible, which is why they are off
+
+## Deferred deliberately
+
+| Deferred | Reason |
+|---|---|
+| A v1 reader or migration | v1 is dead. Not deferred — refused |
+| Persisting the analytical store | Rebuild is ~60 ms. Revisit only if a rebuild exceeds ~5 s |
+| InfluxDB / QuestDB | Evaluated and rejected for this data and this VM; see Decisions |
+| Arbitrary user plugins | Until the raw format, decoder ABI, receipt semantics and replay tooling are stable |
+| MinIO | A CAS directory on ZFS is sufficient; keep the abstraction, skip the daemon |
+| TimescaleDB | Native range partitioning first; adopt only on measured need. Analytical reads go to the in-memory store, which lowers that need further |
+| `previous_bundle_root` enforcement | Field is populated in v2; detecting deleted historical bundles is a different threat model from detecting corruption |
+| ESP32 deep sleep | Not possible on this board: the IMU interrupt is not routed to an RTC-capable GPIO, so there is no wake-on-motion source. The official Freematics firmware polls for the same reason. Timer-wake deep sleep would reset on every wake, and this firmware's boot mounts the card and runs a recovery scan — more costly than the polling it would replace. Standby instead powers peripherals down, clocks the CPU to 80 MHz and light-sleeps between polls |
+
+---
+
+# Completed — Cairn v2 core data path (Phases 1–12)
+
+## Why it was rebuilt
 
 **Complete, and running on hardware as of 2026-10-01.** Two architecture reviews
 concluded that v1's design is sound but only correct on the happy path, and
@@ -21,32 +226,8 @@ rather than future concerns:
 
 Rather than remediate in place, the core data path is being **rebuilt from a
 clean slate**: no format compatibility, no migration, no reissuing of historical
-receipts. The v1 phases further down this document are retained as history.
-
-## Guiding invariants
-
-1. **A sealed bundle is never mutated.** It is either locally recoverable,
-   remotely receipt-confirmed, or both.
-2. **No byte is deleted without a locally verified signed receipt.** Time,
-   storage pressure and operator impatience are all insufficient justification.
-3. **Ordering truth is `(boot_id, monotonic_seq)`, never wall-clock UTC.** GNSS
-   time jumps; UTC is an annotation with an uncertainty, not an index.
-4. **Honest incompleteness beats fabricated continuity.** A trip with a marked
-   GNSS gap is useful; a route interpolated from stale fixes is not.
-
-## Decisions
-
-| Decision | Choice |
-|---|---|
-| Firmware | ESP-IDF application with `arduino-esp32` as a component, keeping the vendored FreematicsPlus drivers. Rebuild the application, not the hardware access — this repo already contains one failed custom HAL |
-| Server | Go, in a top-level `server/` directory (the old `zig/ingest/` contains no Zig) |
-| Rebuilt | Firmware, ingest server, database schema, bundle format, emulator |
-| Kept | SvelteKit web UI, Odin tools, MoonBit plugins, Gleam orchestrator |
-| Stack shape | Core data path is C and Go only; Odin, MoonBit and Gleam remain optional side tooling that must be able to break without affecting a drive |
-
-Target hardware is **classic ESP32** (xtensa LX6, WROVER with PSRAM), not an
-S3. There is no secure element, so flash encryption plus a key in NVS is the
-accepted ceiling for the device signing key.
+receipts. The v1 plan is dead and archived in
+[docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md).
 
 ## Build order
 
@@ -348,7 +529,9 @@ against the fault matrix.
 - [ ] Event-adaptive sampling across GNSS, IMU and OBD
 - [ ] Thresholds tuned on real traces, with the policy version journalled —
       blocked on bench data by design; tuning against guesses would be worse
-      than leaving the defaults
+      than leaving the defaults.
+      Real drives and the analytical store (Phase 14) now remove the block; the
+      work is scheduled as Phase 17
 
 ### Phase 10 — Ledger and documentation — **complete**
 
@@ -510,632 +693,3 @@ a standby cycle — honest incompleteness, recorded rather than interpolated.
 
 **Still not verified:** parked current draw. It needs a meter, not a terminal,
 and remains the single most useful measurement left in the system.
-
-## Deferred deliberately
-
-| Deferred | Reason |
-|---|---|
-| Arbitrary user plugins | Until the raw format, decoder ABI, receipt semantics and replay tooling are stable |
-| MinIO | A CAS directory on ZFS is sufficient; keep the abstraction, skip the daemon |
-| TimescaleDB | Native range partitioning first; adopt only on measured need |
-| `previous_bundle_root` enforcement | Field is populated in v2; detecting deleted historical bundles is a different threat model from detecting corruption |
-| ESP32 deep sleep | Not possible on this board: the IMU interrupt is not routed to an RTC-capable GPIO, so there is no wake-on-motion source. The official Freematics firmware polls for the same reason. Timer-wake deep sleep would reset on every wake, and this firmware's boot mounts the card and runs a recovery scan — more costly than the polling it would replace. Standby instead powers peripherals down, clocks the CPU to 80 MHz and light-sleeps between polls |
-
----
-
-# v1 History
-
-The phases below are the original v1 plan. They are retained as history; the
-v2 rebuild above supersedes Phases 2 through 4 outright and reshapes the rest.
-
----
-
-## Phase 0 — Define the Contract
-
-**Goal:** Know precisely what constitutes a trip, what gets stored, and what "sync succeeded" means before writing firmware.
-
-**Timeline:** Week 0
-
-### Deliverables
-
-- [x] **Product specification**
-  - [x] Write one-page statement of core flow
-  - [x] Document non-goals and explicit exclusions
-  - [x] Define privacy defaults and operational model
-  - [x] Specify supported vehicles and mounting considerations
-
-- [x] **Device state machine**
-  - [x] Define all states: `sleep`, `arming`, `recording`, `finalizing`, `awaiting_home_wifi`, `syncing`, `low_battery_protection`, `fault`
-  - [x] Document transitions between states with trigger conditions
-  - [x] Specify timeout values and debounce thresholds
-  - [x] Diagram the state machine
-
-- [x] **Trip bundle format**
-  - [x] Design versioned, self-describing bundle schema
-  - [x] Define CBOR manifest structure
-  - [x] Define binary sample encoding for GNSS and IMU
-  - [x] Specify checksum and signature scheme (SHA-256 + Ed25519)
-  - [x] Document zstd compression strategy (server-side; raw on device for v1)
-
-- [x] **Home network design**
-  - [x] Define trusted SSID/BSSID allowlist mechanism
-  - [x] Plan WPA credential provisioning (serial-first)
-  - [x] Specify local hostname/IP resolution (mDNS + static DHCP)
-  - [x] Design certificate strategy (local CA, device keypair, server pinning)
-
-- [x] **Data retention policy**
-  - [x] Define device spool period (7–30 day configurable window)
-  - [x] Define server retention tiers (raw, normalized, derived)
-  - [x] Specify backup schedule and restore procedure
-  - [x] Document deletion rules — never delete without server receipt + retention window
-
-- [x] **Test corpus**
-  - [x] Create synthetic scenario: normal 45-minute drive
-  - [x] Create synthetic scenario: short stop (gas station, drive-through)
-  - [x] Create synthetic scenario: long stop (multi-hour parking)
-  - [x] Create synthetic scenario: no GNSS fix (garage/tunnel)
-  - [x] Create synthetic scenario: interrupted write (power loss mid-trip)
-  - [x] Create synthetic scenario: interrupted upload (Wi-Fi loss mid-sync)
-
-### Bundle Structure
-
-```
-trip/
-  manifest.json       # Trip metadata, device info, VIN, DTC codes, schema v2
-  samples.bin         # GNSS samples — 32 bytes each, little-endian
-  imu_summary.bin     # IMU summaries — 24 bytes each, rolling windows
-  obd.bin             # OBD-II snapshots — 20 bytes each (speed, RPM, throttle, etc.)
-  health.bin          # Device health — 16 bytes each (battery, temp, RSSI)
-  events.json         # Start/stop/pause/quality/ECU-off/thermal markers
-  sha256sums.txt      # Per-file content hashes (ESP32 hardware-accelerated)
-```
-
-### Data Retention States
-
-| State | Location | Meaning |
-|-------|----------|---------|
-| `recording` | Active device file | Trip being written with periodic fsync |
-| `finalized` | Device microSD | Immutable bundle, complete and hashable |
-| `queued` | Device microSD | Awaiting trusted home Wi-Fi |
-| `uploading` | Device + server staging | Chunked/resumable transfer in progress |
-| `acknowledged` | Device + server durable | Server returned receipt for content hash |
-| `retained` | Device microSD | Kept for configurable safety window |
-| `prunable` | Device microSD | Eligible for removal after receipt + retention |
-| `archived` | Homelab backups | Long-term primary record |
-
----
-
-## Phase 1 — Bench the Hardware
-
-**Goal:** Prove the Freematics ONE+ Model B can produce reliable local GNSS/IMU/OBD logs and reconnect to home Wi-Fi — without LTE or a vendor cloud.
-
-**Timeline:** Week 1
-
-### Deliverables
-
-- [x] **Flash baseline firmware**
-  - [x] Set up PlatformIO for Freematics ONE+ Model B (esp-wrover-kit)
-  - [x] Vendor FreematicsPlus library (19 files) + TinyGPS (2 files) — proven hardware drivers
-  - [x] Replace broken custom HAL with vendor library for all peripherals
-  - [x] Successfully erase, flash, and serial-monitor the device *(flashed repeatedly over USB from a Raspberry Pi flash station; esptool hash-verified, boot captured at 115200)*
-  - [ ] Document recovery procedure for bricked state
-
-- [x] **Disable unused radios**
-  - [x] Wi-Fi radio powered off during recording
-  - [x] BLE disabled at build time (ENABLE_BLE=0), code fully wired for future enable
-  - [ ] Confirm LTE modem never initializes (no SIM required)
-
-- [x] **OBD-II engine data** *(harvested from stock firmware)*
-  - [x] Tiered PID polling: speed, RPM, throttle, engine load (every cycle); coolant, intake temp, fuel pressure, timing advance (round-robin)
-  - [x] Car shutdown detection via ECU-off (3 consecutive OBD errors)
-  - [x] VIN retrieval and DTC code reading at startup
-  - [x] OBDSnapshot struct (20 bytes packed) logged to obd.bin
-
-- [x] **GNSS logger**
-  - [x] Write timestamped GNSS samples to microSD via SPI SD
-  - [x] Capture: latitude, longitude, altitude, speed, heading
-  - [x] Capture: fix quality, satellite count, HDOP/accuracy
-  - [x] NMEA parsing via TinyGPS (vendor library)
-  - [x] GNSS watchdog — reset module after 300s with no fix
-  - [ ] Validate 10 Hz sample rate achievable
-  - [ ] Collect first real-world drive data
-
-- [x] **IMU logger**
-  - [x] Capture accelerometer/gyro via I2C from ICM-42627
-  - [x] Accelerometer bias calibration (1s sampling at startup and before standby)
-  - [x] Impact/hard-brake/sharp-turn detection from accel/gyro
-  - [ ] Verify timestamp alignment with GNSS samples
-  - [ ] Determine useful sample rate (25–50 Hz starting point)
-
-- [x] **Wi-Fi station mode**
-  - [x] WiFi credentials stored in NVS (provisioned via BLE or compile-time)
-  - [x] WiFi.begin() with NVS-stored SSID/password
-  - [x] RSSI logging and connectivity monitoring
-  - [x] Verify association after power cycle *(joins home AP on every cold boot; -62 dBm on ch11)*
-  - [x] Bench self-test build (`env:freematics-selftest`) — 2.4 GHz scan, DNS resolution, server health fetch over serial
-  - [ ] Expose local health/status endpoint over HTTP
-
-- [x] **Power and standby** *(harvested from stock firmware)*
-  - [x] Battery voltage via devType-based reading (ATRV for devType<=12, analogRead for devType>12)
-  - [x] Device temperature monitoring from IMU die temp sensor
-  - [x] Standby: OBD coprocessor ATLP sleep + IMU bias-calibrated motion wake
-  - [x] Voltage jumpstart detection (>14V = engine cranking, wake from standby)
-  - [x] Thermal throttle protection (>75°C)
-  - [x] DeviceHealth struct (16 bytes packed) logged to health.bin
-  - [x] Adaptive data intervals (1Hz moving → 0.5Hz at 10s still → 0.2Hz at 60s → trip end at 180s)
-  - [ ] Measure active driving current (GNSS + IMU + OBD + microSD write)
-  - [ ] Measure standby current
-  - [ ] Test in both target vehicles
-
-- [x] **Data durability (firmware)**
-  - [x] fsync after every trip finalization for crash consistency
-  - [x] Hardware SHA-256 checksums via mbedtls (ESP32 accelerated)
-  - [ ] Pull power during active write (hardware test)
-  - [ ] Verify previously finalized data survives
-  - [ ] Verify partial write is detectable/recoverable
-
-- [ ] **RF validation**
-  - [ ] Compare route quality in vehicle 1
-  - [ ] Compare route quality in vehicle 2
-  - [ ] Determine if external GNSS antenna or OBD extension cable is needed
-  - [ ] Document OBD port location impact on GNSS reception
-
-- [ ] **External antenna & accessory support (exploration)** — see `docs/hardware-accessories.md`
-  - [ ] Bench-test a cheap external L1 active antenna against the onboard ceramic antenna
-  - [ ] Evaluate salvage/donor GPS antennas as a low-cost alternative to buying new
-  - [ ] Determine if the M9/M10 module exposes an antenna feed, or if a module swap is required
-  - [ ] Explore a secondary/redundant GNSS receiver for A/B RF comparison and dropout failover
-  - [ ] Decide whether any of the above graduates from bench tooling into shipped firmware/hardware
-
----
-
-## Phase 2 — Offline Trip Recorder
-
-**Goal:** A car ride turns into exactly one or more correctly formed local trip bundles, even with no network available.
-
-**Timeline:** Weeks 2–3
-
-### State Machine
-
-```
-SLEEP
-  │ motion / GNSS activity / power-rise
-  ▼
-ARMING
-  │ sustained movement for N seconds
-  ▼
-RECORDING
-  │ no meaningful movement for configured dwell time
-  ▼
-STOP_CANDIDATE
-  ├── movement resumes ────────► RECORDING
-  └── dwell threshold reached ─► FINALIZING
-                                   │
-                                   ▼
-                             QUEUED_FOR_HOME_SYNC
-```
-
-### Deliverables
-
-- [x] **Ignition / activity heuristic**
-  - [x] Detect drive start from GNSS speed + IMU activity
-  - [x] Use OBD port voltage only as power context (not diagnostics)
-  - [ ] Validate heuristic across both target vehicles
-
-- [x] **Start debounce**
-  - [x] Filter out noise, door slams, and minor garage movement
-  - [x] Require sustained movement for configurable threshold (e.g., 15 seconds)
-  - [ ] Test with real-world false triggers
-
-- [x] **Adaptive sample scheduling**
-  - [x] Active driving: 1–5 Hz GNSS, 25–50 Hz IMU
-  - [x] Slow maneuvering / parking: 1–2 Hz GNSS, 25 Hz IMU
-  - [x] Stationary stop candidate: 0.2–1 Hz GNSS, 10–25 Hz IMU
-  - [x] Parked: GNSS off, low-power motion wake only
-
-- [x] **Stop debounce**
-  - [x] Avoid fragmenting trips during traffic lights
-  - [x] Avoid fragmenting during fuel stops and drive-throughs
-  - [x] Configurable dwell time threshold
-  - [x] Prefer merging short errands over producing false trips
-
-- [x] **Parking snapshot**
-  - [x] Record final reliable location with GNSS accuracy
-  - [x] Record heading and timestamp
-  - [x] Mark as parking endpoint in trip events
-
-- [x] **Local event markers**
-  - [x] Emit: trip_start, trip_stop, trip_pause, trip_resumed
-  - [x] Emit: poor_gnss_quality, gnss_restored
-  - [x] Emit: power_anomaly, storage_pressure
-  - [x] Store events in trip bundle's events.cbor
-
-- [x] **Storage recovery**
-  - [x] Implement append-only record format with periodic checkpoints
-  - [x] Boot-time scan and recovery of incomplete sessions
-  - [ ] Validate recovery after simulated power loss
-
-- [x] **Capacity controls**
-  - [x] Monitor microSD free space
-  - [x] Prevent exhaustion with configurable threshold
-  - [x] Preserve unsynced data according to retention policy
-  - [x] Alert on next home sync if storage was under pressure
-
----
-
-## Phase 3 — Home-Only Synchronization
-
-**Goal:** Driving data reaches the homelab only after the device joins trusted home Wi-Fi. Never over cellular. Never to the internet.
-
-**Timeline:** Week 3
-
-### Deliverables
-
-- [x] **Wi-Fi provisioning**
-  - [x] Store trusted network credentials in encrypted NVS
-  - [x] Load SSID/PSK/BSSID at boot from NVS
-  - [ ] Serial-based initial configuration CLI
-  - [ ] Plan for future captive portal or BLE provisioning
-
-- [x] **Trusted-network policy**
-  - [x] Only sync after BSSID scan matches stored trusted AP
-  - [x] BSSID-locked association prevents rogue SSID attacks
-  - [ ] Log and alert on unexpected network association attempts
-
-- [x] **Device identity**
-  - [x] Generate Ed25519 keypair via hardware RNG + crypto accelerator
-  - [x] Store private key in encrypted NVS
-  - [ ] Register public key with homelab server
-
-- [ ] **Transport security**
-  - [ ] Implement HTTPS with mutual TLS (mTLS)
-  - [ ] Pin local CA certificate on device
-  - [ ] Pin server public key / hostname
-  - [ ] No public Web PKI dependency
-
-- [x] **Resumable upload**
-  - [x] Chunked upload using trip ID + content hash + byte offset
-  - [x] Resume after Wi-Fi disconnect or vehicle departure
-  - [x] Handle partial uploads gracefully
-
-- [x] **Server receipt**
-  - [x] Server issues signed/durable acknowledgment
-  - [x] Receipt ties to trip ID and content hash
-  - [x] Receipt issued only after object + database record committed
-
-- [x] **Device cleanup**
-  - [x] Delete local trip only after receipt + retention window
-  - [x] Store receipt locally as proof of server acknowledgment
-  - [x] Never delete merely because an HTTP request succeeded
-
-- [ ] **Upload budget**
-  - [ ] Limit Wi-Fi transmit duration per sync session
-  - [ ] Suspend/resume safely if vehicle leaves garage mid-upload
-  - [x] Prioritize oldest unsynced trips
-
-- [x] **Local discovery**
-  - [x] ~~mDNS (`cairn.local`) for initial deployment~~ — **abandoned.** The ESP32
-        resolver does not do mDNS, so `cairn.local` never resolved from the
-        device. The server is now reached by a name the router's DNS serves.
-  - [x] Server host configurable per-deployment via untracked `secrets.h`
-  - [ ] Static DHCP reservation for production reliability *(the server's lease
-        has already moved twice, which is why the firmware uses a DNS name
-        rather than a hardcoded IP)*
-
----
-
-## Phase 4 — Zig Ingest and Data Model
-
-**Goal:** Browse uploaded trips locally. Re-uploading the same file never duplicates data. All core services run in Zig.
-
-**Timeline:** Weeks 3–4
-
-### Deliverables
-
-- [x] **`bundle` library**
-  - [x] Parse trip bundles from device
-  - [x] Validate checksums and signatures
-  - [x] Hash and verify content integrity
-  - [ ] Support schema version migration
-
-- [x] **`ingestd` service**
-  - [x] mTLS endpoint for device uploads
-  - [x] Resumable chunked upload support
-  - [x] Replay protection (reject duplicate content hashes)
-  - [x] Rate limiting per device
-  - [x] Issue durable receipts on successful commit
-
-- [x] **`tripctl` CLI**
-  - [x] Inspect local trip bundles
-  - [x] Validate storage integrity
-  - [x] Generate synthetic test fixtures
-  - [x] Export raw data (GPX, GeoJSON, CSV)
-
-- [x] **`trip-sim` simulator**
-  - [x] Replay historical drives into ingest pipeline
-  - [x] Generate synthetic journeys
-  - [x] Support accelerated and real-time replay
-
-- [x] **`api` service**
-  - [x] Read-only JSON API for trips
-  - [x] Endpoints: trips, places, route segments, tags, exports
-  - [x] PostGIS queries for nearest-place and distance
-
-- [x] **Database schema**
-  - [x] `devices` — public key, metadata, last-seen, firmware version
-  - [x] `uploads` — content hash, state, receipt ID, storage path
-  - [x] `trips` — stable ID, start/end, device, summary, bundle hash
-  - [x] `location_samples` — raw GNSS with accuracy and sequence
-  - [x] `motion_samples` — IMU or downsampled aggregates
-  - [x] `trip_events` — start/stop/pause/sync/quality events
-  - [x] `places` — named locations with radius
-  - [x] `trip_tags` — personal/business/road-trip/private labels
-  - [x] `derivations` — algorithm version, output hash, reproducibility
-  - [x] All timestamps in UTC; render in viewer per timezone
-  - [x] PostGIS extensions enabled
-
----
-
-## Phase 5 — Local Web UI and Home Assistant
-
-**Goal:** The project feels like the part of Automatic you actually liked — effortless trip history, remembered parking, and useful presence/arrival events.
-
-**Timeline:** Days 31–60
-
-### Web UI Views
-
-- [x] **Today view**
-  - [x] Most recent trip summary
-  - [x] Last parked location on map
-  - [x] Sync status indicator
-  - [x] Device battery/health summary
-
-- [x] **Trips view**
-  - [x] Time-sorted trip list
-  - [x] Map thumbnail per trip
-  - [x] Duration, distance, endpoint, tags
-  - [x] Filter by date range, tag, place
-
-- [x] **Trip detail view**
-  - [x] Full route on map
-  - [x] Timeline with stop candidates
-  - [x] GNSS quality overlay
-  - [x] Raw data download / export buttons
-
-- [x] **Places view**
-  - [x] Saved locations with configurable radius
-  - [ ] Arrival/departure history
-  - [ ] Rename and merge controls
-
-- [x] **Device view**
-  - [x] Firmware version
-  - [ ] Storage usage
-  - [x] Last sync time
-  - [ ] Wi-Fi state and low-power state
-
-- [x] **Privacy / data view**
-  - [ ] Retention controls
-  - [x] Export all data
-  - [x] Delete individual trips
-  - [ ] Redact start/end areas (privacy zones)
-
-### Home Assistant Integration
-
-- [x] **MQTT event bus**
-  - [x] Publish `trip_started` event
-  - [x] Publish `trip_ended` event with distance/duration
-  - [x] Publish `arrived_home` / `departed_home`
-  - [x] Publish `sync_completed`
-  - [x] Publish `last_parked` location
-
-- [x] **Resilience**
-  - [ ] Persist events for replay if HA is unavailable
-  - [x] Never make HA availability a reason for trip failure
-  - [x] Semantic events only — no raw GPS stream
-
----
-
-## Phase 6 — Introduce Gleam Deliberately
-
-**Goal:** Gleam improves the system's event semantics without becoming a second ingestion path. Build only after Zig ingest and the database are stable.
-
-**Timeline:** Days 61–75
-
-### Deliverables
-
-- [x] **Trip lifecycle projector**
-  - [x] Convert raw/derived state into coherent trip lifecycle events
-  - [x] Maintain event consistency across reprocessing
-
-- [x] **Retry scheduler**
-  - [x] Reprocess trips when algorithms improve
-  - [x] Idempotent reprocessing with version tracking
-
-- [x] **Automation executor**
-  - [x] Apply rules: "on arrival home, update HA presence"
-  - [x] Configurable rule engine for user-defined automations
-
-- [x] **Notification policy**
-  - [x] Evaluate whether sync/device/storage issues deserve notification
-  - [x] Configurable severity thresholds
-
-- [x] **Data-quality queue**
-  - [x] Flag impossible GNSS jumps
-  - [x] Flag prolonged GPS loss
-  - [x] Detect duplicate tracks and clock drift
-
-- [x] **OTP supervision**
-  - [x] Fault-tolerant supervision tree
-  - [x] Independent restart of failing background tasks
-  - [ ] Health monitoring and reporting
-
----
-
-## Phase 7 — MoonBit Plugin System
-
-**Goal:** User-defined or experimental trip enrichments run in a constrained, portable WASM sandbox. Plugins cannot access the database, network, or filesystem.
-
-**Timeline:** Days 61–75
-
-### Plugin ABI
-
-- [x] **Design narrow plugin interface**
-  - [x] Define versioned input/output schemas
-  - [x] Deterministic execution — same input always produces same output
-  - [x] Host validates all plugin results
-  - [ ] Record plugin version/hash for every derivation
-
-### Plugins
-
-- [x] **Trip classifier**
-  - [x] Input: normalized trip summary + sampled route/motion
-  - [x] Output: labels (commute, canyon drive, errand, road trip, unknown)
-
-- [x] **Privacy redactor**
-  - [x] Input: route + configured privacy zones
-  - [x] Output: redacted route/endpoint geometry
-
-- [x] **Export transformer**
-  - [x] Input: trip model
-  - [x] Output: GPX, GeoJSON, CSV, Markdown trip report
-
-- [x] **Route scorer**
-  - [x] Input: polyline + places
-  - [x] Output: favorite-road / repeat-route score
-
-- [x] **Data-quality detector**
-  - [x] Input: timestamped samples
-  - [x] Output: anomaly annotations
-
-### Sandbox Constraints
-
-- [x] No database access
-- [x] No network access
-- [x] No filesystem access
-- [x] No authority to alter raw data
-- [x] Structured input → structured output only
-
----
-
-## Phase 8 — Odin Native Tools
-
-**Goal:** An enjoyable, high-performance local utility for debugging and exploring recorded journeys. One focused tool, not another platform.
-
-**Timeline:** Days 75–90
-
-### Deliverables
-
-- [x] **`trip-inspector`**
-  - [x] Open local trip bundles
-  - [x] Inspect metadata, sample timing, GNSS accuracy
-  - [x] Visualize speed and IMU data
-
-- [x] **`trip-diff`**
-  - [x] Compare device raw route vs. server-normalized route
-  - [x] Highlight divergence points
-
-- [x] **`trip-replay`**
-  - [x] Feed recorded trips into test server
-  - [x] Support realistic and accelerated timing
-
-- [x] **`route-density`**
-  - [x] Generate heatmap of frequently driven roads
-  - [x] Local image/vector output
-
-- [x] **`sd-recover`**
-  - [x] Scan pulled microSD card for incomplete trip files
-  - [x] Rebuild recoverable trip data
-
----
-
-## Phase 9 — Rust Trajectory Experiments
-
-**Goal:** Offline trajectory analysis experiments in Rust. Explore route clustering, place discovery, and driving patterns without making the product depend on it. Start only after several months of clean local data.
-
-**Timeline:** Days 90+
-
-### Experiments
-
-- [x] **Route similarity** (`cairn-trajectory similarity`)
-  - [x] Cluster trips: "These 14 trips are effectively the same commute"
-  - [x] Output candidate route groups for manual review
-  - [x] Hausdorff distance with subsampled polylines
-
-- [x] **Automatic place discovery** (`cairn-trajectory places`)
-  - [x] Identify candidate recurring endpoints
-  - [x] DBSCAN-style clustering with configurable radius
-  - [ ] Subject to privacy review before surfacing
-
-- [x] **Stop/errand segmentation** (`cairn-trajectory segments`)
-  - [x] Identify meaningful stops in long routes
-  - [x] Drive/stop phase segmentation with configurable thresholds
-  - [ ] Compare against device-side stop detection
-
-- [ ] **GNSS smoothing / map-matching evaluation**
-  - [ ] Compare algorithms against manually checked routes
-  - [ ] Benchmark accuracy and performance
-
-- [x] **Driving-style visualization** (`cairn-trajectory density`)
-  - [x] Cluster acceleration/turning patterns
-  - [x] Acceleration and turn-rate histograms with percentile stats
-  - [x] Personal exploration only — not scoring
-
-- [x] **Anomaly detection** (`cairn-trajectory anomalies`)
-  - [x] Flag routes/speed traces that indicate bad GNSS
-  - [x] Detect impossible jumps, GPS loss, clock drift, HDOP spikes
-  - [x] Distinguish sensor error from real driving behavior
-
-### Guardrails
-
-- [x] Authoritative output stays in deterministic Zig/Gleam paths
-- [x] Trajectory tool proposes annotations; never decides deletion or trip boundaries
-- [x] No safety-critical actions
-- [x] All outputs reproducible without GPU/accelerator
-
----
-
-## Build Order Summary
-
-### First 30 Days
-
-| Week | Focus | Key Deliverables |
-|------|-------|-----------------|
-| 1 | Hardware | Flash Model B, disable LTE, log GNSS + IMU, collect real drives |
-| 2 | Firmware | Append-only records, recovery tooling, trip start/stop state machine |
-| 3 | Sync | Trusted home Wi-Fi config, Zig upload receiver, bundle validator |
-| 4 | Server | Upload at home only, PostgreSQL/PostGIS storage, basic trip list/map |
-
-### Days 31–60
-
-| Focus | Key Deliverables |
-|-------|-----------------|
-| Quality | Tune trip boundaries, GNSS quality policy, retention, power behavior |
-| Product | Parking location, places, labels, GPX/GeoJSON/CSV export |
-| Operations | Backups, restore procedure, local CA/device enrollment, monitoring |
-| Homelab | MQTT / Home Assistant semantic events |
-| Zig | Consolidate bundle parser, simulator, CLI, and ingest daemon |
-
-### Days 61–90
-
-| Focus | Key Deliverables |
-|-------|-----------------|
-| Gleam | One supervised workflow service for trip projection/reprocessing |
-| MoonBit | One read-only plugin: privacy redaction or trip classification |
-| Odin | Build `trip-inspector` using real data corpus |
-| Rust trajectory | Route similarity, place discovery, anomaly detection, driving style |
-| Hardening | Power-loss testing, SD exhaustion, Wi-Fi loss, server restart, backup restore |
-
----
-
-## Success Metrics
-
-| Metric | Target |
-|--------|--------|
-| Missed meaningful trips | 0 over a two-week test |
-| Duplicate trips | 0 |
-| Corrupt bundles after forced power loss | 0 |
-| Home sync within 10 min of arrival | 95%+ |
-| Server dedup correctness | 100% in replay tests |
-| WAN dependencies | 0 |
-| Data export completeness | 100% |
-| Unexplained parked battery impact | None after multi-week validation |
