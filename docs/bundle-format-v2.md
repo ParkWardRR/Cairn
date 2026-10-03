@@ -285,7 +285,7 @@ All at `schema_version = 1` unless stated.
 | 22 | 1 | `fix_type` | 0 none, 1 2D, 2 3D, 3 DGPS, 4 RTK-float, 5 RTK-fixed |
 | 23 | 1 | `sats_used` | u8 |
 | 24 | 1 | `sats_visible` | u8 |
-| 25 | 1 | `source_flags` | bit 0 GNSS, 1 GLONASS, 2 Galileo, 3 BeiDou, 4 dead-reckoned |
+| 25 | 1 | `source_flags` | bit 0 GPS, 1 GLONASS, 2 Galileo, 3 BeiDou, 4 dead-reckoned, 5 external source (phone) |
 | 26 | 4 | `utc_offset_ms` | i32, signed delta from `utc_basis_ms` (§5.1) |
 | 30 | 2 | `utc_acc_ms` | u16, uncertainty of that UTC estimate; `0xFFFF` = unknown |
 
