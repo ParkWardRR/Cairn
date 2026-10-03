@@ -15,13 +15,14 @@ const selectedBootId = ref<string>('')
 const { data: drivesData, status: drivesStatus } = useFetch<{ driveSummary: DriveSummary[] }>('/api/analytics/drive-summary')
 const drives = computed(() => drivesData.value?.driveSummary ?? [])
 
-const { data: telemetryData, status: telemetryStatus } = useFetch<{ telemetry: any[] }>(
+const { data: telemetryData, status: telemetryStatus, execute: loadTelemetry } = useFetch<{ telemetry: any[] }>(
   () => `/api/analytics/telemetry?boot_id=${selectedBootId.value}`,
   { watch: [selectedBootId], immediate: false },
 )
 
 watch(selectedBootId, (val) => {
-  if (!val) telemetryData.value = null
+  if (val) loadTelemetry()
+  else telemetryData.value = null
 })
 
 const telemetryRows = computed(() => telemetryData.value?.telemetry ?? [])

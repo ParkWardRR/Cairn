@@ -36,9 +36,53 @@
 ---
 
 <p align="center">
-  <img src="web/static/screenshots/hero-dashboard.png" alt="Cairn Dashboard — Apple HIG dark theme" width="800">
+  <img src="docs/screenshots/dashboard.png" alt="Cairn dashboard (synthetic data)" width="800">
 </p>
-<p align="center"><sub>Today dashboard — Apple HIG dark theme with live sync status, trip stats, route maps, and device health</sub></p>
+<p align="center"><sub>Dashboard with trip totals, drive heatmap, last trip and device health (synthetic data)</sub></p>
+
+---
+
+## Screenshots
+
+The web UI (`ui/`) running against **invented data**: a fictional owner in Carmel-by-the-Sea, California, five weeks of commutes to Monterey, grocery runs and Highway 1 drives down to Big Sur. The roads are real; the drives, car and device are not. Nothing here comes from a real capture.
+
+<table>
+  <tr>
+    <td width="50%"><a href="docs/screenshots/dashboard.png"><img src="docs/screenshots/dashboard.png" alt="Dashboard"></a><br><sub><b>Dashboard</b> — all-time totals, drive heatmap, last trip, device health</sub></td>
+    <td width="50%"><a href="docs/screenshots/trip-detail.png"><img src="docs/screenshots/trip-detail.png" alt="Trip detail"></a><br><sub><b>Trip detail</b> — speed-coloured route, GPS acquisition timing, estimated start, insights</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/trips.png"><img src="docs/screenshots/trips.png" alt="Trips"></a><br><sub><b>Trips</b> — every boot with duration, peaks and capture gaps</sub></td>
+    <td><a href="docs/screenshots/places.png"><img src="docs/screenshots/places.png" alt="Places"></a><br><sub><b>Places</b> — trip start and end locations</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/boost.png"><img src="docs/screenshots/boost.png" alt="Boost and power"></a><br><sub><b>Boost &amp; Power</b> — boost curve and detected full-throttle pulls</sub></td>
+    <td><a href="docs/screenshots/fuel.png"><img src="docs/screenshots/fuel.png" alt="Fuel and tune"></a><br><sub><b>Fuel &amp; Tune</b> — fuel-trim map by RPM and load</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/analytics.png"><img src="docs/screenshots/analytics.png" alt="Engine analytics"></a><br><sub><b>Analytics</b> — per-trip speed, RPM, boost, lambda, trims and temperatures</sub></td>
+    <td><a href="docs/screenshots/behavior.png"><img src="docs/screenshots/behavior.png" alt="Drive behavior"></a><br><sub><b>Behavior</b> — G-force distribution and vibration from the IMU</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/calibration.png"><img src="docs/screenshots/calibration.png" alt="Speedometer calibration"></a><br><sub><b>Calibration</b> — OBD speed against GNSS speed</sub></td>
+    <td><a href="docs/screenshots/system.png"><img src="docs/screenshots/system.png" alt="Device and system"></a><br><sub><b>Device</b> — health history, decoded bundles, store status</sub></td>
+  </tr>
+</table>
+
+<details>
+<summary>Regenerating them</summary>
+
+The data comes from `server/cmd/cairn-tsdb-demo`, which builds the production tsdb schema and views in memory and fills them with simulated drives along real road geometry (cached in `routes.json`; refresh with `-fetch`). It serves the same HTTP API as `cairn-tsdb`, so the UI cannot tell the difference.
+
+```bash
+cd server && go run ./cmd/cairn-tsdb-demo        # synthetic store on 127.0.0.1:8480
+cd ui && npx nuxt dev --port 3123                # in a second terminal
+cd ui && node scripts/screenshots.mjs http://localhost:3123 ../docs/screenshots
+```
+
+Put a CARTO key in `ui/.env` (`NUXT_PUBLIC_CARTO_KEY=...`, gitignored) so the maps use CARTO's dark tiles. Without one, the capture script falls back to darkened OpenStreetMap tiles. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, basemap © CARTO.
+
+</details>
 
 ---
 
