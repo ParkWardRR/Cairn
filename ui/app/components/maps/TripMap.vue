@@ -15,8 +15,32 @@ const props = defineProps<{
 const mapEl = ref<HTMLDivElement>()
 const ready = ref(false)
 const mapError = ref<string | null>(null)
+const estStartEnabled = ref(true)
+const hasEstStart = ref(false)
 let map: any = null
 let highlightMarker: any = null
+let estStartLayers: any[] = []
+
+function setEstStartVisible(visible: boolean) {
+  if (!map) return
+  for (const layer of estStartLayers) {
+    if (visible) layer.addTo(map)
+    else map.removeLayer(layer)
+  }
+}
+
+function toggleEstStart() {
+  estStartEnabled.value = !estStartEnabled.value
+  setEstStartVisible(estStartEnabled.value)
+}
+
+function onMapMouseEnter() {
+  if (estStartEnabled.value && estStartLayers.length) setEstStartVisible(false)
+}
+
+function onMapMouseLeave() {
+  if (estStartEnabled.value && estStartLayers.length) setEstStartVisible(true)
+}
 
 watch(() => props.highlightPos, async (pos) => {
   if (!map || !ready.value) return
@@ -111,6 +135,10 @@ function buildRoute(L: any) {
   const first = validPoints[0]
   const last = validPoints[validPoints.length - 1]
 
+  estStartLayers.forEach(l => map.removeLayer(l))
+  estStartLayers = []
+  hasEstStart.value = false
+
   if (props.prevEnd && props.firstObdMs != null && (props.firstFixMs == null || props.firstFixMs > props.firstObdMs)) {
     const prevIcon = L.divIcon({
       className: '',
@@ -118,14 +146,18 @@ function buildRoute(L: any) {
       iconSize: [22, 22],
       iconAnchor: [11, 11],
     })
-    L.marker([props.prevEnd.lat, props.prevEnd.lon], { icon: prevIcon })
+    const marker = L.marker([props.prevEnd.lat, props.prevEnd.lon], { icon: prevIcon })
       .bindTooltip('Estimated start (last known position)', { direction: 'top', offset: [0, -12], className: 'trip-tooltip' })
-      .addTo(map)
-
-    L.polyline(
+    const line = L.polyline(
       [[props.prevEnd.lat, props.prevEnd.lon], [first.lat, first.lng]],
       { color: '#f59e0b', weight: 2, opacity: 0.5, dashArray: '6, 8' },
-    ).addTo(map)
+    )
+    estStartLayers = [marker, line]
+    hasEstStart.value = true
+    if (estStartEnabled.value) {
+      marker.addTo(map)
+      line.addTo(map)
+    }
   }
 
   L.marker([first.lat, first.lng], { icon: startIcon }).addTo(map)
@@ -187,7 +219,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full h-full rounded-xl overflow-hidden" style="min-height: 320px">
+  <div class="relative w-full h-full rounded-xl overflow-hidden" style="min-height: 320px" @mouseenter="onMapMouseEnter" @mouseleave="onMapMouseLeave">
     <div ref="mapEl" class="absolute inset-0" />
 
     <div v-if="!ready && !mapError" class="absolute inset-0 flex items-center justify-center" style="background: var(--color-surface-elevated)">
@@ -212,6 +244,22 @@ onUnmounted(() => {
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #f59e0b" /> Fast</span>
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #ef4444" /> WOT</span>
     </div>
+
+    <button
+      v-if="ready && hasEstStart"
+      class="absolute bottom-3 right-3 z-[1000] flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold transition-opacity"
+      :style="{
+        background: 'rgba(15, 17, 23, 0.85)',
+        backdropFilter: 'blur(8px)',
+        color: estStartEnabled ? '#f59e0b' : 'var(--color-text-secondary)',
+        opacity: estStartEnabled ? 1 : 0.5,
+        border: estStartEnabled ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid transparent',
+      }"
+      @click.stop="toggleEstStart"
+    >
+      <span class="w-2 h-2 rounded-full" :style="{ background: estStartEnabled ? '#f59e0b' : '#6b7280', border: '1px dashed currentColor' }" />
+      Est. start
+    </button>
   </div>
 </template>
 
