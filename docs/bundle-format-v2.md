@@ -247,6 +247,7 @@ must report the isolated damaged byte range and must mark the resulting bundle
 | `0x07` | `STATE_TRANSITION` | §4.7 |
 | `0x08` | `GNSS_GAP` | §4.8 |
 | `0x09` | `POLICY_SNAPSHOT` | §4.9 |
+| `0x0A` | `OBD_EXTENDED` | §4.11 |
 
 Unknown record types encountered by a reader are **skipped using `frame_len`**,
 counted, and reported. An unknown type is not an error — it is how a newer
@@ -513,6 +514,51 @@ Rates are not themselves recorded per sample. The frames carry their own
 monotonic timestamps, so the achieved rate is recoverable from the data rather
 than needing to be asserted alongside it.
 
+
+### 4.11 `OBD_EXTENDED` — 24 bytes
+
+The boosted-engine and mixture signals. A separate record from `OBD_SNAPSHOT`
+rather than more fields on it, for two reasons: that record has only two
+reserved bytes left, and support for these PIDs varies far more between vehicles
+— so a car answering the basic set but not these still produces clean snapshots
+instead of one record half full of sentinels.
+
+| Offset | Size | Field | Units |
+|---:|---:|---|---|
+| 0 | 2 | `map_kpa` | u16, intake manifold **absolute** pressure, PID `0x0B`, `0xFFFF` = unavailable |
+| 2 | 2 | `maf_cgps` | u16, mass air flow in centigrams/s, PID `0x10`, `0xFFFF` = unavailable |
+| 4 | 2 | `lambda_e4` | u16, equivalence ratio × 10000, PID `0x44`, `0xFFFF` = unavailable |
+| 6 | 2 | `abs_load_pct_e1` | u16, absolute load × 10, PID `0x43`, `0xFFFF` = unavailable |
+| 8 | 1 | `baro_kpa` | u8, barometric, PID `0x33`, `0xFF` = unavailable |
+| 9 | 1 | `ambient_temp_c` | i8, PID `0x46`, `0x80` = unavailable |
+| 10 | 1 | `fuel_trim_short_pct` | i8, PID `0x06`, `0x80` = unavailable |
+| 11 | 1 | `fuel_trim_long_pct` | i8, PID `0x07`, `0x80` = unavailable |
+| 12 | 4 | `pids_requested` | u32 bitmap |
+| 16 | 4 | `pids_answered` | u32 bitmap |
+| 20 | 2 | `poll_cadence_ms` | u16, actual measured cadence |
+| 22 | 2 | `reserved` | zero |
+
+**Pressures are absolute, as the ECU reports them.** Gauge pressure — what a
+boost gauge shows — is `map_kpa − baro_kpa`, and PSI is that times 0.1450377. It
+is computed at decode and never stored, because storing gauge would bake one
+barometric reading permanently into the record. The same drive re-examined at a
+different elevation, or with a corrected barometric source, must still yield the
+raw measurement the ECU actually gave.
+
+A reader that has `map_kpa` but not `baro_kpa` **must report boost as unknown
+rather than assuming 101 kPa.** Sea level is an assumption, not a measurement,
+and a plausible wrong number is worse here than an admitted absence.
+
+Two fields are scaled rather than stored directly, and the reasons are not
+interchangeable. `abs_load_pct_e1` is ×10 because absolute load legitimately
+exceeds 100% under boost and would clip in a percentage byte. `maf_cgps` is in
+centigrams so a u16 spans a turbocharged engine's full range without losing
+resolution at idle.
+
+Unlike `OBD_SNAPSHOT`, this record **is written even when no PID answered**.
+Which of these an ECU supports is only discoverable by asking, so one record of
+sentinels with `pids_answered = 0` is the evidence that it supports none —
+better recorded once than re-inferred from an absence on every analysis.
 
 ### 4.10 Degraded-state bitmap
 
