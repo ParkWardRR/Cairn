@@ -9,12 +9,34 @@ const props = defineProps<{
   firstObdMs?: number | null
   firstFixMs?: number | null
   prevEnd?: { lat: number; lon: number } | null
+  highlightPos?: { lat: number; lon: number } | null
 }>()
 
 const mapEl = ref<HTMLDivElement>()
 const ready = ref(false)
 const mapError = ref<string | null>(null)
 let map: any = null
+let highlightMarker: any = null
+
+watch(() => props.highlightPos, async (pos) => {
+  if (!map || !ready.value) return
+  const L = await import('leaflet')
+
+  if (highlightMarker) {
+    map.removeLayer(highlightMarker)
+    highlightMarker = null
+  }
+
+  if (pos) {
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid #3b82f6;box-shadow:0 0 12px rgba(59,130,246,.6);animation:pulse-highlight 1s infinite"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    })
+    highlightMarker = L.marker([pos.lat, pos.lon], { icon, interactive: false }).addTo(map)
+  }
+})
 
 function speedToColor(mph: number): string {
   if (mph < 5) return '#6b7280'
@@ -205,5 +227,9 @@ onUnmounted(() => {
 }
 .trip-tooltip::before {
   border-top-color: rgba(15, 17, 23, 0.92) !important;
+}
+@keyframes pulse-highlight {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.7; }
 }
 </style>

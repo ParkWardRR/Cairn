@@ -31,17 +31,17 @@ const pulls = computed(() => pullsData.value?.pulls ?? [])
 
 const peakBoost = computed(() => {
   if (!points.value.length) return null
-  return Math.max(...points.value.filter(p => p.boost_psi != null).map(p => p.boost_psi))
+  return points.value.reduce((m, p) => (p.boost_psi != null && p.boost_psi > m ? p.boost_psi : m), -Infinity)
 })
 
 const maxRpm = computed(() => {
   if (!pulls.value.length) return null
-  return Math.max(...pulls.value.map(p => p.max_rpm))
+  return pulls.value.reduce((m, p) => Math.max(m, p.max_rpm), -Infinity)
 })
 
 const maxSpeed = computed(() => {
   if (!pulls.value.length) return null
-  return Math.max(...pulls.value.map(p => p.max_speed_kph))
+  return pulls.value.reduce((m, p) => Math.max(m, p.max_speed_kph), -Infinity)
 })
 
 const chartOption = computed(() => {
