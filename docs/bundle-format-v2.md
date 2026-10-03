@@ -527,8 +527,8 @@ instead of one record half full of sentinels.
 |---:|---:|---|---|
 | 0 | 2 | `map_kpa` | u16, intake manifold **absolute** pressure, PID `0x0B`, `0xFFFF` = unavailable |
 | 2 | 2 | `maf_cgps` | u16, mass air flow in centigrams/s, PID `0x10`, `0xFFFF` = unavailable |
-| 4 | 2 | `lambda_e4` | u16, equivalence ratio × 10000, PID `0x44`, `0xFFFF` = unavailable |
-| 6 | 2 | `abs_load_pct_e1` | u16, absolute load × 10, PID `0x43`, `0xFFFF` = unavailable |
+| 4 | 2 | `lambda_e4` | u16, equivalence ratio × 10000, from raw `((A*256)+B) ÷ 32768`, PID `0x44`, `0xFFFF` = unavailable |
+| 6 | 2 | `abs_load_raw` | u16, **raw** `((A*256)+B)` from PID `0x43`; percent is `raw × 100 ÷ 255`, `0xFFFF` = unavailable |
 | 8 | 1 | `baro_kpa` | u8, barometric, PID `0x33`, `0xFF` = unavailable |
 | 9 | 1 | `ambient_temp_c` | i8, PID `0x46`, `0x80` = unavailable |
 | 10 | 1 | `fuel_trim_short_pct` | i8, PID `0x06`, `0x80` = unavailable |
@@ -549,11 +549,40 @@ A reader that has `map_kpa` but not `baro_kpa` **must report boost as unknown
 rather than assuming 101 kPa.** Sea level is an assumption, not a measurement,
 and a plausible wrong number is worse here than an admitted absence.
 
-Two fields are scaled rather than stored directly, and the reasons are not
-interchangeable. `abs_load_pct_e1` is ×10 because absolute load legitimately
-exceeds 100% under boost and would clip in a percentage byte. `maf_cgps` is in
-centigrams so a u16 spans a turbocharged engine's full range without losing
-resolution at idle.
+**Two PIDs are stored raw, not converted.** `0x43` and `0x44` are both two-byte
+values, and converting on the device would discard information the standard
+formulas need: `abs_load_raw × 100 ÷ 255` spans 0–25700%, and
+`lambda = raw ÷ 32768` has fifteen bits of resolution. Storing raw also means a
+conversion error is fixable by re-decoding rather than by reflashing — which
+mattered here, because the first implementation trusted a vendor library that
+reads `0x43` as a single byte through an `A × 100 ÷ 255` helper. On a true 150%
+load, raw `0x017F`, that yields 0.39%, and because byte A advances once per
+100% of load the result sawtooths instead of saturating: the entire range of
+interest on a boosted engine rendered as noise near zero.
+
+`maf_cgps` is in centigrams so a u16 spans a turbocharged engine's range
+without losing idle resolution. Note that a library which pre-divides to whole
+grams defeats this; the field has the resolution regardless of whether a given
+implementation supplies it.
+
+### 4.11.1 `map_kpa` saturates, and where it saturates matters
+
+PID `0x0B` carries a single byte, so manifold pressure hard-stops at 255 kPa
+absolute — roughly **22.3 psi** of gauge boost at sea level. That ceiling falls
+inside the range a modified car operates in: a stock N20 peaks near 221 kPa, a
+Stage 2 map around 253, and some targets exceed 260.
+
+Past the limit the log shows a **flat plateau at exactly 255**, not a rollover —
+which reads precisely like a boost controller holding steady. A reader must
+therefore flag saturation rather than present it as a measurement, because the
+difference between "the tune is flat-lining" and "the instrument is" is not
+recoverable from the number alone.
+
+PID `0x4F` byte D declares the vehicle's own maximum manifold pressure as
+`D × 10` kPa and is the standard-defined way to learn the real ceiling instead
+of assuming 255. PID `0x87` is also defined as intake manifold absolute
+pressure with a wider range, though its scaling could not be sourced with
+confidence and it is not yet read.
 
 Unlike `OBD_SNAPSHOT`, this record **is written even when no PID answered**.
 Which of these an ECU supports is only discoverable by asking, so one record of
