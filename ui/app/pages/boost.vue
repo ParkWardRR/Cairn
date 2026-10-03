@@ -205,7 +205,7 @@ const iatBoostChartOption = computed(() => {
   <div>
     <LayoutPageHeader title="Boost & Power" subtitle="Turbo performance and intake temperature analysis" />
 
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-8 sticky top-0 z-10 py-3 -mt-3" style="background: var(--color-background)">
       <DataStatCard label="Peak Boost" :value="peakBoost != null && peakBoost > -Infinity ? `${peakBoost.toFixed(1)}` : '--'" subtitle="psi all time"
         :color="(peakBoost ?? 0) > 20 ? 'warning' : undefined" />
       <DataStatCard label="Max RPM" :value="maxRpm != null && maxRpm > -Infinity ? maxRpm.toLocaleString() : '--'" subtitle="under boost" />

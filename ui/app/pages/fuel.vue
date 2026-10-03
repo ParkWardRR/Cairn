@@ -255,8 +255,11 @@ const loading = computed(() => trimStatus.value === 'pending' || fuelStatus.valu
           </div>
           <p class="text-[12px] leading-relaxed" style="color: var(--color-text-secondary)">
             <template v-if="estimatedBlend != null">
-              LTFT of {{ overallLtft?.toFixed(1) }}% suggests ~E{{ estimatedBlend }} blend.
-              {{ userBlend != null ? `Using your override: E${userBlend}.` : 'Enter your actual blend below for accurate fuel flow.' }}
+              Your ECU's LTFT is <b>+{{ overallLtft?.toFixed(1) }}%</b> — it's adding that much extra fuel beyond its base gasoline map.
+              Ethanol needs more fuel per unit of air (stoich 9.0:1 vs gasoline's 14.7:1), so positive LTFT indicates an ethanol blend.
+              From that +{{ overallLtft?.toFixed(1) }}% correction, the estimated blend is <b>~E{{ estimatedBlend }}</b>.
+              <template v-if="userBlend != null"><br>Using your override: <b>E{{ userBlend }}</b>.</template>
+              <template v-else><br>Set your actual blend below for accurate fuel flow calculations.</template>
             </template>
             <template v-else>Not enough trim data to estimate blend.</template>
           </p>
@@ -305,7 +308,7 @@ const loading = computed(() => trimStatus.value === 'pending' || fuelStatus.valu
     </div>
 
     <!-- Key stats -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 sticky top-0 z-10 py-3 -mt-3" style="background: var(--color-background)">
       <DataStatCard label="LTFT" :value="overallLtft != null ? `${overallLtft > 0 ? '+' : ''}${overallLtft.toFixed(1)}%` : '--'" subtitle="long-term fuel trim"
         :color="(overallLtft ?? 0) > 20 ? 'warning' : undefined" />
       <DataStatCard label="STFT" :value="overallStft != null ? `${overallStft > 0 ? '+' : ''}${overallStft.toFixed(1)}%` : '--'" subtitle="short-term fuel trim" />
