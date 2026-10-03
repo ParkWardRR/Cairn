@@ -142,25 +142,30 @@ Nothing is persisted; a restart rebuilds.
 **Persisting the store is deliberately out of scope.** Volatility is the design.
 The trigger to reconsider is a measured one: if a rebuild exceeds ~5 s.
 
-## Phase 15 — Analysis views for the car — **planned**
+## Phase 15 — Analysis views for the car — **in progress**
 
-Views in `internal/tsdb/schema.go`, not code, each with a test on a synthetic
-bundle whose answer is known in advance.
+Views in `internal/tsdb/schema.go`, not code, each with a test on synthetic
+data whose answer is known in advance.
 
-- [ ] `v_trim_map` — STFT/LTFT binned by load and RPM. For an ethanol blend the
-      long-term trim is the honest signal; this is the view that estimates drift
-      from the ~E41 baseline
-- [ ] `v_pulls` — detect wide-open-throttle pulls (throttle high, RPM rising) and
-      summarise each: RPM range, peak boost, boost at fixed RPM bands, lambda
-      under load, trims during the pull
-- [ ] `v_boost_curve` — boost against RPM across pulls, excluding rows whose
-      boost reading is stale or MAP-saturated
-- [ ] `v_speed_agreement` — OBD speed against GNSS speed, per drive; a persistent
-      ratio is a tyre-size or speedometer error, a growing one is a sensor
-- [ ] `v_drive_summary` — per boot: duration, distance, max speed, gaps, warnings
-- [ ] Every view filters on the `*_age_ms` columns it relies on and says so —
+- [x] `v_drive_summary` — per boot: duration, max speed, max RPM, OBD/GNSS
+      sample counts, gap count and duration, bundle warnings
+- [x] `v_trim_map` — STFT/LTFT binned by RPM (500-step) and load (10%-step),
+      ASOF-joined to the nearest boost reading within 2 s. For an ethanol blend
+      the long-term trim is the honest signal; this is the view that estimates
+      drift from the ~E41 baseline
+- [x] `v_boost_curve` — boost pressure against RPM, excluding rows whose boost
+      reading is stale (> 2 s) or MAP-saturated (≥ 255 kPa)
+- [x] `v_pulls` — gap-and-island WOT detection (throttle ≥ 70%, RPM rise > 500,
+      ≥ 2 samples), with peak boost, mean lambda, STFT and LTFT per pull from
+      the boost readings in the pull's time window (MAP-saturated excluded)
+- [x] `v_speed_agreement` — OBD speed against GNSS speed, with ratio (only where
+      both > 5 kph), GNSS age, and fix-type filter (3D fix required, < 5 s)
+- [x] Every view filters on the `*_age_ms` columns it relies on and says so —
       an ASOF join always finds *something*, so staleness has to be an explicit
       predicate, never a default
+- [x] 10 tests covering the views: correct binning, age-staleness exclusion,
+      MAP-saturation exclusion, pull detection and non-detection, speed ratio,
+      no-fix exclusion, drive summary with gaps and warnings
 
 ## Phase 16 — Surfacing it — **planned**
 
