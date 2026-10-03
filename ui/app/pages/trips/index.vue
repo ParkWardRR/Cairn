@@ -79,7 +79,7 @@ function formatDuration(seconds: number | null): string {
           >
             <td class="px-5 py-3.5 text-[13px]">{{ formatDate(trip.start_time) }}</td>
             <td class="px-5 py-3.5 font-mono text-[13px]">{{ formatDuration(trip.duration_s) }}</td>
-            <td class="px-5 py-3.5 font-mono text-[13px] text-right">{{ trip.max_speed_kph }} <span class="text-[11px]" style="color: var(--color-text-secondary)">kph</span></td>
+            <td class="px-5 py-3.5 font-mono text-[13px] text-right">{{ Math.round(trip.max_speed_kph / 1.60934) }} <span class="text-[11px]" style="color: var(--color-text-secondary)">mph</span></td>
             <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden sm:table-cell">{{ trip.max_rpm.toLocaleString() }}</td>
             <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden md:table-cell">{{ trip.obd_samples.toLocaleString() }}</td>
             <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden md:table-cell">{{ trip.gap_count }}</td>

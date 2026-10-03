@@ -15,8 +15,8 @@ const chartOption = computed(() => {
 
   if (validIdxs.length < 2) return null
 
-  const speedKph = validIdxs.map(i => Math.round((props.speeds[i] ?? 0) * 3.6))
-  const altitudes = validIdxs.map(i => props.coordinates[i][2] ?? 0)
+  const speedMph = validIdxs.map(i => Math.round((props.speeds[i] ?? 0) * 2.23694))
+  const altFt = validIdxs.map(i => Math.round((props.coordinates[i][2] ?? 0) * 3.28084))
   const labels = validIdxs.map((_, i) => String(i))
 
   return {
@@ -31,7 +31,7 @@ const chartOption = computed(() => {
       formatter: (params: any) => {
         const s = params[0]?.value ?? 0
         const a = params[1]?.value ?? 0
-        return `Speed: <b>${s} kph</b><br>Altitude: <b>${a.toFixed(0)} m</b>`
+        return `Speed: <b>${s} mph</b><br>Altitude: <b>${a.toFixed(0)} ft</b>`
       },
     },
     xAxis: {
@@ -42,14 +42,14 @@ const chartOption = computed(() => {
     yAxis: [
       {
         type: 'value' as const,
-        name: 'kph',
+        name: 'mph',
         nameTextStyle: { color: '#7c8298', fontSize: 10 },
         axisLabel: { color: '#7c8298', fontSize: 10 },
         splitLine: { lineStyle: { color: '#262b3d' } },
       },
       {
         type: 'value' as const,
-        name: 'm',
+        name: 'ft',
         nameTextStyle: { color: '#7c8298', fontSize: 10 },
         axisLabel: { color: '#7c8298', fontSize: 10 },
         splitLine: { show: false },
@@ -59,7 +59,7 @@ const chartOption = computed(() => {
       {
         name: 'Speed',
         type: 'line',
-        data: speedKph,
+        data: speedMph,
         yAxisIndex: 0,
         showSymbol: false,
         lineStyle: { color: '#3b82f6', width: 1.5 },
@@ -69,7 +69,7 @@ const chartOption = computed(() => {
       {
         name: 'Altitude',
         type: 'line',
-        data: altitudes,
+        data: altFt,
         yAxisIndex: 1,
         showSymbol: false,
         lineStyle: { color: '#8b5cf6', width: 1 },

@@ -46,6 +46,7 @@ export default defineNuxtConfig({
     public: {
       mapProvider: 'apple',
       pmtilesUrl: '/tiles/region.pmtiles',
+      cartoKey: '',
     },
   },
 

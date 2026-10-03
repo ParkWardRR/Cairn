@@ -4,7 +4,7 @@ interface RouteData {
   features: Array<{
     type: string
     geometry: { type: string; coordinates: [number, number, number][] }
-    properties: { speeds: number[]; timestamps: string[] }
+    properties: { speeds: number[]; timestamps: string[]; headings: number[]; accuracies: number[]; sats: number[] }
   }>
 }
 
@@ -19,6 +19,9 @@ interface TripSummary {
   start: { observed_at: string; lat: number; lon: number } | null
   end: { observed_at: string; lat: number; lon: number } | null
   harsh_event_count: number
+  first_obd_ms: number | null
+  first_pos_ms: number | null
+  first_fix_ms: number | null
 }
 
 interface Insight {
@@ -50,6 +53,24 @@ const coordinates = computed<[number, number, number][]>(() => {
 
 const speeds = computed<number[]>(() => {
   return routeData.value?.features?.[0]?.properties?.speeds ?? []
+})
+
+const headings = computed(() => routeData.value?.features?.[0]?.properties?.headings ?? [])
+const accuracies = computed(() => routeData.value?.features?.[0]?.properties?.accuracies ?? [])
+const sats = computed(() => routeData.value?.features?.[0]?.properties?.sats ?? [])
+
+const gpsFixDelay = computed(() => {
+  if (!trip.value) return null
+  const { first_obd_ms, first_fix_ms } = trip.value
+  if (first_obd_ms == null) return null
+  if (first_fix_ms == null) return { delay: null, label: 'No GPS fix acquired' }
+  const delayMs = first_fix_ms - first_obd_ms
+  if (delayMs <= 0) return { delay: 0, label: 'GPS ready before OBD' }
+  const delaySec = delayMs / 1000
+  const label = delaySec >= 60
+    ? `${Math.floor(delaySec / 60)}m ${Math.round(delaySec % 60)}s blind logging`
+    : `${Math.round(delaySec)}s blind logging`
+  return { delay: delayMs, label }
 })
 
 const insights = computed(() => insightsData.value?.insights ?? [])
@@ -124,7 +145,7 @@ function insightIcon(icon: string | undefined): string {
       <!-- Stat bar -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <DataStatCard label="Duration" :value="formatDuration(trip.duration_s)" />
-        <DataStatCard label="Max Speed" :value="`${trip.max_speed_kph}`" subtitle="kph" />
+        <DataStatCard label="Max Speed" :value="`${Math.round(trip.max_speed_kph / 1.60934)}`" subtitle="mph" />
         <DataStatCard label="Max RPM" :value="`${trip.max_rpm?.toLocaleString()}`" :color="trip.max_rpm >= 6000 ? 'warning' : 'default'" />
         <DataStatCard label="OBD Samples" :value="`${trip.obd_samples?.toLocaleString()}`" />
       </div>
@@ -136,6 +157,11 @@ function insightIcon(icon: string | undefined): string {
             <MapsTripMap
               :coordinates="coordinates"
               :speeds="speeds"
+              :headings="headings"
+              :accuracies="accuracies"
+              :sats="sats"
+              :first-obd-ms="trip?.first_obd_ms"
+              :first-fix-ms="trip?.first_fix_ms"
             />
           </div>
           <template #fallback>
@@ -151,6 +177,42 @@ function insightIcon(icon: string | undefined): string {
             </svg>
             <p class="text-[13px]" style="color: var(--color-text-secondary)">No GPS route data for this trip</p>
           </div>
+        </div>
+      </div>
+
+      <!-- GPS acquisition timeline -->
+      <div v-if="gpsFixDelay" class="rounded-xl p-4 mb-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <div class="flex items-center gap-3 mb-2">
+          <svg class="w-4 h-4 shrink-0" :style="{ color: gpsFixDelay.delay === null ? 'var(--color-danger)' : gpsFixDelay.delay === 0 ? '#22c55e' : '#f59e0b' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">GPS Acquisition</span>
+          <span class="text-[12px] font-mono font-medium" :style="{ color: gpsFixDelay.delay === null ? 'var(--color-danger)' : gpsFixDelay.delay === 0 ? '#22c55e' : '#f59e0b' }">
+            {{ gpsFixDelay.label }}
+          </span>
+        </div>
+        <div v-if="gpsFixDelay.delay != null && gpsFixDelay.delay > 0 && trip" class="relative h-3 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
+          <div
+            class="absolute inset-y-0 left-0 rounded-full"
+            style="background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%); opacity: 0.7"
+            :style="{ width: Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100) + '%' }"
+          />
+          <div class="absolute inset-y-0 left-0 flex items-center pl-2">
+            <span class="text-[9px] font-bold text-white drop-shadow-sm">OBD</span>
+          </div>
+          <div
+            class="absolute inset-y-0 rounded-full"
+            style="background: linear-gradient(90deg, #22c55e 0%, #3b82f6 100%); opacity: 0.8"
+            :style="{
+              left: Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100) + '%',
+              width: (100 - Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100)) + '%'
+            }"
+          />
+        </div>
+        <div v-if="gpsFixDelay.delay != null && gpsFixDelay.delay > 0" class="flex justify-between mt-1 text-[9px]" style="color: var(--color-text-secondary)">
+          <span>Boot</span>
+          <span>GPS fix</span>
+          <span>End</span>
         </div>
       </div>
 

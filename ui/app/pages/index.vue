@@ -10,7 +10,7 @@ function formatDuration(seconds: number | null | undefined): string {
 
 function formatDistance(meters: number | null | undefined): string {
   if (!meters || meters <= 0) return '--'
-  return `${(meters / 1000).toFixed(1)} km`
+  return `${(meters / 1609.344).toFixed(1)} mi`
 }
 
 function timeAgo(dateString: string | null | undefined): string {
@@ -101,10 +101,21 @@ const lastTrip = computed(() => recent.value?.trips?.[0] ?? null)
         />
         <DataStatCard
           label="Top Speed"
-          :value="stats.allTime?.max_speed_kph ? `${Math.round(stats.allTime.max_speed_kph)} kph` : '--'"
+          :value="stats.allTime?.max_speed_kph ? `${Math.round(stats.allTime.max_speed_kph / 1.60934)} mph` : '--'"
           subtitle="all time peak"
         />
       </template>
+    </div>
+
+    <!-- Drive heatmap -->
+    <div class="mb-8">
+      <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">All Drives</h2>
+      <ClientOnly>
+        <MapsHeatMap />
+        <template #fallback>
+          <div class="skeleton rounded-xl" style="height: 360px" />
+        </template>
+      </ClientOnly>
     </div>
 
     <!-- Two-column layout: Last Trip + Device Health -->
@@ -136,7 +147,7 @@ const lastTrip = computed(() => recent.value?.trips?.[0] ?? null)
             </div>
             <div>
               <p class="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style="color: var(--color-text-secondary)">Max Speed</p>
-              <p class="font-mono text-lg font-semibold">{{ lastTrip.max_speed_kph }} <span class="text-xs font-normal" style="color: var(--color-text-secondary)">kph</span></p>
+              <p class="font-mono text-lg font-semibold">{{ Math.round(lastTrip.max_speed_kph / 1.60934) }} <span class="text-xs font-normal" style="color: var(--color-text-secondary)">mph</span></p>
             </div>
             <div>
               <p class="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style="color: var(--color-text-secondary)">Started</p>

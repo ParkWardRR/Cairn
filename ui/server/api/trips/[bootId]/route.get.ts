@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const id = sqlString(bootId)
 
   const positions = await queryTsdbObjects(`
-    SELECT lat, lon, alt_m, speed_mps, mono_ms, observed_at
+    SELECT lat, lon, alt_m, speed_mps, heading_deg, h_acc_m, sats_used, mono_ms, observed_at
     FROM position
     WHERE boot_id = ${id} AND lat IS NOT NULL AND lon IS NOT NULL
     ORDER BY mono_ms ASC
@@ -17,6 +17,9 @@ export default defineEventHandler(async (event) => {
   const coordinates = positions.map((p: any) => [p.lon, p.lat, p.alt_m ?? 0])
   const speeds = positions.map((p: any) => p.speed_mps)
   const timestamps = positions.map((p: any) => p.observed_at)
+  const headings = positions.map((p: any) => p.heading_deg)
+  const accuracies = positions.map((p: any) => p.h_acc_m)
+  const sats = positions.map((p: any) => p.sats_used)
 
   const features: any[] = []
 
@@ -24,7 +27,7 @@ export default defineEventHandler(async (event) => {
     features.push({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates },
-      properties: { speeds, timestamps },
+      properties: { speeds, timestamps, headings, accuracies, sats },
     })
   }
 

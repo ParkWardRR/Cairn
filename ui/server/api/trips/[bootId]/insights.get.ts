@@ -231,9 +231,8 @@ export default defineEventHandler(async (event) => {
     const maxF = maxC * 9 / 5 + 32
     insights.push({
       label: 'Coolant range',
-      value: `${fmt(minF, 0)}–${fmt(maxF, 0)}`,
-      unit: 'degF',
-      detail: `${fmt(minC, 0)}–${fmt(maxC, 0)} degC`,
+      value: `${fmt(minF, 0)}–${fmt(maxF, 0)}°F`,
+      detail: `${fmt(minC, 0)}–${fmt(maxC, 0)}°C`,
       icon: 'thermometer',
     })
   }
@@ -247,7 +246,7 @@ export default defineEventHandler(async (event) => {
       label: 'Idle time',
       value: fmt(pct, 0),
       unit: '%',
-      detail: `Time spent under 5 kph`,
+      detail: `Time spent under 3 mph`,
       icon: 'pause',
     })
   }
