@@ -8,6 +8,7 @@ const props = defineProps<{
   timestamps?: string[]
   firstObdMs?: number | null
   firstFixMs?: number | null
+  prevEnd?: { lat: number; lon: number } | null
 }>()
 
 const mapEl = ref<HTMLDivElement>()
@@ -87,10 +88,32 @@ function buildRoute(L: any) {
 
   const first = validPoints[0]
   const last = validPoints[validPoints.length - 1]
+
+  if (props.prevEnd && props.firstObdMs != null && (props.firstFixMs == null || props.firstFixMs > props.firstObdMs)) {
+    const prevIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:22px;height:22px;border-radius:50%;background:transparent;border:2px dashed #f59e0b;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#f59e0b;box-shadow:0 2px 6px rgba(0,0,0,.4)">?</div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    })
+    L.marker([props.prevEnd.lat, props.prevEnd.lon], { icon: prevIcon })
+      .bindTooltip('Estimated start (last known position)', { direction: 'top', offset: [0, -12], className: 'trip-tooltip' })
+      .addTo(map)
+
+    L.polyline(
+      [[props.prevEnd.lat, props.prevEnd.lon], [first.lat, first.lng]],
+      { color: '#f59e0b', weight: 2, opacity: 0.5, dashArray: '6, 8' },
+    ).addTo(map)
+  }
+
   L.marker([first.lat, first.lng], { icon: startIcon }).addTo(map)
   L.marker([last.lat, last.lng], { icon: endIcon }).addTo(map)
 
-  const bounds = L.latLngBounds(validPoints.map((p: any) => [p.lat, p.lng]))
+  const allPts = validPoints.map((p: any) => [p.lat, p.lng] as [number, number])
+  if (props.prevEnd && props.firstObdMs != null && (props.firstFixMs == null || props.firstFixMs > props.firstObdMs)) {
+    allPts.push([props.prevEnd.lat, props.prevEnd.lon])
+  }
+  const bounds = L.latLngBounds(allPts)
   map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16 })
 }
 

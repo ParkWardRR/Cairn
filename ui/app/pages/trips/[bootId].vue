@@ -20,8 +20,10 @@ interface TripSummary {
   end: { observed_at: string; lat: number; lon: number } | null
   harsh_event_count: number
   first_obd_ms: number | null
+  last_obd_ms: number | null
   first_pos_ms: number | null
   first_fix_ms: number | null
+  prev_end: { lat: number; lon: number; observed_at: string } | null
 }
 
 interface Insight {
@@ -59,18 +61,58 @@ const headings = computed(() => routeData.value?.features?.[0]?.properties?.head
 const accuracies = computed(() => routeData.value?.features?.[0]?.properties?.accuracies ?? [])
 const sats = computed(() => routeData.value?.features?.[0]?.properties?.sats ?? [])
 
-const gpsFixDelay = computed(() => {
+function fmtMs(ms: number): string {
+  const sec = ms / 1000
+  if (sec < 60) return `${Math.round(sec)}s`
+  return `${Math.floor(sec / 60)}m ${Math.round(sec % 60)}s`
+}
+
+const gpsAcq = computed(() => {
   if (!trip.value) return null
-  const { first_obd_ms, first_fix_ms } = trip.value
-  if (first_obd_ms == null) return null
-  if (first_fix_ms == null) return { delay: null, label: 'No GPS fix acquired' }
-  const delayMs = first_fix_ms - first_obd_ms
-  if (delayMs <= 0) return { delay: 0, label: 'GPS ready before OBD' }
-  const delaySec = delayMs / 1000
-  const label = delaySec >= 60
-    ? `${Math.floor(delaySec / 60)}m ${Math.round(delaySec % 60)}s blind logging`
-    : `${Math.round(delaySec)}s blind logging`
-  return { delay: delayMs, label }
+  const { first_obd_ms, last_obd_ms, first_fix_ms, duration_s, prev_end } = trip.value
+  if (first_obd_ms == null || last_obd_ms == null) return null
+
+  const totalMs = last_obd_ms - first_obd_ms
+  const totalLabel = fmtMs(totalMs)
+
+  if (first_fix_ms == null) {
+    return {
+      status: 'never' as const,
+      blindMs: totalMs,
+      totalMs,
+      blindPct: 100,
+      totalLabel,
+      blindLabel: totalLabel,
+      fixedLabel: null,
+      prevEnd: prev_end,
+    }
+  }
+
+  const blindMs = Math.max(0, first_fix_ms - first_obd_ms)
+  if (blindMs <= 0) {
+    return {
+      status: 'instant' as const,
+      blindMs: 0,
+      totalMs,
+      blindPct: 0,
+      totalLabel,
+      blindLabel: null,
+      fixedLabel: totalLabel,
+      prevEnd: prev_end,
+    }
+  }
+
+  const fixedMs = totalMs - blindMs
+  return {
+    status: 'delayed' as const,
+    blindMs,
+    totalMs,
+    blindPct: Math.round((blindMs / totalMs) * 100),
+    totalLabel,
+    blindLabel: fmtMs(blindMs),
+    fixedLabel: fmtMs(fixedMs),
+    prevEnd: prev_end,
+  }
 })
 
 const insights = computed(() => insightsData.value?.insights ?? [])
@@ -162,6 +204,7 @@ function insightIcon(icon: string | undefined): string {
               :sats="sats"
               :first-obd-ms="trip?.first_obd_ms"
               :first-fix-ms="trip?.first_fix_ms"
+              :prev-end="trip?.prev_end"
             />
           </div>
           <template #fallback>
@@ -181,38 +224,70 @@ function insightIcon(icon: string | undefined): string {
       </div>
 
       <!-- GPS acquisition timeline -->
-      <div v-if="gpsFixDelay" class="rounded-xl p-4 mb-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-        <div class="flex items-center gap-3 mb-2">
-          <svg class="w-4 h-4 shrink-0" :style="{ color: gpsFixDelay.delay === null ? 'var(--color-danger)' : gpsFixDelay.delay === 0 ? '#22c55e' : '#f59e0b' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">GPS Acquisition</span>
-          <span class="text-[12px] font-mono font-medium" :style="{ color: gpsFixDelay.delay === null ? 'var(--color-danger)' : gpsFixDelay.delay === 0 ? '#22c55e' : '#f59e0b' }">
-            {{ gpsFixDelay.label }}
+      <div v-if="gpsAcq" class="rounded-xl p-4 mb-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2.5">
+            <svg class="w-4 h-4 shrink-0" :style="{ color: gpsAcq.status === 'never' ? 'var(--color-danger)' : gpsAcq.status === 'instant' ? '#22c55e' : '#f59e0b' }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">GPS Acquisition</span>
+          </div>
+          <span class="text-[12px] font-mono font-medium" style="color: var(--color-text-secondary)">
+            {{ gpsAcq.totalLabel }} total
           </span>
         </div>
-        <div v-if="gpsFixDelay.delay != null && gpsFixDelay.delay > 0 && trip" class="relative h-3 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
+
+        <!-- Timing stats row -->
+        <div class="flex items-center gap-4 mb-3 text-[12px]">
+          <template v-if="gpsAcq.status === 'never'">
+            <span class="font-mono font-semibold" style="color: var(--color-danger)">No GPS fix acquired</span>
+            <span style="color: var(--color-text-secondary)">— entire drive logged blind</span>
+          </template>
+          <template v-else-if="gpsAcq.status === 'instant'">
+            <span class="font-mono font-semibold" style="color: #22c55e">GPS ready at boot</span>
+            <span style="color: var(--color-text-secondary)">— full route tracked</span>
+          </template>
+          <template v-else>
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md" style="background: rgba(245, 158, 11, 0.15)">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: #f59e0b" />
+              <span class="font-mono font-semibold" style="color: #f59e0b">{{ gpsAcq.blindLabel }}</span>
+              <span style="color: var(--color-text-secondary)">blind</span>
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md" style="background: rgba(34, 197, 94, 0.1)">
+              <span class="w-1.5 h-1.5 rounded-full" style="background: #22c55e" />
+              <span class="font-mono font-semibold" style="color: #22c55e">{{ gpsAcq.fixedLabel }}</span>
+              <span style="color: var(--color-text-secondary)">tracked</span>
+            </span>
+            <span class="text-[11px] font-mono" style="color: var(--color-text-secondary)">{{ gpsAcq.blindPct }}% blind</span>
+          </template>
+        </div>
+
+        <!-- Timeline bar -->
+        <div v-if="gpsAcq.status === 'delayed'" class="relative h-2.5 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
           <div
-            class="absolute inset-y-0 left-0 rounded-full"
-            style="background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%); opacity: 0.7"
-            :style="{ width: Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100) + '%' }"
+            class="absolute inset-y-0 left-0 rounded-l-full"
+            style="background: linear-gradient(90deg, #f59e0b, #ef4444); opacity: 0.7"
+            :style="{ width: gpsAcq.blindPct + '%' }"
           />
-          <div class="absolute inset-y-0 left-0 flex items-center pl-2">
-            <span class="text-[9px] font-bold text-white drop-shadow-sm">OBD</span>
-          </div>
           <div
-            class="absolute inset-y-0 rounded-full"
-            style="background: linear-gradient(90deg, #22c55e 0%, #3b82f6 100%); opacity: 0.8"
-            :style="{
-              left: Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100) + '%',
-              width: (100 - Math.min((gpsFixDelay.delay / (trip.duration_s * 1000)) * 100, 100)) + '%'
-            }"
+            class="absolute inset-y-0 rounded-r-full"
+            style="background: linear-gradient(90deg, #22c55e, #3b82f6); opacity: 0.8"
+            :style="{ left: gpsAcq.blindPct + '%', width: (100 - gpsAcq.blindPct) + '%' }"
           />
         </div>
-        <div v-if="gpsFixDelay.delay != null && gpsFixDelay.delay > 0" class="flex justify-between mt-1 text-[9px]" style="color: var(--color-text-secondary)">
+        <div v-if="gpsAcq.status === 'delayed'" class="flex justify-between mt-1.5 text-[10px]" style="color: var(--color-text-secondary)">
           <span>Boot</span>
-          <span>GPS fix</span>
+          <span :style="{ marginLeft: (gpsAcq.blindPct - 10) + '%' }">GPS fix</span>
           <span>End</span>
+        </div>
+        <div v-else-if="gpsAcq.status === 'never'" class="relative h-2.5 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
+          <div class="absolute inset-0 rounded-full" style="background: linear-gradient(90deg, #f59e0b, #ef4444); opacity: 0.5" />
+        </div>
+
+        <!-- Assumed start from previous trip -->
+        <div v-if="gpsAcq.prevEnd && gpsAcq.status !== 'instant'" class="mt-3 pt-3 flex items-center gap-2 text-[11px]" :style="{ borderTop: '1px solid var(--color-border)' }">
+          <span class="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style="border: 1.5px dashed #f59e0b; color: #f59e0b; font-size: 9px; font-weight: 700">?</span>
+          <span style="color: var(--color-text-secondary)">Estimated start from previous trip's last position</span>
         </div>
       </div>
 
