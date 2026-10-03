@@ -15,7 +15,7 @@ Last reviewed 2026-10-03.
 | Bundle format v2 | **Complete.** Three implementations (Go, Rust, firmware C) agree byte-for-byte on 25 conformance vectors |
 | Firmware | **Running on hardware.** Capture → seal → offer → commit → receipt → verified prune; mTLS on 8443; standby with wake-on-motion; secure OTA written, install unexercised |
 | Ingest server | **Deployed** as a hardened systemd unit on the Cairn VM, mutual TLS, receipt-gated |
-| Decode pipeline | **Complete.** Idempotent and reproducible; PostgreSQL/PostGIS derived layer (not currently running on the VM) |
+| Decode pipeline | **Complete.** Idempotent and reproducible; PostgreSQL/PostGIS derived layer with full boost parity |
 | Engine telemetry | **Recording** boost, MAP, mixture and fuel trims as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
 | Analytical store | **Deployed 2026-10-03.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; 18 bundles load in ~60 ms and every one reproduces (Phase 14) |
 | Web UI | SvelteKit app exists; reads the PostgreSQL layer, not the analytical store (Phase 16) |
@@ -84,7 +84,7 @@ measurable; parked mode silent on the vehicle bus.
 - [ ] Park-draw measurement with a meter, using the recorded standby windows as
       the timeline
 
-## Phase 14 — In-memory analytical store — **in progress**
+## Phase 14 — In-memory analytical store — **done**
 
 `server/internal/tsdb`, `server/cmd/cairn-tsdb`, `deploy/systemd/cairn-tsdb.service`.
 A derived view: the CAS and the SD card are copied into a private scratch CAS,
@@ -125,19 +125,20 @@ Nothing is persisted; a restart rebuilds.
       for a full interval. A rebuild that fails or does not reproduce leaves the
       previous store serving. Verified live: adding and removing a bundle each
       triggered one rebuild with no `/reload`
-- [ ] **Parity with PostgreSQL.** Decode one bundle set into both layers and
+- [x] **Parity with PostgreSQL.** Decode one bundle set into both layers and
       assert equal row counts per table. Proves the two derived views agree.
-      Needs Postgres running, which it currently is not on the VM (containers do
-      not auto-start)
+      Added `norm.boost_samples` table + migration so PostgreSQL no longer drops
+      boost data; `TestParityWithDuckDB` asserts all seven tables match
 - [x] `/metrics` — build time, bundle and row counts, reproduced count,
       problems, decoder version, Go heap (DuckDB's native memory is bounded by
       `-memory` and the unit's `MemoryMax`, not reported here)
 - [x] Mirror of the card: `deploy/tsdb-mirror.sh <user@host> [card-dir]` — additive
       rsync of `bundles/` as the service user, then reload, then the reproduced
       counts; a build that does not reproduce fails the script
-- [ ] **Authentication before any non-loopback bind.** Reuse the private CA and
-      mTLS. Until then the endpoint stays on `127.0.0.1` because it carries GNSS
-      positions and runs caller-supplied SQL
+- [x] **Authentication before any non-loopback bind.** Reuses the private CA and
+      `internal/mtls` package. Loopback stays plain HTTP; non-loopback requires
+      `-tls-cert` and `-tls-key` (binary refuses otherwise). Optional `-tls-client-ca`
+      for mutual TLS. Systemd unit has a commented mTLS example
 
 **Persisting the store is deliberately out of scope.** Volatility is the design.
 The trigger to reconsider is a measured one: if a rebuild exceeds ~5 s.
