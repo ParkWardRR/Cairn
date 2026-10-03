@@ -1,12 +1,24 @@
 <script setup lang="ts">
+interface RouteData {
+  type: string
+  features: Array<{
+    type: string
+    geometry: { type: string; coordinates: [number, number, number][] }
+    properties: { speeds: number[]; timestamps: string[] }
+  }>
+}
+
 interface TripSummary {
   boot_id: string
-  observed_at: string
   duration_s: number
-  distance_m: number
   max_speed_kph: number
   max_rpm: number
+  obd_samples: number
+  gnss_samples: number
   gap_count: number
+  start: { observed_at: string; lat: number; lon: number } | null
+  end: { observed_at: string; lat: number; lon: number } | null
+  harsh_event_count: number
 }
 
 interface Insight {
@@ -14,12 +26,7 @@ interface Insight {
   value: string
   unit?: string
   detail?: string
-}
-
-interface TripEvent {
-  type: string
-  description: string
-  timestamp: string
+  icon?: string
 }
 
 const route = useRoute()
@@ -28,216 +35,175 @@ const bootId = computed(() => route.params.bootId as string)
 const { data: trip, status: tripStatus } = useFetch<TripSummary>(
   () => `/api/trips/${bootId.value}`,
 )
-const { data: insights } = useFetch<Insight[]>(
+const { data: routeData } = useFetch<RouteData>(
+  () => `/api/trips/${bootId.value}/route`,
+)
+const { data: insightsData } = useFetch<{ insights: Insight[] }>(
   () => `/api/trips/${bootId.value}/insights`,
 )
-const { data: events } = useFetch<TripEvent[]>(
-  () => `/api/trips/${bootId.value}/events`,
-)
 
-const eventDotColors: Record<string, string> = {
-  warning: 'var(--color-warning)',
-  danger: 'var(--color-danger)',
-  error: 'var(--color-danger)',
-  info: 'var(--color-info)',
-  success: 'var(--color-success)',
+const coordinates = computed<[number, number, number][]>(() => {
+  const feature = routeData.value?.features?.[0]
+  if (!feature || feature.geometry.type !== 'LineString') return []
+  return feature.geometry.coordinates
+})
+
+const speeds = computed<number[]>(() => {
+  return routeData.value?.features?.[0]?.properties?.speeds ?? []
+})
+
+const insights = computed(() => insightsData.value?.insights ?? [])
+
+const hasValidRoute = computed(() => {
+  return coordinates.value.filter(c => c[0] !== 0 && c[1] !== 0).length >= 2
+})
+
+function formatDuration(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return '--'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m ${s}s`
 }
 
-function dotColor(type: string): string {
-  return eventDotColors[type] ?? 'var(--color-accent)'
-}
-
-function formatTimestamp(iso: string): string {
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '--'
   const d = new Date(iso)
-  return d.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
+  if (isNaN(d.getTime())) return '--'
+  return d.toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
   })
+}
+
+function insightIcon(icon: string | undefined): string {
+  const map: Record<string, string> = {
+    clock: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+    road: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7',
+    gauge: 'M13 10V3L4 14h7v7l9-11h-7z',
+    speedometer: 'M13 10V3L4 14h7v7l9-11h-7z',
+    mountain: 'M3 21l6-9 4 5 4-7 4 11H3z',
+    valley: 'M3 3l6 9 4-5 4 7 4-11H3z',
+    turbo: 'M13 10V3L4 14h7v7l9-11h-7z',
+    tachometer: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z',
+    rocket: 'M13 10V3L4 14h7v7l9-11h-7z',
+    flame: 'M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z',
+    satellite: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z',
+    thermometer: 'M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z',
+    pause: 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z',
+  }
+  return map[icon ?? ''] ?? 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z'
 }
 </script>
 
 <template>
   <div>
-    <LayoutPageHeader title="Trip Detail" :subtitle="`Boot ID: ${bootId}`">
+    <!-- Header -->
+    <LayoutPageHeader title="Trip Detail" :subtitle="trip ? formatDate(trip.start?.observed_at) : `Boot: ${bootId.slice(0, 12)}…`">
       <template #actions>
         <NuxtLink
           to="/trips"
-          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors"
-          :style="{
-            backgroundColor: 'var(--color-surface)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-text)',
-          }"
+          class="inline-flex items-center gap-2 px-3.5 py-2 text-[13px] font-medium rounded-xl transition-colors hover:bg-[var(--color-surface-elevated)]"
+          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }"
         >
           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Trips
+          All Trips
         </NuxtLink>
       </template>
     </LayoutPageHeader>
 
-    <div v-if="tripStatus === 'pending'" class="flex items-center justify-center py-16">
+    <!-- Loading -->
+    <div v-if="tripStatus === 'pending'" class="flex items-center justify-center py-20">
       <div class="spinner" />
     </div>
 
-    <template v-else>
-      <!-- Stat cards row -->
-      <div v-if="trip" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <DataStatCard
-          label="Duration"
-          :value="trip.duration_s >= 3600
-            ? `${Math.floor(trip.duration_s / 3600)}:${String(Math.floor((trip.duration_s % 3600) / 60)).padStart(2, '0')}`
-            : `${Math.floor(trip.duration_s / 60)}:${String(Math.floor(trip.duration_s % 60)).padStart(2, '0')}`"
-          :subtitle="trip.duration_s >= 3600 ? 'hours' : 'minutes'"
-        />
-        <DataStatCard
-          label="Distance"
-          :value="`${(trip.distance_m / 1000).toFixed(1)}`"
-          subtitle="km"
-        />
-        <DataStatCard
-          label="Max Speed"
-          :value="`${trip.max_speed_kph}`"
-          subtitle="kph"
-        />
-        <DataStatCard
-          label="Max RPM"
-          :value="`${trip.max_rpm}`"
-          :color="trip.max_rpm >= 6000 ? 'warning' : 'default'"
-        />
+    <template v-else-if="trip">
+      <!-- Stat bar -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <DataStatCard label="Duration" :value="formatDuration(trip.duration_s)" />
+        <DataStatCard label="Max Speed" :value="`${trip.max_speed_kph}`" subtitle="kph" />
+        <DataStatCard label="Max RPM" :value="`${trip.max_rpm?.toLocaleString()}`" :color="trip.max_rpm >= 6000 ? 'warning' : 'default'" />
+        <DataStatCard label="OBD Samples" :value="`${trip.obd_samples?.toLocaleString()}`" />
       </div>
 
-      <!-- Two-panel layout -->
-      <div class="grid grid-cols-1 lg:grid-cols-[65fr_35fr] gap-6">
-        <!-- Left panel -->
-        <div class="space-y-4">
-          <!-- Map placeholder -->
-          <div
-            class="h-80 rounded-xl flex items-center justify-center"
-            :style="{
-              backgroundColor: 'var(--color-surface-elevated)',
-              border: '1px solid var(--color-border)',
-            }"
-          >
-            <span class="text-[13px] font-sans" style="color: var(--color-text-secondary)">
-              Map loads here
-            </span>
-          </div>
-
-          <!-- Elevation / speed chart placeholder -->
-          <div
-            class="h-48 rounded-xl flex items-center justify-center"
-            :style="{
-              backgroundColor: 'var(--color-surface-elevated)',
-              border: '1px solid var(--color-border)',
-            }"
-          >
-            <span class="text-[13px] font-sans" style="color: var(--color-text-secondary)">
-              Elevation chart placeholder
-            </span>
-          </div>
-        </div>
-
-        <!-- Right panel -->
-        <div class="space-y-6">
-          <!-- Insights section -->
-          <div>
-            <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
-              Insights
-            </h2>
-            <div class="space-y-3">
-              <div
-                v-for="(insight, i) in (insights ?? [])"
-                :key="i"
-                class="rounded-xl p-4"
-                :style="{
-                  backgroundColor: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                }"
-              >
-                <p class="text-[11px] font-semibold uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
-                  {{ insight.label }}
-                </p>
-                <p class="text-xl font-bold font-mono mt-1">
-                  {{ insight.value }}<span v-if="insight.unit" class="text-sm font-normal ml-1" style="color: var(--color-text-secondary)">{{ insight.unit }}</span>
-                </p>
-                <p v-if="insight.detail" class="text-xs mt-1 font-sans" style="color: var(--color-text-secondary)">
-                  {{ insight.detail }}
-                </p>
-              </div>
-              <DataEmptyState
-                v-if="(insights ?? []).length === 0"
-                title="No insights"
-                message="Insight data is not available for this trip."
-              />
-            </div>
-          </div>
-
-          <!-- Events timeline -->
-          <div>
-            <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
-              Events
-            </h2>
-            <div v-if="(events ?? []).length > 0" class="relative pl-6">
-              <!-- Vertical line -->
-              <div
-                class="absolute left-[7px] top-2 bottom-2 w-px"
-                :style="{ backgroundColor: 'var(--color-border)' }"
-              />
-
-              <div v-for="(event, i) in events" :key="i" class="relative pb-5 last:pb-0">
-                <!-- Dot -->
-                <div
-                  class="absolute -left-6 top-1.5 w-[9px] h-[9px] rounded-full ring-[3px]"
-                  :style="{
-                    backgroundColor: dotColor(event.type),
-                    ringColor: 'var(--color-bg)',
-                  }"
-                />
-                <p class="text-xs font-mono" style="color: var(--color-text-secondary)">
-                  {{ formatTimestamp(event.timestamp) }}
-                </p>
-                <p class="text-sm mt-0.5">
-                  {{ event.description }}
-                </p>
-              </div>
-            </div>
-            <DataEmptyState
-              v-else
-              title="No events"
-              message="No events were recorded during this trip."
+      <!-- Map -->
+      <div class="rounded-xl overflow-hidden mb-4" :style="{ border: '1px solid var(--color-border)' }">
+        <ClientOnly>
+          <div v-if="hasValidRoute" style="height: 420px">
+            <MapsTripMap
+              :coordinates="coordinates"
+              :speeds="speeds"
             />
           </div>
+          <template #fallback>
+            <div class="flex items-center justify-center" style="height: 420px; background: var(--color-surface-elevated)">
+              <div class="spinner" />
+            </div>
+          </template>
+        </ClientOnly>
+        <div v-if="!hasValidRoute" class="flex items-center justify-center" style="height: 240px; background: var(--color-surface-elevated)">
+          <div class="text-center">
+            <svg class="w-8 h-8 mx-auto mb-2" style="color: var(--color-text-secondary)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <p class="text-[13px]" style="color: var(--color-text-secondary)">No GPS route data for this trip</p>
+          </div>
+        </div>
+      </div>
 
-          <!-- Actions -->
-          <div class="space-y-3">
-            <button
-              class="w-full px-4 py-2.5 text-sm font-medium rounded-xl hover:opacity-90 transition-all"
-              :style="{
-                backgroundColor: 'var(--color-accent)',
-                color: 'var(--color-bg)',
-              }"
-            >
-              Export Trip
-            </button>
-            <div
-              class="rounded-xl p-4"
-              :style="{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-              }"
-            >
-              <p class="text-[11px] font-semibold uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
-                Tags
-              </p>
-              <p class="text-sm mt-2" style="color: var(--color-text-secondary)">
-                No tags added yet
-              </p>
+      <!-- Speed / Elevation sparkline -->
+      <div class="rounded-xl p-4 mb-6" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <div class="flex items-center gap-4 mb-2">
+          <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Speed & Elevation</span>
+          <div class="flex items-center gap-3 text-[10px]" style="color: var(--color-text-secondary)">
+            <span class="flex items-center gap-1"><span class="w-2 h-0.5 rounded-full" style="background: #3b82f6" /> Speed</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-0.5 rounded-full" style="background: #8b5cf6" /> Altitude</span>
+          </div>
+        </div>
+        <ChartsTripSparkline :coordinates="coordinates" :speeds="speeds" />
+      </div>
+
+      <!-- Insights grid -->
+      <div v-if="insights.length" class="mb-6">
+        <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Trip Insights</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div
+            v-for="(insight, i) in insights"
+            :key="i"
+            class="rounded-xl p-4 transition-all duration-150 hover:-translate-y-0.5"
+            :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+          >
+            <div class="flex items-start gap-3">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style="background: var(--color-accent-soft)">
+                <svg class="w-4 h-4" style="color: var(--color-accent)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                  <path stroke-linecap="round" stroke-linejoin="round" :d="insightIcon(insight.icon)" />
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <p class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">{{ insight.label }}</p>
+                <p class="text-lg font-bold font-mono mt-0.5 tracking-tight">
+                  {{ insight.value }}
+                  <span v-if="insight.unit" class="text-xs font-normal" style="color: var(--color-text-secondary)">{{ insight.unit }}</span>
+                </p>
+                <p v-if="insight.detail" class="text-[11px] mt-0.5" style="color: var(--color-text-secondary)">{{ insight.detail }}</p>
+              </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Trip metadata footer -->
+      <div class="rounded-xl p-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <div class="flex flex-wrap gap-x-8 gap-y-2 text-[11px]" style="color: var(--color-text-secondary)">
+          <span><span class="font-semibold">Boot ID:</span> <span class="font-mono">{{ bootId }}</span></span>
+          <span v-if="trip.gnss_samples"><span class="font-semibold">GNSS:</span> {{ trip.gnss_samples }} fixes</span>
+          <span v-if="trip.gap_count"><span class="font-semibold">Gaps:</span> {{ trip.gap_count }}</span>
+          <span v-if="trip.harsh_event_count"><span class="font-semibold">Harsh events:</span> {{ trip.harsh_event_count }}</span>
+          <span v-if="trip.start?.observed_at"><span class="font-semibold">Started:</span> {{ formatDate(trip.start.observed_at) }}</span>
+          <span v-if="trip.end?.observed_at"><span class="font-semibold">Ended:</span> {{ formatDate(trip.end.observed_at) }}</span>
         </div>
       </div>
     </template>

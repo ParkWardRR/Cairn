@@ -1,7 +1,7 @@
 export default defineEventHandler(async (event) => {
   const bootId = getRouterParam(event, 'bootId')
   if (!bootId) throw createError({ statusCode: 400, statusMessage: 'bootId required' })
-  const id = sqlInt(bootId)
+  const id = sqlString(bootId)
 
   const imuEvents = await queryTsdbObjects(`
     SELECT mono_ms, observed_at, accel_rms_mg, accel_peak_x_mg, accel_peak_y_mg, accel_peak_z_mg,
