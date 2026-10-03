@@ -4,8 +4,8 @@
   "asserts": "Every record type is parsed and the scan reaches EOF with nothing discarded.",
   "scan": {
     "stop_reason": "EOF",
-    "frames_retained": 9,
-    "stop_offset": 460,
+    "frames_retained": 10,
+    "stop_offset": 504,
     "discarded_tail_bytes": 0,
     "unknown_type_count": 0,
     "record_counts": {
@@ -14,12 +14,13 @@
       "GNSS_SAMPLE": 1,
       "IMU_RAW_WINDOW": 1,
       "IMU_SUMMARY": 1,
+      "OBD_EXTENDED": 1,
       "OBD_SNAPSHOT": 1,
       "POLICY_SNAPSHOT": 1,
       "STATE_TRANSITION": 1,
       "TRIP_EVENT": 1
     },
     "first_seq": 0,
-    "last_seq": 8
+    "last_seq": 9
   }
 }
