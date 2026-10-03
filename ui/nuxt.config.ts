@@ -40,12 +40,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     tsdbUrl: 'http://127.0.0.1:8480',
-    appleMapTeamId: '',
-    appleMapKeyId: '',
-    appleMapPrivateKeyPath: '',
     public: {
-      mapProvider: 'apple',
-      pmtilesUrl: '/tiles/region.pmtiles',
       cartoKey: '',
     },
   },
