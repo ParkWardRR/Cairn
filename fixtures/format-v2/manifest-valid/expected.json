@@ -7,6 +7,6 @@
     "signature_valid": true,
     "content_root_hex": "5a674015991470856d2686e1ba1ea7733163e52ef08af279bd76a3a97b574c2f",
     "device_public_key_hex": "82d77de53c4ee04eadbb4ccaf82c5517ca83e8cf2cff07b4a12353e6780bc304",
-    "canonical_bytes_sha256_hex": "1a7fb432adf1565c9854a46d575856cd33c9940d049f9b381569ca0292bb032e"
+    "canonical_bytes_sha256_hex": "fd8685bcb670fa4025f058a891fffd8ae3654ec6355f2a913b54ee72f82c6e14"
   }
 }
