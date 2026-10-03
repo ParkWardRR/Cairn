@@ -55,6 +55,7 @@ const { data: recent, pending: recentPending } = useFetch<{
     boot_id: string
     duration_s: number
     max_speed_kph: number
+    max_rpm: number
     start_lat: number
     start_lon: number
     end_lat: number
@@ -70,8 +71,26 @@ const { data: device, pending: devicePending } = useFetch<{
   health_state: number
   observed_at: string
 }>('/api/dashboard/device')
+const { data: highlights } = useFetch<{
+  engine: {
+    peak_boost_psi: number | null
+    peak_rpm: number | null
+    avg_lambda: number | null
+    avg_stft: number | null
+    avg_ltft: number | null
+    max_coolant_c: number | null
+    obd_samples: number
+  }
+  imu: {
+    imu_samples: number
+    peak_long_g: number | null
+    peak_lat_g: number | null
+    peak_yaw_dps: number | null
+  }
+}>('/api/dashboard/highlights')
 
 const lastTrip = computed(() => recent.value?.trips?.[0] ?? null)
+const recentTrips = computed(() => recent.value?.trips?.slice(0, 5) ?? [])
 </script>
 
 <template>
@@ -217,6 +236,75 @@ const lastTrip = computed(() => recent.value?.trips?.[0] ?? null)
         </template>
 
         <DataEmptyState v-else title="No device data" message="Device health information will appear once the dongle connects." />
+      </div>
+    </div>
+
+    <!-- Engine & Tune Highlights -->
+    <div v-if="highlights" class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mt-6">
+      <DataStatCard
+        label="Peak Boost"
+        :value="highlights.engine.peak_boost_psi != null ? `${highlights.engine.peak_boost_psi}` : '--'"
+        subtitle="psi all time"
+        :color="(highlights.engine.peak_boost_psi ?? 0) > 20 ? 'warning' : undefined"
+      />
+      <DataStatCard
+        label="Peak RPM"
+        :value="highlights.engine.peak_rpm != null ? highlights.engine.peak_rpm.toLocaleString() : '--'"
+        subtitle="all time"
+        :color="(highlights.engine.peak_rpm ?? 0) >= 6000 ? 'warning' : undefined"
+      />
+      <DataStatCard
+        label="Avg Lambda"
+        :value="highlights.engine.avg_lambda != null ? String(highlights.engine.avg_lambda) : '--'"
+        :subtitle="(highlights.engine.avg_lambda ?? 1) > 1.1 ? 'running lean (E41 expected)' : 'stoichiometric'"
+      />
+      <DataStatCard
+        label="LTFT"
+        :value="highlights.engine.avg_ltft != null ? `${highlights.engine.avg_ltft > 0 ? '+' : ''}${highlights.engine.avg_ltft}%` : '--'"
+        :subtitle="(highlights.engine.avg_ltft ?? 0) > 10 ? 'high — ethanol blend' : 'fuel trim'"
+        :color="Math.abs(highlights.engine.avg_ltft ?? 0) > 20 ? 'warning' : undefined"
+      />
+    </div>
+
+    <!-- Recent Trips -->
+    <div class="mt-6">
+      <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Recent Trips</h2>
+
+      <template v-if="recentPending">
+        <div class="space-y-2">
+          <div v-for="i in 3" :key="i" class="skeleton h-14" />
+        </div>
+      </template>
+
+      <div
+        v-else-if="recentTrips.length"
+        class="rounded-xl overflow-hidden"
+        :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+      >
+        <div
+          v-for="(t, idx) in recentTrips"
+          :key="t.boot_id"
+          class="flex items-center justify-between px-5 py-3.5 cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
+          :style="idx < recentTrips.length - 1 ? { borderBottom: '1px solid var(--color-border)' } : {}"
+          @click="navigateTo(`/trips/${t.boot_id}`)"
+        >
+          <div class="flex items-center gap-4">
+            <div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style="background: var(--color-accent-soft)">
+              <svg class="w-4 h-4" style="color: var(--color-accent)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+            </div>
+            <div>
+              <p class="text-[13px] font-medium">{{ timeAgo(t.start_time) }}</p>
+              <p class="text-[11px] font-mono" style="color: var(--color-text-secondary)">
+                {{ formatDuration(t.duration_s) }} · {{ Math.round(t.max_speed_kph / 1.60934) }} mph · {{ (t.max_rpm ?? 0).toLocaleString() }} rpm
+              </p>
+            </div>
+          </div>
+          <svg class="w-4 h-4 opacity-0 group-hover:opacity-30 transition-opacity" style="color: var(--color-text-secondary)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
       </div>
     </div>
   </div>

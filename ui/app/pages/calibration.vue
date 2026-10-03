@@ -4,21 +4,29 @@ import VChart from 'vue-echarts'
 
 definePageMeta({ layout: 'default' })
 
-// ---------------------------------------------------------------------------
-// Data fetching
-// ---------------------------------------------------------------------------
+interface SpeedPoint {
+  boot_id: string
+  mono_ms: number
+  obd_speed_kph: number
+  gnss_speed_kph: number
+  ratio: number | null
+  gnss_age_ms: number
+}
 
-const { data, pending } = useFetch<{
-  points: Array<{ obd_kph: number; gnss_kph: number }>
-  median_ratio: number
-  point_count: number
-}>('/api/analytics/speed-agreement')
+const { data, pending } = useFetch<{ speedAgreement: SpeedPoint[] }>('/api/analytics/speed-agreement')
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const points = computed(() => {
+  return (data.value?.speedAgreement ?? []).filter(p => p.ratio != null && p.obd_speed_kph > 5)
+})
 
-function ratioColor(ratio: number | undefined): 'success' | 'warning' | 'danger' {
+const medianRatio = computed(() => {
+  const ratios = points.value.map(p => p.ratio!).sort((a, b) => a - b)
+  if (!ratios.length) return null
+  const mid = Math.floor(ratios.length / 2)
+  return ratios.length % 2 === 0 ? (ratios[mid - 1] + ratios[mid]) / 2 : ratios[mid]
+})
+
+function ratioColor(ratio: number | null): 'success' | 'warning' | 'danger' {
   if (ratio == null) return 'danger'
   const dev = Math.abs(ratio - 1)
   if (dev <= 0.03) return 'success'
@@ -26,22 +34,24 @@ function ratioColor(ratio: number | undefined): 'success' | 'warning' | 'danger'
   return 'danger'
 }
 
-// ---------------------------------------------------------------------------
-// Chart
-// ---------------------------------------------------------------------------
+function ratioLabel(ratio: number | null): string {
+  if (ratio == null) return '--'
+  const pct = ((ratio - 1) * 100).toFixed(1)
+  if (ratio > 1.01) return `OBD reads ${pct}% high`
+  if (ratio < 0.99) return `OBD reads ${Math.abs(+pct).toFixed(1)}% low`
+  return 'Well calibrated'
+}
 
 const chartOption = computed(() => {
-  const points = data.value?.points ?? []
-  const scatterData = points.map((p) => [p.obd_kph, p.gnss_kph])
+  const scatterData = points.value.map(p => [
+    Math.round(p.obd_speed_kph / 1.60934),
+    Math.round(p.gnss_speed_kph / 1.60934),
+  ])
 
+  const maxMph = 100
   return {
     backgroundColor: 'transparent',
-    grid: {
-      left: 60,
-      right: 30,
-      top: 30,
-      bottom: 50,
-    },
+    grid: { left: 60, right: 30, top: 30, bottom: 50 },
     tooltip: {
       trigger: 'item',
       backgroundColor: '#1a1d27',
@@ -49,27 +59,28 @@ const chartOption = computed(() => {
       textStyle: { color: '#e8eaf0', fontSize: 12 },
       formatter: (params: any) => {
         const [obd, gnss] = params.value
-        return `OBD: ${obd.toFixed(1)} kph<br/>GNSS: ${gnss.toFixed(1)} kph`
+        const ratio = gnss > 0 ? (obd / gnss).toFixed(3) : '--'
+        return `OBD: ${obd} mph<br>GNSS: ${gnss} mph<br>Ratio: ${ratio}`
       },
     },
     xAxis: {
-      name: 'OBD Speed (kph)',
+      name: 'OBD Speed (mph)',
       nameLocation: 'middle',
       nameGap: 35,
       nameTextStyle: { color: '#8b90a0', fontSize: 12 },
       min: 0,
-      max: 250,
+      max: maxMph,
       axisLabel: { color: '#8b90a0' },
       axisLine: { lineStyle: { color: '#2e3347' } },
       splitLine: { lineStyle: { color: '#2e3347' } },
     },
     yAxis: {
-      name: 'GNSS Speed (kph)',
+      name: 'GNSS Speed (mph)',
       nameLocation: 'middle',
       nameGap: 45,
       nameTextStyle: { color: '#8b90a0', fontSize: 12 },
       min: 0,
-      max: 250,
+      max: maxMph,
       axisLabel: { color: '#8b90a0' },
       axisLine: { lineStyle: { color: '#2e3347' } },
       splitLine: { lineStyle: { color: '#2e3347' } },
@@ -78,26 +89,14 @@ const chartOption = computed(() => {
       {
         type: 'scatter',
         data: scatterData,
-        symbolSize: 4,
-        itemStyle: {
-          color: '#3b82f6',
-          opacity: 0.4,
-        },
+        symbolSize: 5,
+        itemStyle: { color: '#3b82f6', opacity: 0.5 },
         markLine: {
           silent: true,
           symbol: 'none',
-          lineStyle: {
-            color: '#22c55e',
-            type: 'dashed',
-            width: 1.5,
-          },
+          lineStyle: { color: '#22c55e', type: 'dashed', width: 1.5 },
           label: { show: false },
-          data: [
-            [
-              { coord: [0, 0] },
-              { coord: [250, 250] },
-            ],
-          ],
+          data: [[{ coord: [0, 0] }, { coord: [maxMph, maxMph] }]],
         },
       },
     ],
@@ -107,84 +106,61 @@ const chartOption = computed(() => {
 
 <template>
   <div>
-    <LayoutPageHeader
-      title="Speedometer Calibration"
-      subtitle="OBD vs GNSS speed agreement"
-    />
+    <LayoutPageHeader title="Speedometer Calibration" subtitle="OBD vs GNSS speed agreement">
+      <template #actions>
+        <span v-if="points.length" class="text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-accent-soft); color: var(--color-accent)">
+          {{ points.length }} samples
+        </span>
+      </template>
+    </LayoutPageHeader>
 
-    <!-- Loading state -->
     <template v-if="pending">
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-        <div
-          v-for="i in 2"
-          :key="i"
-          class="skeleton h-[100px]"
-        />
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <div v-for="i in 3" :key="i" class="skeleton h-[100px]" />
       </div>
     </template>
 
-    <!-- Data loaded -->
-    <template v-else-if="data">
+    <template v-else>
       <!-- Stat cards -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <DataStatCard
           label="Median Ratio"
-          :value="data.median_ratio.toFixed(3)"
+          :value="medianRatio != null ? medianRatio.toFixed(3) : '--'"
           subtitle="OBD / GNSS ratio"
-          :color="ratioColor(data.median_ratio)"
+          :color="ratioColor(medianRatio)"
+        />
+        <DataStatCard
+          label="Agreement"
+          :value="ratioLabel(medianRatio)"
+          :subtitle="medianRatio != null ? `based on ${points.length} samples` : 'no data'"
         />
         <DataStatCard
           label="Data Points"
-          :value="String(data.point_count)"
-          subtitle="speed samples"
+          :value="String(points.length)"
+          subtitle="above 3 mph"
         />
       </div>
 
       <!-- Scatter chart -->
-      <div
-        class="rounded-xl p-6 mb-6"
-        :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
-      >
+      <div class="rounded-xl p-5 mb-6" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
         <h2 class="text-[13px] font-semibold mb-4">Speed Agreement — OBD vs GNSS</h2>
 
-        <template v-if="data.points.length > 0">
-          <VChart
-            :option="chartOption"
-            autoresize
-            style="height: 500px; width: 100%"
-          />
+        <template v-if="points.length > 0">
+          <VChart :option="chartOption" autoresize style="height: 500px; width: 100%" />
         </template>
-        <DataEmptyState
-          v-else
-          title="No speed data"
-          message="Speed agreement data will appear once trips with both OBD and GNSS readings are recorded."
-        />
+        <DataEmptyState v-else title="No speed data" message="Speed agreement data will appear once trips with both OBD and GNSS readings are recorded." />
       </div>
 
       <!-- Explanation card -->
-      <div
-        class="rounded-xl p-6"
-        :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
-      >
-        <h3
-          class="text-xs font-semibold uppercase tracking-wider mb-2"
-          style="color: var(--color-text-secondary)"
-        >
-          How to read this
-        </h3>
-        <p class="text-sm leading-relaxed" style="color: var(--color-text-secondary)">
-          Points along the green diagonal indicate perfect agreement between OBD and GNSS
-          speeds. Points above the line mean OBD reads higher than actual speed. A median
-          ratio of 1.00 means perfect calibration.
+      <div class="rounded-xl p-5" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <h3 class="text-[11px] font-semibold uppercase tracking-wider mb-2" style="color: var(--color-text-secondary)">How to read this</h3>
+        <p class="text-[13px] leading-relaxed" style="color: var(--color-text-secondary)">
+          Points along the green diagonal indicate perfect agreement between OBD and GNSS speeds.
+          Points above the line mean OBD reads higher than actual speed.
+          A median ratio of 1.000 means perfect calibration; values above 1.0 indicate the
+          speedometer reads fast (common on modified cars with different tire sizes or ECU tunes).
         </p>
       </div>
     </template>
-
-    <!-- Empty / error state -->
-    <DataEmptyState
-      v-else
-      title="No calibration data"
-      message="Speed agreement data will appear once trips with both OBD and GNSS readings are recorded."
-    />
   </div>
 </template>

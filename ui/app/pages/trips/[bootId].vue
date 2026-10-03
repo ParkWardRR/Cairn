@@ -263,25 +263,43 @@ function insightIcon(icon: string | undefined): string {
         </div>
 
         <!-- Timeline bar -->
-        <div v-if="gpsAcq.status === 'delayed'" class="relative h-2.5 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
+        <div v-if="gpsAcq.status === 'delayed'" class="relative h-6 rounded-full overflow-hidden cursor-default" style="background: var(--color-surface-elevated)">
           <div
-            class="absolute inset-y-0 left-0 rounded-l-full"
+            class="absolute inset-y-0 left-0 rounded-l-full gps-bar-segment"
             style="background: linear-gradient(90deg, #f59e0b, #ef4444); opacity: 0.7"
             :style="{ width: gpsAcq.blindPct + '%' }"
-          />
+            :title="`Blind: ${gpsAcq.blindLabel} — OBD logging only, no GPS position\n${gpsAcq.blindPct}% of drive\nSpeed, RPM, boost recorded but no route`"
+          >
+            <span v-if="gpsAcq.blindPct > 12" class="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white/90 drop-shadow-sm">
+              {{ gpsAcq.blindLabel }}
+            </span>
+          </div>
           <div
-            class="absolute inset-y-0 rounded-r-full"
+            class="absolute inset-y-0 rounded-r-full gps-bar-segment"
             style="background: linear-gradient(90deg, #22c55e, #3b82f6); opacity: 0.8"
             :style="{ left: gpsAcq.blindPct + '%', width: (100 - gpsAcq.blindPct) + '%' }"
-          />
+            :title="`Tracked: ${gpsAcq.fixedLabel} — full GPS route recorded\n${100 - gpsAcq.blindPct}% of drive\nAll telemetry + position logged`"
+          >
+            <span v-if="gpsAcq.blindPct < 88" class="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white/90 drop-shadow-sm">
+              {{ gpsAcq.fixedLabel }}
+            </span>
+          </div>
         </div>
         <div v-if="gpsAcq.status === 'delayed'" class="flex justify-between mt-1.5 text-[10px]" style="color: var(--color-text-secondary)">
           <span>Boot</span>
           <span :style="{ marginLeft: (gpsAcq.blindPct - 10) + '%' }">GPS fix</span>
           <span>End</span>
         </div>
-        <div v-else-if="gpsAcq.status === 'never'" class="relative h-2.5 rounded-full overflow-hidden" style="background: var(--color-surface-elevated)">
-          <div class="absolute inset-0 rounded-full" style="background: linear-gradient(90deg, #f59e0b, #ef4444); opacity: 0.5" />
+        <div v-else-if="gpsAcq.status === 'never'" class="relative h-6 rounded-full overflow-hidden cursor-default" style="background: var(--color-surface-elevated)">
+          <div
+            class="absolute inset-0 rounded-full gps-bar-segment"
+            style="background: linear-gradient(90deg, #f59e0b, #ef4444); opacity: 0.5"
+            :title="`No GPS fix — entire ${gpsAcq.totalLabel} drive logged blind\nOBD data recorded but no route`"
+          >
+            <span class="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white/80 drop-shadow-sm">
+              {{ gpsAcq.totalLabel }} blind
+            </span>
+          </div>
         </div>
 
         <!-- Assumed start from previous trip -->
