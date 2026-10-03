@@ -120,21 +120,21 @@ const tsdbPairs = computed(() => {
     <!-- Health charts -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
       <template v-if="healthPending">
-        <div v-for="i in 2" :key="i" class="rounded-lg animate-pulse" style="height: 248px"
+        <div v-for="i in 2" :key="i" class="rounded-xl skeleton" style="height: 248px"
           :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }" />
       </template>
       <template v-else-if="series.length > 0">
-        <div class="rounded-lg p-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-          <h3 class="text-sm font-semibold mb-2">Temperature</h3>
+        <div class="rounded-xl p-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+          <h3 class="text-[13px] font-semibold mb-3">Temperature</h3>
           <v-chart :option="tempChart" style="height: 200px; width: 100%" autoresize />
         </div>
-        <div class="rounded-lg p-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-          <h3 class="text-sm font-semibold mb-2">SD Free</h3>
+        <div class="rounded-xl p-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+          <h3 class="text-[13px] font-semibold mb-3">SD Free</h3>
           <v-chart :option="sdChart" style="height: 200px; width: 100%" autoresize />
         </div>
       </template>
       <template v-else>
-        <div class="lg:col-span-2 rounded-lg p-6"
+        <div class="lg:col-span-2 rounded-xl p-6"
           :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
           <DataEmptyState title="No health data" message="Device health metrics will appear once the dongle reports in." />
         </div>
@@ -142,9 +142,9 @@ const tsdbPairs = computed(() => {
     </div>
 
     <!-- Data Bundles -->
-    <div class="rounded-lg p-6 mb-6"
+    <div class="rounded-xl p-6 mb-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-      <h2 class="text-lg font-semibold mb-4">Data Bundles</h2>
+      <h2 class="text-base font-semibold mb-4">Data Bundles</h2>
 
       <template v-if="bundlesPending">
         <p class="text-sm" style="color: var(--color-text-secondary)">Loading...</p>
@@ -154,27 +154,27 @@ const tsdbPairs = computed(() => {
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-xs uppercase tracking-wider text-left"
+              <tr class="text-[11px] font-semibold uppercase tracking-wider text-left"
                 :style="{ color: 'var(--color-text-secondary)', borderBottom: '1px solid var(--color-border)' }">
-                <th class="pb-3 pr-4 font-medium">Boot ID</th>
-                <th class="pb-3 pr-4 font-medium">Origin</th>
-                <th class="pb-3 pr-4 font-medium text-right">Position</th>
-                <th class="pb-3 pr-4 font-medium text-right">OBD</th>
-                <th class="pb-3 pr-4 font-medium text-right">Boost</th>
-                <th class="pb-3 pr-4 font-medium text-right">IMU</th>
-                <th class="pb-3 font-medium">Reproduced</th>
+                <th class="px-5 py-3 font-medium">Boot ID</th>
+                <th class="px-5 py-3 font-medium">Origin</th>
+                <th class="px-5 py-3 font-medium text-right">Position</th>
+                <th class="px-5 py-3 font-medium text-right">OBD</th>
+                <th class="px-5 py-3 font-medium text-right">Boost</th>
+                <th class="px-5 py-3 font-medium text-right">IMU</th>
+                <th class="px-5 py-3 font-medium">Reproduced</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="b in bundles" :key="b.bundle_id"
                 :style="{ borderBottom: '1px solid var(--color-border)' }">
-                <td class="py-3 pr-4 font-mono text-xs">{{ b.boot_id.slice(0, 12) }}…</td>
-                <td class="py-3 pr-4 text-xs">{{ b.origin }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-right">{{ b.n_position }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-right">{{ b.n_obd }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-right">{{ b.n_boost }}</td>
-                <td class="py-3 pr-4 font-mono text-xs text-right">{{ b.n_imu }}</td>
-                <td class="py-3">
+                <td class="px-5 py-3.5 font-mono text-xs">{{ b.boot_id.slice(0, 12) }}…</td>
+                <td class="px-5 py-3.5 text-xs">{{ b.origin }}</td>
+                <td class="px-5 py-3.5 font-mono text-xs text-right">{{ b.n_position }}</td>
+                <td class="px-5 py-3.5 font-mono text-xs text-right">{{ b.n_obd }}</td>
+                <td class="px-5 py-3.5 font-mono text-xs text-right">{{ b.n_boost }}</td>
+                <td class="px-5 py-3.5 font-mono text-xs text-right">{{ b.n_imu }}</td>
+                <td class="px-5 py-3.5">
                   <DataStatusBadge
                     :status="b.reproduced ? 'success' : 'warning'"
                     :label="b.reproduced ? 'Yes' : 'No'"
@@ -190,9 +190,9 @@ const tsdbPairs = computed(() => {
     </div>
 
     <!-- TSDB Status -->
-    <div class="rounded-lg p-6"
+    <div class="rounded-xl p-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-      <h2 class="text-lg font-semibold mb-4">TSDB Status</h2>
+      <h2 class="text-base font-semibold mb-4">TSDB Status</h2>
 
       <template v-if="tsdbPending">
         <p class="text-sm" style="color: var(--color-text-secondary)">Loading...</p>
@@ -201,7 +201,7 @@ const tsdbPairs = computed(() => {
       <template v-else-if="tsdb">
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
           <div v-for="pair in tsdbPairs" :key="pair.label">
-            <p class="text-xs font-medium uppercase tracking-wider font-sans mb-1" style="color: var(--color-text-secondary)">
+            <p class="text-[11px] font-semibold uppercase tracking-wider font-sans mb-1" style="color: var(--color-text-secondary)">
               {{ pair.label }}
             </p>
             <p class="text-base font-mono font-medium">{{ pair.value }}</p>

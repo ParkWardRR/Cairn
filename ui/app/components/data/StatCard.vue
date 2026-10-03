@@ -1,23 +1,37 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   label: string
   value: string
   subtitle?: string
   trend?: 'up' | 'down' | 'flat'
   color?: 'default' | 'success' | 'warning' | 'danger'
 }>()
+
+const accentBorder = computed(() => {
+  const map: Record<string, string> = {
+    success: 'var(--color-success)',
+    warning: 'var(--color-warning)',
+    danger: 'var(--color-danger)',
+  }
+  return map[props.color ?? ''] ?? 'transparent'
+})
 </script>
 
 <template>
   <div
-    class="rounded-lg p-5 transition-colors"
-    :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+    class="group relative rounded-xl p-5 transition-all duration-200 hover:-translate-y-0.5"
+    :style="{
+      backgroundColor: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+      borderTopColor: accentBorder !== 'transparent' ? accentBorder : undefined,
+      borderTopWidth: accentBorder !== 'transparent' ? '2px' : undefined,
+    }"
   >
-    <p class="text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">
+    <p class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">
       {{ label }}
     </p>
     <p
-      class="text-3xl font-bold mt-2 font-mono"
+      class="text-2xl font-bold mt-2 font-mono tracking-tight"
       :class="{
         'text-[var(--color-success)]': color === 'success',
         'text-[var(--color-warning)]': color === 'warning',
@@ -32,9 +46,9 @@ defineProps<{
         'text-[var(--color-danger)]': trend === 'down',
         'text-[var(--color-text-secondary)]': trend === 'flat',
       }">
-        {{ trend === 'up' ? '▲' : trend === 'down' ? '▼' : '—' }}
+        {{ trend === 'up' ? '↑' : trend === 'down' ? '↓' : '—' }}
       </span>
-      <span v-if="subtitle" class="text-sm" style="color: var(--color-text-secondary)">{{ subtitle }}</span>
+      <span v-if="subtitle" class="text-xs" style="color: var(--color-text-secondary)">{{ subtitle }}</span>
     </div>
   </div>
 </template>

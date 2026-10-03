@@ -92,7 +92,7 @@ const loading = computed(() => curveStatus.value === 'pending' || pullsStatus.va
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
       <template v-if="loading">
-        <div v-for="i in 3" :key="i" class="rounded-lg p-5 animate-pulse h-28"
+        <div v-for="i in 3" :key="i" class="rounded-xl p-5 skeleton h-[100px]"
           :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }" />
       </template>
       <template v-else>
@@ -102,14 +102,13 @@ const loading = computed(() => curveStatus.value === 'pending' || pullsStatus.va
       </template>
     </div>
 
-    <div class="rounded-lg p-6 mb-6"
+    <div class="rounded-xl p-6 mb-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-      <h2 class="text-lg font-semibold mb-4">Boost Curve — RPM vs Boost PSI</h2>
+      <h2 class="text-base font-semibold mb-4">Boost Curve — RPM vs Boost PSI</h2>
 
       <template v-if="curveStatus === 'pending'">
         <div class="flex items-center justify-center" style="height: 400px">
-          <div class="w-6 h-6 rounded-full border-2 animate-spin"
-            :style="{ borderColor: 'var(--color-border)', borderTopColor: 'var(--color-accent)' }" />
+          <div class="spinner" />
         </div>
       </template>
 
@@ -119,14 +118,13 @@ const loading = computed(() => curveStatus.value === 'pending' || pullsStatus.va
       <VChart v-else :option="chartOption" autoresize style="height: 400px; width: 100%" />
     </div>
 
-    <div class="rounded-lg p-6"
+    <div class="rounded-xl p-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-      <h2 class="text-lg font-semibold mb-4">WOT Pulls</h2>
+      <h2 class="text-base font-semibold mb-4">WOT Pulls</h2>
 
       <template v-if="pullsStatus === 'pending'">
         <div class="flex items-center justify-center py-12">
-          <div class="w-6 h-6 rounded-full border-2 animate-spin"
-            :style="{ borderColor: 'var(--color-border)', borderTopColor: 'var(--color-accent)' }" />
+          <div class="spinner" />
         </div>
       </template>
 
@@ -137,21 +135,21 @@ const loading = computed(() => curveStatus.value === 'pending' || pullsStatus.va
         <table class="w-full text-sm">
           <thead>
             <tr :style="{ borderBottom: '1px solid var(--color-border)' }">
-              <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">RPM Range</th>
-              <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Peak Boost</th>
-              <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Max Speed</th>
-              <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Duration</th>
-              <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Lambda</th>
+              <th class="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">RPM Range</th>
+              <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Peak Boost</th>
+              <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Max Speed</th>
+              <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Duration</th>
+              <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider hidden sm:table-cell" style="color: var(--color-text-secondary)">Lambda</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="pull in pulls" :key="pull.boot_id + pull.start_ms"
               :style="{ borderBottom: '1px solid var(--color-border)' }">
-              <td class="px-4 py-3 font-mono">{{ pull.min_rpm }} → {{ pull.max_rpm }}</td>
-              <td class="px-4 py-3 font-mono text-right">{{ pull.peak_boost_psi != null ? pull.peak_boost_psi.toFixed(1) + ' PSI' : '--' }}</td>
-              <td class="px-4 py-3 font-mono text-right">{{ Math.round(pull.max_speed_kph) }} kph</td>
-              <td class="px-4 py-3 font-mono text-right">{{ pull.duration_s.toFixed(1) }}s</td>
-              <td class="px-4 py-3 font-mono text-right">{{ pull.avg_lambda != null ? pull.avg_lambda.toFixed(2) : '--' }}</td>
+              <td class="px-5 py-3.5 font-mono">{{ pull.min_rpm }} → {{ pull.max_rpm }}</td>
+              <td class="px-5 py-3.5 font-mono text-right">{{ pull.peak_boost_psi != null ? pull.peak_boost_psi.toFixed(1) + ' PSI' : '--' }}</td>
+              <td class="px-5 py-3.5 font-mono text-right">{{ Math.round(pull.max_speed_kph) }} kph</td>
+              <td class="px-5 py-3.5 font-mono text-right">{{ pull.duration_s.toFixed(1) }}s</td>
+              <td class="px-5 py-3.5 font-mono text-right hidden sm:table-cell">{{ pull.avg_lambda != null ? pull.avg_lambda.toFixed(2) : '--' }}</td>
             </tr>
           </tbody>
         </table>

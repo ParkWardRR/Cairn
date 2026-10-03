@@ -183,8 +183,7 @@ function formatTimestamp(iso: string): string {
         <div
           v-for="i in 3"
           :key="i"
-          class="rounded-lg p-5 animate-pulse h-28"
-          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+          class="skeleton h-[100px]"
         />
       </template>
       <template v-else>
@@ -210,23 +209,14 @@ function formatTimestamp(iso: string): string {
 
     <!-- G-Force chart -->
     <div
-      class="rounded-lg p-6 mb-6"
+      class="rounded-xl p-6 mb-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
     >
-      <h2 class="text-lg font-semibold mb-4">G-Force Distribution</h2>
+      <h2 class="text-base font-semibold mb-4">G-Force Distribution</h2>
 
       <template v-if="telemetryPending">
-        <div
-          class="flex items-center justify-center"
-          style="height: 400px"
-        >
-          <div
-            class="w-6 h-6 rounded-full border-2 animate-spin"
-            :style="{
-              borderColor: 'var(--color-border)',
-              borderTopColor: 'var(--color-accent)',
-            }"
-          />
+        <div class="flex items-center justify-center" style="height: 400px">
+          <div class="spinner" />
         </div>
       </template>
 
@@ -247,10 +237,10 @@ function formatTimestamp(iso: string): string {
 
     <!-- Recent events -->
     <div
-      class="rounded-lg p-6"
+      class="rounded-xl p-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
     >
-      <h2 class="text-lg font-semibold mb-4">Recent Events</h2>
+      <h2 class="text-base font-semibold mb-4">Recent Events</h2>
 
       <template v-if="tripsPending">
         <p class="text-sm" style="color: var(--color-text-secondary)">Loading...</p>

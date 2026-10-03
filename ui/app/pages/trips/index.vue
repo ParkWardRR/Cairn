@@ -10,7 +10,6 @@ interface Trip {
 }
 
 const { data, status } = useFetch<{ trips: Trip[]; total: number }>('/api/trips')
-
 const trips = computed(() => data.value?.trips ?? [])
 
 function formatDate(iso: string | null): string {
@@ -18,12 +17,8 @@ function formatDate(iso: string | null): string {
   const d = new Date(iso)
   if (isNaN(d.getTime()) || d.getFullYear() < 2000) return '--'
   return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', hour12: true,
   })
 }
 
@@ -39,16 +34,16 @@ function formatDuration(seconds: number | null): string {
 
 <template>
   <div>
-    <LayoutPageHeader title="Trips" subtitle="Browse all recorded trips" />
+    <LayoutPageHeader title="Trips" subtitle="Browse all recorded trips">
+      <template #actions>
+        <span v-if="trips.length" class="text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-accent-soft); color: var(--color-accent)">
+          {{ trips.length }} trip{{ trips.length === 1 ? '' : 's' }}
+        </span>
+      </template>
+    </LayoutPageHeader>
 
-    <div v-if="status === 'pending'" class="flex items-center justify-center py-16">
-      <div
-        class="w-6 h-6 rounded-full border-2 animate-spin"
-        :style="{
-          borderColor: 'var(--color-border)',
-          borderTopColor: 'var(--color-accent)',
-        }"
-      />
+    <div v-if="status === 'pending'" class="space-y-2">
+      <div v-for="i in 5" :key="i" class="skeleton h-14" />
     </div>
 
     <DataEmptyState
@@ -59,34 +54,40 @@ function formatDuration(seconds: number | null): string {
 
     <div
       v-else
-      class="rounded-lg overflow-hidden"
+      class="rounded-xl overflow-hidden"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
     >
       <table class="w-full text-sm">
         <thead>
           <tr :style="{ borderBottom: '1px solid var(--color-border)' }">
-            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Date</th>
-            <th class="text-left px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Duration</th>
-            <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Max Speed</th>
-            <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Max RPM</th>
-            <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">OBD Samples</th>
-            <th class="text-right px-4 py-3 text-xs font-medium uppercase tracking-wider" style="color: var(--color-text-secondary)">Gaps</th>
+            <th class="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Date</th>
+            <th class="text-left px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Duration</th>
+            <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Max Speed</th>
+            <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider hidden sm:table-cell" style="color: var(--color-text-secondary)">Max RPM</th>
+            <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider hidden md:table-cell" style="color: var(--color-text-secondary)">OBD</th>
+            <th class="text-right px-5 py-3 text-[11px] font-semibold uppercase tracking-wider hidden md:table-cell" style="color: var(--color-text-secondary)">Gaps</th>
+            <th class="w-10 px-3" />
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="trip in trips"
             :key="trip.boot_id"
-            class="cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
+            class="group cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
             :style="{ borderBottom: '1px solid var(--color-border)' }"
             @click="navigateTo(`/trips/${trip.boot_id}`)"
           >
-            <td class="px-4 py-3">{{ formatDate(trip.start_time) }}</td>
-            <td class="px-4 py-3 font-mono">{{ formatDuration(trip.duration_s) }}</td>
-            <td class="px-4 py-3 font-mono text-right">{{ trip.max_speed_kph }} kph</td>
-            <td class="px-4 py-3 font-mono text-right">{{ trip.max_rpm }}</td>
-            <td class="px-4 py-3 font-mono text-right">{{ trip.obd_samples }}</td>
-            <td class="px-4 py-3 font-mono text-right">{{ trip.gap_count }}</td>
+            <td class="px-5 py-3.5 text-[13px]">{{ formatDate(trip.start_time) }}</td>
+            <td class="px-5 py-3.5 font-mono text-[13px]">{{ formatDuration(trip.duration_s) }}</td>
+            <td class="px-5 py-3.5 font-mono text-[13px] text-right">{{ trip.max_speed_kph }} <span class="text-[11px]" style="color: var(--color-text-secondary)">kph</span></td>
+            <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden sm:table-cell">{{ trip.max_rpm.toLocaleString() }}</td>
+            <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden md:table-cell">{{ trip.obd_samples.toLocaleString() }}</td>
+            <td class="px-5 py-3.5 font-mono text-[13px] text-right hidden md:table-cell">{{ trip.gap_count }}</td>
+            <td class="px-3 py-3.5 text-right">
+              <svg class="w-4 h-4 inline-block opacity-0 group-hover:opacity-50 transition-opacity" style="color: var(--color-text-secondary)" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </td>
           </tr>
         </tbody>
       </table>

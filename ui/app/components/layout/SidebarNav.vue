@@ -23,41 +23,66 @@ function isActive(path: string) {
 <template>
   <nav
     class="fixed left-0 top-0 h-full z-40 flex flex-col transition-all duration-200"
-    :class="ui.sidebarCollapsed ? 'w-16' : 'w-60'"
+    :class="ui.sidebarCollapsed ? 'w-16' : 'w-56'"
     :style="{ backgroundColor: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }"
   >
-    <div class="flex items-center h-14 px-4 gap-3 border-b" :style="{ borderColor: 'var(--color-border)' }">
-      <button @click="ui.toggleSidebar" class="p-1 rounded hover:bg-[var(--color-surface-elevated)] transition-colors">
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+    <!-- Logo header -->
+    <div class="flex items-center h-14 px-3 gap-2.5 shrink-0">
+      <button
+        @click="ui.toggleSidebar"
+        class="group relative flex items-center justify-center w-9 h-9 rounded-lg transition-colors hover:bg-[var(--color-surface-elevated)]"
+      >
+        <!-- Cairn logo mark -->
+        <svg class="w-6 h-6" viewBox="0 0 40 40" fill="none">
+          <rect x="14" y="4" width="12" height="8" rx="4" fill="#93c5fd" opacity="0.9"/>
+          <rect x="10" y="14" width="20" height="9" rx="4.5" fill="#60a5fa"/>
+          <rect x="6" y="25" width="28" height="11" rx="5.5" fill="#3b82f6"/>
         </svg>
       </button>
-      <span v-if="!ui.sidebarCollapsed" class="font-semibold text-sm tracking-wide">CAIRN</span>
+      <transition name="fade">
+        <span v-if="!ui.sidebarCollapsed" class="font-semibold text-sm tracking-widest select-none" style="color: var(--color-text)">
+          CAIRN
+        </span>
+      </transition>
     </div>
 
-    <div class="flex-1 overflow-y-auto py-2">
+    <!-- Divider -->
+    <div class="mx-3 h-px" style="background: var(--color-border)" />
+
+    <!-- Nav links -->
+    <div class="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
       <NuxtLink
         v-for="item in navItems"
         :key="item.path"
         :to="item.path"
-        class="flex items-center gap-3 mx-2 px-3 py-2.5 rounded-lg text-sm transition-colors"
+        class="group relative flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150"
         :class="isActive(item.path)
-          ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
+          ? 'text-[var(--color-accent)]'
           : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)]'"
+        :style="isActive(item.path) ? { backgroundColor: 'var(--color-accent-soft)' } : {}"
       >
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <!-- Active indicator bar -->
+        <div
+          v-if="isActive(item.path)"
+          class="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full"
+          style="background: var(--color-accent)"
+        />
+
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
           <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
         </svg>
         <span v-if="!ui.sidebarCollapsed" class="truncate">{{ item.label }}</span>
       </NuxtLink>
     </div>
 
-    <div class="px-2 py-3 border-t" :style="{ borderColor: 'var(--color-border)' }">
+    <!-- Footer -->
+    <div class="px-2 py-2 shrink-0">
+      <div class="mx-1 h-px mb-2" style="background: var(--color-border)" />
       <button
         @click="ui.toggleTheme"
-        class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)] transition-colors"
+        class="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-[13px] font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-elevated)] transition-all duration-150"
       >
-        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <svg class="w-[18px] h-[18px] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
           <path v-if="ui.resolvedTheme === 'dark'" stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
           <path v-else stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
         </svg>
@@ -66,3 +91,14 @@ function isActive(path: string) {
     </div>
   </nav>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 150ms ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

@@ -181,7 +181,7 @@ const temperaturesOptions = computed(() => ({
     <div class="mb-6">
       <select
         v-model="selectedBootId"
-        class="w-full max-w-md px-3 py-2 rounded-md border font-sans text-sm appearance-none cursor-pointer"
+        class="w-full max-w-md px-3 py-2 rounded-lg border font-sans text-sm appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--color-accent)] focus:outline-none"
         :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text)' }"
       >
         <option value="" disabled>Select a trip...</option>
@@ -190,41 +190,38 @@ const temperaturesOptions = computed(() => ({
         </option>
       </select>
 
-      <div v-if="drivesStatus === 'pending'" class="text-sm mt-2" :style="{ color: 'var(--color-text-secondary)' }">
-        Loading trips...
-      </div>
+      <div v-if="drivesStatus === 'pending'" class="skeleton h-12" />
     </div>
 
     <DataEmptyState v-if="!selectedBootId" title="No trip selected" message="Select a trip to view telemetry" />
 
     <div v-else-if="telemetryStatus === 'pending'" class="flex items-center justify-center py-16">
-      <div class="w-6 h-6 rounded-full border-2 animate-spin"
-        :style="{ borderColor: 'var(--color-border)', borderTopColor: 'var(--color-accent)' }" />
+      <div class="spinner" />
     </div>
 
     <div v-else-if="telemetryRows.length" class="flex flex-col gap-4">
-      <div class="rounded-lg border p-4" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
-        <h3 class="text-sm font-medium mb-2" :style="{ color: 'var(--color-text)' }">Speed</h3>
+      <div class="rounded-xl border p-5" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
+        <h3 class="text-[13px] font-semibold mb-3" :style="{ color: 'var(--color-text)' }">Speed</h3>
         <v-chart :option="speedOptions" autoresize style="height: 250px; width: 100%" />
       </div>
 
-      <div class="rounded-lg border p-4" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
-        <h3 class="text-sm font-medium mb-2" :style="{ color: 'var(--color-text)' }">RPM &amp; Throttle</h3>
+      <div class="rounded-xl border p-5" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
+        <h3 class="text-[13px] font-semibold mb-3" :style="{ color: 'var(--color-text)' }">RPM &amp; Throttle</h3>
         <v-chart :option="rpmThrottleOptions" autoresize style="height: 250px; width: 100%" />
       </div>
 
-      <div class="rounded-lg border p-4" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
-        <h3 class="text-sm font-medium mb-2" :style="{ color: 'var(--color-text)' }">Boost</h3>
+      <div class="rounded-xl border p-5" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
+        <h3 class="text-[13px] font-semibold mb-3" :style="{ color: 'var(--color-text)' }">Boost</h3>
         <v-chart :option="boostOptions" autoresize style="height: 250px; width: 100%" />
       </div>
 
-      <div class="rounded-lg border p-4" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
-        <h3 class="text-sm font-medium mb-2" :style="{ color: 'var(--color-text)' }">Lambda &amp; Trims</h3>
+      <div class="rounded-xl border p-5" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
+        <h3 class="text-[13px] font-semibold mb-3" :style="{ color: 'var(--color-text)' }">Lambda &amp; Trims</h3>
         <v-chart :option="lambdaTrimsOptions" autoresize style="height: 250px; width: 100%" />
       </div>
 
-      <div class="rounded-lg border p-4" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
-        <h3 class="text-sm font-medium mb-2" :style="{ color: 'var(--color-text)' }">Temperatures</h3>
+      <div class="rounded-xl border p-5" :style="{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }">
+        <h3 class="text-[13px] font-semibold mb-3" :style="{ color: 'var(--color-text)' }">Temperatures</h3>
         <v-chart :option="temperaturesOptions" autoresize style="height: 250px; width: 100%" />
       </div>
     </div>

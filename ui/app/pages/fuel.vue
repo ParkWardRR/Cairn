@@ -107,7 +107,7 @@ const loading = computed(() => status.value === 'pending')
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
       <template v-if="loading">
-        <div v-for="i in 3" :key="i" class="rounded-lg p-5 animate-pulse h-28"
+        <div v-for="i in 3" :key="i" class="rounded-xl p-5 skeleton h-[100px]"
           :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }" />
       </template>
       <template v-else>
@@ -117,14 +117,13 @@ const loading = computed(() => status.value === 'pending')
       </template>
     </div>
 
-    <div class="rounded-lg p-6 mb-6"
+    <div class="rounded-xl p-6 mb-6"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-      <h2 class="text-lg font-semibold mb-4">Fuel Trim Map — RPM vs Load</h2>
+      <h2 class="text-base font-semibold mb-4">Fuel Trim Map — RPM vs Load</h2>
 
       <template v-if="loading">
         <div class="flex items-center justify-center" style="height: 450px">
-          <div class="w-6 h-6 rounded-full border-2 animate-spin"
-            :style="{ borderColor: 'var(--color-border)', borderTopColor: 'var(--color-accent)' }" />
+          <div class="spinner" />
         </div>
       </template>
 
@@ -134,7 +133,7 @@ const loading = computed(() => status.value === 'pending')
       <VChart v-else :option="chartOption" autoresize style="height: 450px; width: 100%" />
     </div>
 
-    <div class="rounded-lg px-5 py-4"
+    <div class="rounded-xl px-5 py-4"
       :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
       <p class="text-sm leading-relaxed" style="color: var(--color-text-secondary)">
         Green = rich (negative LTFT), Red = lean (positive LTFT). On this car's ~E41 ethanol blend, expect positive LTFT — the ECU adds fuel beyond the base map. Values over ±15% may indicate a tune issue.

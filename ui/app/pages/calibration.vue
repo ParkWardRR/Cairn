@@ -118,8 +118,7 @@ const chartOption = computed(() => {
         <div
           v-for="i in 2"
           :key="i"
-          class="rounded-lg p-5 animate-pulse h-28"
-          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+          class="skeleton h-[100px]"
         />
       </div>
     </template>
@@ -143,10 +142,10 @@ const chartOption = computed(() => {
 
       <!-- Scatter chart -->
       <div
-        class="rounded-lg p-6 mb-6"
+        class="rounded-xl p-6 mb-6"
         :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
       >
-        <h2 class="text-sm font-semibold mb-4">Speed Agreement -- OBD vs GNSS</h2>
+        <h2 class="text-[13px] font-semibold mb-4">Speed Agreement — OBD vs GNSS</h2>
 
         <template v-if="data.points.length > 0">
           <VChart
@@ -164,7 +163,7 @@ const chartOption = computed(() => {
 
       <!-- Explanation card -->
       <div
-        class="rounded-lg p-6"
+        class="rounded-xl p-6"
         :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
       >
         <h3

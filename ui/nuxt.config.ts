@@ -15,19 +15,27 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: 'Cairn',
+      htmlAttrs: { lang: 'en' },
       meta: [
         { name: 'description', content: 'Vehicle trip journal & telemetry dashboard' },
         { name: 'theme-color', content: '#0f1117' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
       ],
       link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.svg' },
+        { rel: 'manifest', href: '/site.webmanifest' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {
           rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap',
+          href: 'https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500;600&display=swap',
         },
       ],
     },
+    pageTransition: { name: 'page', mode: 'out-in' },
   },
 
   runtimeConfig: {

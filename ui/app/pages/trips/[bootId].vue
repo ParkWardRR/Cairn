@@ -64,7 +64,7 @@ function formatTimestamp(iso: string): string {
       <template #actions>
         <NuxtLink
           to="/trips"
-          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+          class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors"
           :style="{
             backgroundColor: 'var(--color-surface)',
             border: '1px solid var(--color-border)',
@@ -80,13 +80,7 @@ function formatTimestamp(iso: string): string {
     </LayoutPageHeader>
 
     <div v-if="tripStatus === 'pending'" class="flex items-center justify-center py-16">
-      <div
-        class="w-6 h-6 rounded-full border-2 animate-spin"
-        :style="{
-          borderColor: 'var(--color-border)',
-          borderTopColor: 'var(--color-accent)',
-        }"
-      />
+      <div class="spinner" />
     </div>
 
     <template v-else>
@@ -122,26 +116,26 @@ function formatTimestamp(iso: string): string {
         <div class="space-y-4">
           <!-- Map placeholder -->
           <div
-            class="h-80 rounded-lg flex items-center justify-center"
+            class="h-80 rounded-xl flex items-center justify-center"
             :style="{
               backgroundColor: 'var(--color-surface-elevated)',
               border: '1px solid var(--color-border)',
             }"
           >
-            <span class="text-sm font-sans" style="color: var(--color-text-secondary)">
+            <span class="text-[13px] font-sans" style="color: var(--color-text-secondary)">
               Map loads here
             </span>
           </div>
 
           <!-- Elevation / speed chart placeholder -->
           <div
-            class="h-48 rounded-lg flex items-center justify-center"
+            class="h-48 rounded-xl flex items-center justify-center"
             :style="{
               backgroundColor: 'var(--color-surface-elevated)',
               border: '1px solid var(--color-border)',
             }"
           >
-            <span class="text-sm font-sans" style="color: var(--color-text-secondary)">
+            <span class="text-[13px] font-sans" style="color: var(--color-text-secondary)">
               Elevation chart placeholder
             </span>
           </div>
@@ -151,20 +145,20 @@ function formatTimestamp(iso: string): string {
         <div class="space-y-6">
           <!-- Insights section -->
           <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
+            <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
               Insights
             </h2>
             <div class="space-y-3">
               <div
                 v-for="(insight, i) in (insights ?? [])"
                 :key="i"
-                class="rounded-lg p-4"
+                class="rounded-xl p-4"
                 :style="{
                   backgroundColor: 'var(--color-surface)',
                   border: '1px solid var(--color-border)',
                 }"
               >
-                <p class="text-xs font-medium uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
+                <p class="text-[11px] font-semibold uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
                   {{ insight.label }}
                 </p>
                 <p class="text-xl font-bold font-mono mt-1">
@@ -184,7 +178,7 @@ function formatTimestamp(iso: string): string {
 
           <!-- Events timeline -->
           <div>
-            <h2 class="text-sm font-semibold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
+            <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">
               Events
             </h2>
             <div v-if="(events ?? []).length > 0" class="relative pl-6">
@@ -197,7 +191,7 @@ function formatTimestamp(iso: string): string {
               <div v-for="(event, i) in events" :key="i" class="relative pb-5 last:pb-0">
                 <!-- Dot -->
                 <div
-                  class="absolute -left-6 top-1.5 w-[9px] h-[9px] rounded-full ring-2"
+                  class="absolute -left-6 top-1.5 w-[9px] h-[9px] rounded-full ring-[3px]"
                   :style="{
                     backgroundColor: dotColor(event.type),
                     ringColor: 'var(--color-bg)',
@@ -221,7 +215,7 @@ function formatTimestamp(iso: string): string {
           <!-- Actions -->
           <div class="space-y-3">
             <button
-              class="w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors"
+              class="w-full px-4 py-2.5 text-sm font-medium rounded-xl hover:opacity-90 transition-all"
               :style="{
                 backgroundColor: 'var(--color-accent)',
                 color: 'var(--color-bg)',
@@ -230,13 +224,13 @@ function formatTimestamp(iso: string): string {
               Export Trip
             </button>
             <div
-              class="rounded-lg p-4"
+              class="rounded-xl p-4"
               :style="{
                 backgroundColor: 'var(--color-surface)',
                 border: '1px solid var(--color-border)',
               }"
             >
-              <p class="text-xs font-medium uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
+              <p class="text-[11px] font-semibold uppercase tracking-wider font-sans" style="color: var(--color-text-secondary)">
                 Tags
               </p>
               <p class="text-sm mt-2" style="color: var(--color-text-secondary)">
