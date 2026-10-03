@@ -26,10 +26,10 @@ odin/*/trip-replay
 odin/*/route-density
 odin/*/sd-recover
 rust/trajectory/target/
-web/node_modules/
-web/.svelte-kit/
-web/build/
-web/static/maplibre/
+ui/node_modules/
+ui/.nuxt/
+ui/.output/
+ui/.data/
 .nimbalyst/
 nimbalyst-local/
 firmware/freematics-base/.pio/
@@ -48,6 +48,8 @@ firmware/cairn-v2/test/host/build/
 
 # Compiled server binaries (see server/Makefile)
 server/bin/
+server/cairn-tsdb
+server/cairn-verify
 
 # mTLS material: the CA private key must never be committed (public repo)
 deploy/certs/
