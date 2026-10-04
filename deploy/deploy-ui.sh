@@ -10,8 +10,8 @@ npm run build
 
 echo "==> Uploading build to $HOST:$UI_DIR..."
 ssh "$HOST" "sudo mkdir -p $UI_DIR && sudo chown cairn:cairn $UI_DIR"
-rsync -az --delete .output/ "$HOST:$UI_DIR/.output/"
-rsync -az package.json "$HOST:$UI_DIR/package.json"
+rsync -az --delete --rsync-path="sudo -u cairn rsync" .output/ "$HOST:$UI_DIR/.output/"
+rsync -az --rsync-path="sudo -u cairn rsync" package.json "$HOST:$UI_DIR/package.json"
 
 echo "==> Installing systemd service..."
 scp "$(dirname "$0")/systemd/cairn-ui.service" "$HOST:/tmp/cairn-ui.service"

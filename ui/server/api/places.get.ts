@@ -21,5 +21,32 @@ export default defineEventHandler(async () => {
     ORDER BY fp.observed_at DESC
   `)
 
-  return { trips }
+  // Stops use the same detector as the trip detail page, so a place always
+  // agrees with the stops shown on the trips that visited it.
+  const fixes = await queryTsdbObjects(`
+    SELECT boot_id, lat, lon, speed_mps, mono_ms, observed_at
+    FROM position
+    WHERE lat != 0 AND lon != 0
+    ORDER BY boot_id, mono_ms
+  `)
+
+  const byBoot = new Map<string, any[]>()
+  for (const f of fixes) {
+    const list = byBoot.get(f.boot_id)
+    if (list) list.push(f)
+    else byBoot.set(f.boot_id, [f])
+  }
+
+  const visits: PlaceVisit[] = []
+  for (const [bootId, list] of byBoot) {
+    visits.push(...visitsFromStops(bootId, detectStops(list as StopFix[])))
+    const base = tripBaseMs(list as StopFix[])
+    const at = (f: any) => (base != null ? new Date(base + f.mono_ms).toISOString() : null)
+    const first = list[0]
+    const last = list[list.length - 1]
+    visits.push({ boot_id: bootId, kind: 'departure', lat: first.lat, lon: first.lon, at: at(first) })
+    visits.push({ boot_id: bootId, kind: 'arrival', lat: last.lat, lon: last.lon, at: at(last) })
+  }
+
+  return { trips, places: clusterPlaces(visits) }
 })

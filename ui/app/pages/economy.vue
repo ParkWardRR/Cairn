@@ -61,28 +61,6 @@ onMounted(() => {
 
 const activeBlend = computed(() => userBlend.value ?? 37)
 
-function stoichForBlend(ethPct: number): number {
-  return 14.7 - (ethPct / 100) * 5.7
-}
-
-function fuelDensityGPerGal(ethPct: number): number {
-  return 2834 + (ethPct / 100) * 154
-}
-
-function energyBtuPerGal(ethPct: number): number {
-  return 114000 - (ethPct / 100) * 38000
-}
-
-function calcMpg(speedKph: number, mafCgps: number, lambda: number, ethPct: number): number {
-  const stoich = stoichForBlend(ethPct)
-  const fuelGs = (mafCgps / 100) / (stoich * lambda)
-  const fuelGalPerS = fuelGs / fuelDensityGPerGal(ethPct)
-  const fuelGalPerHr = fuelGalPerS * 3600
-  const speedMph = speedKph / 1.60934
-  if (fuelGalPerHr <= 0) return 0
-  return speedMph / fuelGalPerHr
-}
-
 const mpgData = computed(() =>
   samples.value
     .map(s => ({

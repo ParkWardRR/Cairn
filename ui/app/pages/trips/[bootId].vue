@@ -43,6 +43,73 @@ const { data: trip, status: tripStatus } = useFetch<TripSummary>(
 const { data: routeData } = useFetch<RouteData>(
   () => `/api/trips/${bootId.value}/route`,
 )
+interface TripStop {
+  start_at: string | null
+  start_offset_s: number
+  duration_s: number
+  lat: number
+  lon: number
+  category: 'quick' | 'medium' | 'long'
+  inferred: boolean
+}
+
+const { data: stopsData } = useFetch<{ stops: TripStop[] }>(
+  () => `/api/trips/${bootId.value}/stops`,
+)
+const stops = computed(() => stopsData.value?.stops ?? [])
+
+interface FuelSample { speed_kph: number; maf_cgps: number; lambda_ratio: number }
+const { data: fuelData } = useFetch<{ samples: FuelSample[]; distance_m: number; duration_s: number | null }>(
+  () => `/api/trips/${bootId.value}/fuel`,
+)
+
+const blend = ref(DEFAULT_ETHANOL_BLEND)
+onMounted(() => { blend.value = readEthanolBlend() })
+
+// Estimated from the MAF samples the device caught, not a continuous series, so
+// the sample count is always shown. Trip MPG is total speed over total fuel flow
+// (idle samples included); cruise MPG covers only samples above 5 km/h.
+const fuel = computed(() => {
+  const d = fuelData.value
+  if (!d || d.samples.length < 3) return null
+  const rows = d.samples.map(s => ({ kph: s.speed_kph, gph: fuelGalPerHr(s.maf_cgps, s.lambda_ratio, blend.value) }))
+    .filter(r => r.gph > 0 && r.gph < 40)
+  if (rows.length < 3) return null
+
+  const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0)
+  const mph = (r: { kph: number }) => r.kph / 1.60934
+  const tripMpg = sum(rows.map(mph)) / sum(rows.map(r => r.gph))
+  const moving = rows.filter(r => r.kph > 5)
+  const cruiseMpg = moving.length ? sum(moving.map(mph)) / sum(moving.map(r => r.gph)) : null
+  const idleShare = rows.filter(r => r.kph <= 5).length / rows.length
+  const miles = d.distance_m / 1609.34
+  const idleGph = rows.filter(r => r.kph <= 5)
+  return {
+    tripMpg,
+    cruiseMpg,
+    miles,
+    gallons: tripMpg > 0 ? miles / tripMpg : null,
+    idleShare,
+    idleGph: idleGph.length ? sum(idleGph.map(r => r.gph)) / idleGph.length : null,
+    samples: rows.length,
+  }
+})
+
+const STOP_LABEL = { quick: 'Quick', medium: 'Medium', long: 'Long' } as const
+const STOP_COLOR = { quick: '#94a3b8', medium: '#f59e0b', long: '#ef4444' } as const
+
+function fmtStop(s: number): string {
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function fmtClock(s: TripStop): string {
+  if (!s.start_at) return `+${Math.round(s.start_offset_s / 60)}m`
+  return new Date(s.start_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
 const { data: insightsData } = useFetch<{ insights: Insight[] }>(
   () => `/api/trips/${bootId.value}/insights`,
 )
@@ -204,6 +271,20 @@ function insightIcon(icon: string | undefined): string {
         <DataStatCard label="OBD Samples" :value="`${trip.obd_samples?.toLocaleString()}`" />
       </div>
 
+      <!-- Fuel economy -->
+      <div v-if="fuel" class="mb-6">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <DataStatCard label="Trip MPG" :value="fuel.tripMpg.toFixed(1)" :subtitle="`est. at E${blend}`" />
+          <DataStatCard label="Cruise MPG" :value="fuel.cruiseMpg != null ? fuel.cruiseMpg.toFixed(1) : '--'" subtitle="moving, above 3 mph" />
+          <DataStatCard label="Fuel Used" :value="fuel.gallons != null ? fuel.gallons.toFixed(2) : '--'" :subtitle="`gal over ${fuel.miles.toFixed(1)} mi`" />
+          <DataStatCard label="Idle Burn" :value="fuel.idleGph != null ? fuel.idleGph.toFixed(2) : '--'" :subtitle="`gal/hr · ${Math.round(fuel.idleShare * 100)}% of samples`" />
+        </div>
+        <p class="text-[11px] mt-2 px-1" style="color: var(--color-text-secondary)">
+          Estimated from {{ fuel.samples }} MAF airflow samples at E{{ blend }}; the device only catches MAF on some polls, so treat these as approximate.
+          <NuxtLink to="/economy" class="underline-offset-2 hover:underline" style="color: var(--color-accent)">Fuel economy details</NuxtLink>
+        </p>
+      </div>
+
       <!-- Map -->
       <div class="rounded-xl overflow-hidden mb-4" :style="{ border: '1px solid var(--color-border)' }">
         <ClientOnly>
@@ -218,6 +299,7 @@ function insightIcon(icon: string | undefined): string {
               :first-fix-ms="trip?.first_fix_ms"
               :prev-end="trip?.prev_end"
               :highlight-pos="timelineHighlight"
+              :stops="stops"
             />
           </div>
           <template #fallback>
@@ -233,6 +315,23 @@ function insightIcon(icon: string | undefined): string {
             </svg>
             <p class="text-[13px]" style="color: var(--color-text-secondary)">No GPS route data for this trip</p>
           </div>
+        </div>
+      </div>
+
+      <!-- Stops -->
+      <div v-if="stops.length" class="rounded-xl p-4 mb-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+        <div class="flex items-center gap-4 mb-3">
+          <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Stops</span>
+          <span class="text-[10px]" style="color: var(--color-text-secondary)">quick &lt; 2 min · medium 2–10 min · long 10+ min</span>
+        </div>
+        <div class="space-y-1.5">
+          <NuxtLink v-for="(s, i) in stops" :key="i" :to="{ path: '/places', query: { lat: s.lat.toFixed(5), lon: s.lon.toFixed(5) } }" class="flex items-center gap-3 text-[12px] rounded-md px-1 -mx-1 hover:bg-[var(--color-surface-elevated)]" title="Show on Places">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: STOP_COLOR[s.category], opacity: s.inferred ? 0.6 : 1 }" />
+            <span class="font-mono" style="color: var(--color-text-secondary)">{{ fmtClock(s) }}</span>
+            <span class="font-semibold">{{ STOP_LABEL[s.category] }}</span>
+            <span class="font-mono">{{ fmtStop(s.duration_s) }}</span>
+            <span v-if="s.inferred" class="text-[10px]" style="color: var(--color-text-secondary)">no GPS fixes while stopped</span>
+          </NuxtLink>
         </div>
       </div>
 

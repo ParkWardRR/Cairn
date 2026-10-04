@@ -10,6 +10,7 @@ const props = defineProps<{
   firstFixMs?: number | null
   prevEnd?: { lat: number; lon: number } | null
   highlightPos?: { lat: number; lon: number } | null
+  stops?: Array<{ lat: number; lon: number; start_at: string | null; start_offset_s: number; duration_s: number; category: 'quick' | 'medium' | 'long'; inferred: boolean }>
 }>()
 
 const mapEl = ref<HTMLDivElement>()
@@ -68,6 +69,42 @@ function speedToColor(mph: number): string {
   if (mph < 50) return '#22c55e'
   if (mph < 75) return '#f59e0b'
   return '#ef4444'
+}
+
+const STOP_STYLE = {
+  quick: { color: '#94a3b8', size: 12, label: 'Quick stop' },
+  medium: { color: '#f59e0b', size: 16, label: 'Medium stop' },
+  long: { color: '#ef4444', size: 20, label: 'Long stop' },
+} as const
+
+function fmtStopDuration(s: number): string {
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ${s % 60}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function addStopMarkers(L: any) {
+  for (const stop of props.stops ?? []) {
+    const st = STOP_STYLE[stop.category]
+    const border = stop.inferred ? '2px dashed' : '2px solid'
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:${st.size}px;height:${st.size}px;border-radius:50%;background:${st.color}cc;border:${border} #0f1117;box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
+      iconSize: [st.size, st.size],
+      iconAnchor: [st.size / 2, st.size / 2],
+    })
+    const when = stop.start_at
+      ? `at ${new Date(stop.start_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+      : `${Math.round(stop.start_offset_s / 60)} min into the trip`
+    const note = stop.inferred ? `<div style="opacity:.7">no GPS fixes while stopped</div>` : ''
+    L.marker([stop.lat, stop.lon], { icon })
+      .bindTooltip(
+        `<div style="font-size:12px;line-height:1.5"><div style="font-weight:600">${st.label} · ${fmtStopDuration(stop.duration_s)}</div><div style="opacity:.8">${when}</div>${note}</div>`,
+        { direction: 'top', offset: [0, -8], className: 'trip-tooltip' },
+      )
+      .addTo(map)
+  }
 }
 
 function buildRoute(L: any) {
@@ -160,6 +197,8 @@ function buildRoute(L: any) {
     }
   }
 
+  addStopMarkers(L)
+
   L.marker([first.lat, first.lng], { icon: startIcon }).addTo(map)
   L.marker([last.lat, last.lng], { icon: endIcon }).addTo(map)
 
@@ -199,7 +238,7 @@ onMounted(async () => {
   }
 })
 
-watch(() => [props.coordinates, props.speeds], async () => {
+watch(() => [props.coordinates, props.speeds, props.stops], async () => {
   if (!ready.value || !map) return
   map.eachLayer((layer: any) => {
     if (!layer._url && !layer._container?.classList?.contains('leaflet-control-container')) {
@@ -243,6 +282,10 @@ onUnmounted(() => {
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #22c55e" /> Cruise</span>
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #f59e0b" /> Fast</span>
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #ef4444" /> WOT</span>
+      <span v-if="stops?.length" class="flex items-center gap-1 pl-2" style="border-left: 1px solid var(--color-border)">Stops</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #94a3b8" /> Quick</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background: #f59e0b" /> Medium</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-3 h-3 rounded-full" style="background: #ef4444" /> Long</span>
     </div>
 
     <button

@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     // distance from position speed integration
     queryTsdbObjects(`
       SELECT coalesce(sum(
-        speed_mps * (lead_ms - mono_ms) / 1000.0
+        speed_mps * least(lead_ms - mono_ms, 10000) / 1000.0
       ), 0) AS distance_m
       FROM (
         SELECT mono_ms, speed_mps,

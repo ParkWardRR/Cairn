@@ -11,7 +11,7 @@ export default defineEventHandler(async () => {
     SELECT coalesce(sum(dist_m), 0) AS total_distance_m FROM (
       SELECT boot_id, sum(segment_m) AS dist_m FROM (
         SELECT boot_id,
-          speed_mps * (lead(mono_ms) OVER (PARTITION BY boot_id ORDER BY mono_ms) - mono_ms) / 1000.0 AS segment_m
+          speed_mps * least(lead(mono_ms) OVER (PARTITION BY boot_id ORDER BY mono_ms) - mono_ms, 10000) / 1000.0 AS segment_m
         FROM position
         WHERE speed_mps IS NOT NULL
       ) GROUP BY boot_id

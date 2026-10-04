@@ -12,25 +12,56 @@ interface PlaceTrip {
   end_lon: number | null
 }
 
-const { data, status } = useFetch<{ trips: PlaceTrip[] }>('/api/places')
+type StopCategory = 'quick' | 'medium' | 'long'
+
+interface PlaceItem {
+  id: number
+  lat: number
+  lon: number
+  stops: number
+  stop_seconds: number
+  quick: number
+  medium: number
+  long: number
+  longest_s: number
+  longest_category: StopCategory | null
+  arrivals: number
+  departures: number
+  trips: string[]
+  last_at: string | null
+}
+
+const { data, status } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[] }>('/api/places')
 const trips = computed(() => data.value?.trips ?? [])
+const places = computed(() => data.value?.places ?? [])
+
+const route = useRoute()
+const selectedId = ref<number | null>(null)
 
 const mapEl = ref<HTMLDivElement>()
 const mapReady = ref(false)
 let map: any = null
+let leaflet: any = null
+let markers = new Map<number, any>()
+
+const STOP_COLOR: Record<StopCategory, string> = { quick: '#94a3b8', medium: '#f59e0b', long: '#ef4444' }
+const STOP_LABEL: Record<StopCategory, string> = { quick: 'Quick', medium: 'Medium', long: 'Long' }
+const ENDPOINT_COLOR = '#3b82f6'
 
 const tripsWithGps = computed(() =>
   trips.value.filter(t => (t.start_lat && t.start_lon) || (t.end_lat && t.end_lon))
 )
 
-const locationCount = computed(() => {
-  let n = 0
-  for (const t of tripsWithGps.value) {
-    if (t.start_lat && t.start_lon) n++
-    if (t.end_lat && t.end_lon) n++
-  }
-  return n
-})
+const stopCount = computed(() => places.value.reduce((n, p) => n + p.stops, 0))
+
+function placeColor(p: PlaceItem): string {
+  return p.longest_category ? STOP_COLOR[p.longest_category] : ENDPOINT_COLOR
+}
+
+function placeSize(p: PlaceItem): number {
+  // Grows slowly with total dwell so one long stay doesn't swamp the map.
+  return Math.round(Math.min(26, 12 + Math.sqrt(p.stop_seconds / 60) * 2.2))
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '--'
@@ -49,11 +80,48 @@ function formatDuration(seconds: number | null): string {
   return `${m}m ${s}s`
 }
 
+function formatDwell(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`
+  const m = Math.floor(seconds / 60)
+  if (m < 60) return `${m}m`
+  return `${Math.floor(m / 60)}h ${m % 60}m`
+}
+
+function placeTitle(p: PlaceItem): string {
+  return p.stops > 0 ? `${p.stops} stop${p.stops === 1 ? '' : 's'} · ${formatDwell(p.stop_seconds)} total` : 'Trip start / end'
+}
+
+function select(id: number | null, fly = true) {
+  selectedId.value = id
+  const p = places.value.find(x => x.id === id)
+  if (p && fly && map) map.flyTo([p.lat, p.lon], Math.max(map.getZoom(), 16), { duration: 0.6 })
+  renderMarkers()
+  if (id != null) {
+    nextTick(() => document.getElementById(`place-${id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+  }
+}
+
+// A trip's stop list links here with ?lat=&lon=; open the place it belongs to.
+function selectFromQuery() {
+  const lat = parseFloat(route.query.lat as string)
+  const lon = parseFloat(route.query.lon as string)
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || !places.value.length) return false
+  let best: PlaceItem | null = null
+  let bestD = Infinity
+  for (const p of places.value) {
+    const d = Math.hypot((p.lat - lat) * 110540, (p.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180))
+    if (d < bestD) { best = p; bestD = d }
+  }
+  if (best && bestD < 300) { select(best.id); return true }
+  return false
+}
+
 onMounted(async () => {
   if (!mapEl.value) return
   const leafletMod = await import('leaflet')
   await import('leaflet/dist/leaflet.css')
   const L = leafletMod.default ?? leafletMod
+  leaflet = L
 
   const { cartoKey } = useRuntimeConfig().public
   const tileUrl = cartoKey
@@ -64,63 +132,57 @@ onMounted(async () => {
   L.control.zoom({ position: 'topright' }).addTo(map)
   L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map)
   mapReady.value = true
-  renderMarkers(L)
+  renderMarkers(true)
+  selectFromQuery()
 })
 
-function renderMarkers(L: any) {
-  if (!map || !tripsWithGps.value.length) return
+function renderMarkers(fit = false) {
+  const L = leaflet
+  if (!map || !L) return
+  markers.forEach(m => map.removeLayer(m))
+  markers = new Map()
+  if (!places.value.length) return
 
   const allPts: [number, number][] = []
+  for (const p of places.value) {
+    const size = placeSize(p)
+    const color = placeColor(p)
+    const selected = p.id === selectedId.value
+    const ring = selected ? '3px solid #fff' : '2px solid #0f1117'
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color}d9;border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    })
 
-  for (const t of tripsWithGps.value) {
-    const mph = Math.round(t.max_speed_kph / 1.60934)
-    const dateStr = formatDate(t.start_time)
-    const dur = formatDuration(t.duration_s)
+    const parts: string[] = []
+    if (p.long) parts.push(`${p.long} long`)
+    if (p.medium) parts.push(`${p.medium} medium`)
+    if (p.quick) parts.push(`${p.quick} quick`)
+    const html = `<div style="font-size:12px;line-height:1.5;font-family:Inter,sans-serif">
+      <div style="font-weight:600;margin-bottom:2px">${placeTitle(p)}</div>
+      ${parts.length ? `<div style="opacity:.8">${parts.join(' · ')}</div>` : ''}
+      <div style="opacity:.6;font-size:11px">${p.arrivals} arrival${p.arrivals === 1 ? '' : 's'} · ${p.departures} departure${p.departures === 1 ? '' : 's'}</div>
+    </div>`
 
-    if (t.start_lat && t.start_lon) {
-      addMarker(L, t.start_lat, t.start_lon, '#22c55e', 'Start', t.boot_id, dateStr, dur, mph)
-      allPts.push([t.start_lat, t.start_lon])
-    }
-    if (t.end_lat && t.end_lon) {
-      addMarker(L, t.end_lat, t.end_lon, '#ef4444', 'End', t.boot_id, dateStr, dur, mph)
-      allPts.push([t.end_lat, t.end_lon])
-    }
+    const marker = L.marker([p.lat, p.lon], { icon, zIndexOffset: selected ? 1000 : 0 })
+      .bindTooltip(html, { direction: 'top', offset: [0, -size / 2], className: 'trip-tooltip' })
+      .on('click', () => select(p.id, false))
+      .addTo(map)
+    markers.set(p.id, marker)
+    allPts.push([p.lat, p.lon])
   }
 
-  if (allPts.length) {
+  if (fit && allPts.length) {
     map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 })
   }
 }
 
-function addMarker(L: any, lat: number, lon: number, color: string, type: string, bootId: string, date: string, dur: string, mph: number) {
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #0f1117;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>`,
-    iconSize: [14, 14],
-    iconAnchor: [7, 7],
-  })
-
-  const html = `<div style="font-size:12px;line-height:1.5;font-family:Inter,sans-serif">
-    <div style="font-weight:600;margin-bottom:2px">${type} · ${date}</div>
-    <div style="opacity:.8">${dur} · ${mph} mph peak</div>
-    <div style="opacity:.5;font-size:10px;margin-top:2px">${bootId.slice(0, 12)}…</div>
-  </div>`
-
-  L.marker([lat, lon], { icon })
-    .bindTooltip(html, { direction: 'top', offset: [0, -8], className: 'trip-tooltip' })
-    .on('click', () => navigateTo(`/trips/${bootId}`))
-    .addTo(map)
-}
-
-watch(tripsWithGps, async () => {
-  if (!mapReady.value || !map) return
-  map.eachLayer((layer: any) => {
-    if (!layer._url && !layer._container?.classList?.contains('leaflet-control-container')) {
-      map.removeLayer(layer)
-    }
-  })
-  const L = await import('leaflet')
-  renderMarkers(L.default ?? L)
+watch(places, () => {
+  if (!mapReady.value) return
+  renderMarkers(true)
+  selectFromQuery()
 }, { deep: true })
 
 onUnmounted(() => {
@@ -130,10 +192,10 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <LayoutPageHeader title="Places" subtitle="Trip start and end locations">
+    <LayoutPageHeader title="Places" subtitle="Where you stopped, and where trips started and ended">
       <template #actions>
-        <span v-if="locationCount" class="text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-accent-soft); color: var(--color-accent)">
-          {{ locationCount }} locations
+        <span v-if="places.length" class="text-xs font-medium px-2.5 py-1 rounded-full" style="background: var(--color-accent-soft); color: var(--color-accent)">
+          {{ places.length }} places · {{ stopCount }} stops
         </span>
       </template>
     </LayoutPageHeader>
@@ -151,50 +213,105 @@ onUnmounted(() => {
         class="absolute top-3 left-3 z-[1000] flex items-center gap-4 px-3 py-1.5 rounded-lg text-[10px] font-semibold"
         style="background: rgba(15, 17, 23, 0.85); backdrop-filter: blur(8px); color: var(--color-text-secondary)"
       >
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #22c55e" /> Start</span>
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #ef4444" /> End</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #94a3b8" /> Quick</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #f59e0b" /> Medium</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #ef4444" /> Long</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #3b82f6" /> Trip start / end</span>
+        <span style="opacity: .6">colour = longest stop · size = time spent</span>
       </div>
     </div>
 
-    <!-- Trip list with locations -->
     <div v-if="status === 'pending'" class="space-y-2">
       <div v-for="i in 4" :key="i" class="skeleton h-16" />
     </div>
 
-    <div v-else-if="tripsWithGps.length === 0" class="rounded-xl p-6" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+    <div v-else-if="places.length === 0" class="rounded-xl p-6" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
       <p class="text-[13px]" style="color: var(--color-text-secondary)">No trips with GPS data yet.</p>
     </div>
 
-    <div v-else>
-      <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Trips by Location</h2>
-      <div class="space-y-2">
+    <template v-else>
+      <!-- Places -->
+      <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Places</h2>
+      <div class="space-y-2 mb-8">
         <div
-          v-for="t in tripsWithGps"
-          :key="t.boot_id"
+          v-for="p in places"
+          :id="`place-${p.id}`"
+          :key="p.id"
           class="rounded-xl p-4 cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
-          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
-          @click="navigateTo(`/trips/${t.boot_id}`)"
+          :style="{
+            backgroundColor: 'var(--color-surface)',
+            border: selectedId === p.id ? `1px solid ${placeColor(p)}` : '1px solid var(--color-border)',
+          }"
+          @click="select(p.id)"
         >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <div class="flex items-center gap-1.5">
-                <span v-if="t.start_lat && t.start_lon" class="w-2 h-2 rounded-full" style="background: #22c55e" />
-                <span v-if="t.end_lat && t.end_lon" class="w-2 h-2 rounded-full" style="background: #ef4444" />
-              </div>
-              <div>
-                <p class="text-[13px] font-medium">{{ formatDate(t.start_time) }}</p>
-                <p class="text-[11px] font-mono mt-0.5" style="color: var(--color-text-secondary)">
-                  {{ formatDuration(t.duration_s) }} · {{ Math.round(t.max_speed_kph / 1.60934) }} mph peak
-                </p>
-              </div>
+          <div class="flex items-center gap-3">
+            <span class="w-3 h-3 rounded-full shrink-0" :style="{ background: placeColor(p) }" />
+            <div class="flex-1 min-w-0">
+              <p class="text-[13px] font-medium">{{ placeTitle(p) }}</p>
+              <p class="text-[11px] font-mono mt-0.5" style="color: var(--color-text-secondary)">
+                {{ p.lat.toFixed(4) }}, {{ p.lon.toFixed(4) }}
+                <template v-if="p.last_at"> · last {{ formatDate(p.last_at) }}</template>
+              </p>
             </div>
-            <svg class="w-4 h-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
+            <div class="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
+              <span v-if="p.long" class="px-1.5 py-0.5 rounded" style="background: rgba(239,68,68,.15); color: #ef4444">{{ p.long }} long</span>
+              <span v-if="p.medium" class="px-1.5 py-0.5 rounded" style="background: rgba(245,158,11,.15); color: #f59e0b">{{ p.medium }} medium</span>
+              <span v-if="p.quick" class="px-1.5 py-0.5 rounded" style="background: rgba(148,163,184,.15); color: #94a3b8">{{ p.quick }} quick</span>
+            </div>
+          </div>
+
+          <div v-if="selectedId === p.id" class="mt-3 pt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style="border-top: 1px solid var(--color-border)">
+            <span style="color: var(--color-text-secondary)">
+              {{ p.arrivals }} arrival{{ p.arrivals === 1 ? '' : 's' }} · {{ p.departures }} departure{{ p.departures === 1 ? '' : 's' }}
+              <template v-if="p.longest_category"> · longest {{ STOP_LABEL[p.longest_category].toLowerCase() }} stop {{ formatDwell(p.longest_s) }}</template>
+            </span>
+            <NuxtLink
+              v-for="b in p.trips.slice(0, 6)"
+              :key="b"
+              :to="`/trips/${b}`"
+              class="font-mono underline-offset-2 hover:underline"
+              style="color: var(--color-accent)"
+              @click.stop
+            >
+              trip {{ b.slice(0, 8) }}
+            </NuxtLink>
+            <span v-if="p.trips.length > 6" style="color: var(--color-text-secondary)">+{{ p.trips.length - 6 }} more</span>
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- Trip list with locations -->
+      <template v-if="tripsWithGps.length">
+        <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Trips by Location</h2>
+        <div class="space-y-2">
+          <div
+            v-for="t in tripsWithGps"
+            :key="t.boot_id"
+            class="rounded-xl p-4 cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
+            :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+            @click="navigateTo(`/trips/${t.boot_id}`)"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="flex items-center gap-1.5">
+                  <span v-if="t.start_lat && t.start_lon" class="w-2 h-2 rounded-full" style="background: #22c55e" />
+                  <span v-if="t.end_lat && t.end_lon" class="w-2 h-2 rounded-full" style="background: #ef4444" />
+                </div>
+                <div>
+                  <p class="text-[13px] font-medium">{{ formatDate(t.start_time) }}</p>
+                  <p class="text-[11px] font-mono mt-0.5" style="color: var(--color-text-secondary)">
+                    {{ formatDuration(t.duration_s) }} · {{ Math.round(t.max_speed_kph / 1.60934) }} mph peak
+                  </p>
+                </div>
+              </div>
+              <svg class="w-4 h-4 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </template>
+    </template>
   </div>
 </template>
 
