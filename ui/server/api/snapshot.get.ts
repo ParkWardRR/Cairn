@@ -6,7 +6,12 @@ export default defineEventHandler(async (event) => {
   const ifNoneMatch = getRequestHeader(event, 'if-none-match')
   if (ifNoneMatch) headers['If-None-Match'] = ifNoneMatch
 
-  const res = await fetch(`${config.tsdbUrl}/snapshot`, { headers })
+  const query = getQuery(event)
+  const params = new URLSearchParams()
+  if (query.format) params.set('format', String(query.format))
+  const qs = params.toString()
+
+  const res = await fetch(`${config.tsdbUrl}/snapshot${qs ? '?' + qs : ''}`, { headers })
 
   setResponseStatus(event, res.status)
   for (const key of ['content-type', 'content-length', 'etag', 'last-modified', 'cache-control']) {
