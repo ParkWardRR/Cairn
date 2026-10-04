@@ -29,8 +29,8 @@ export default defineEventHandler(async (event) => {
 
   const raw = await queryTsdbObjects(`
     SELECT lat, lon, alt_m, speed_mps, heading_deg, h_acc_m, sats_used, mono_ms, observed_at
-    FROM position
-    WHERE boot_id = ${id} AND lat != 0 AND lon != 0
+    FROM v_position
+    WHERE boot_id = ${id}
     ORDER BY mono_ms ASC
   `)
 

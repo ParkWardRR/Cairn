@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     queryTsdbObjects(`
       SELECT mono_ms, lat, lon, speed_mps, sats_used, fix_type, hdop,
         h_acc_m, alt_m
-      FROM position WHERE boot_id = ${bid}
+      FROM v_position WHERE boot_id = ${bid}
       ORDER BY mono_ms
     `),
   ])
