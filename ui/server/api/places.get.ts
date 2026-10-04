@@ -12,11 +12,11 @@ export default defineEventHandler(async () => {
     FROM v_drive_summary d
     LEFT JOIN (
       SELECT boot_id, observed_at, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM position WHERE lat != 0 AND lon != 0) WHERE rn = 1
+      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM position WHERE lat != 0 AND lon != 0 AND speed_mps < 67 AND (hdop IS NULL OR hdop < 15)) WHERE rn = 1
     ) fp USING (boot_id)
     LEFT JOIN (
       SELECT boot_id, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms DESC) AS rn FROM position WHERE lat != 0 AND lon != 0) WHERE rn = 1
+      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms DESC) AS rn FROM position WHERE lat != 0 AND lon != 0 AND speed_mps < 67 AND (hdop IS NULL OR hdop < 15)) WHERE rn = 1
     ) lp USING (boot_id)
     ORDER BY fp.observed_at DESC
   `)
