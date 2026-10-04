@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     FROM v_drive_summary d
     LEFT JOIN (
       SELECT boot_id, observed_at, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM v_position) WHERE rn = 1
+      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM position) WHERE rn = 1
     ) first_pos USING (boot_id)
     ORDER BY ${orderBy === 'observed_at' ? 'first_pos.observed_at' : orderBy} ${dir}
     LIMIT ${limit} OFFSET ${offset}

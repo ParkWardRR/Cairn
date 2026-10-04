@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
       FROM (
         SELECT mono_ms, speed_mps,
           lead(mono_ms) OVER (ORDER BY mono_ms) AS lead_ms
-        FROM v_position WHERE boot_id = ${id} AND speed_mps IS NOT NULL
+        FROM position WHERE boot_id = ${id} AND speed_mps IS NOT NULL
       ) WHERE lead_ms IS NOT NULL
     `),
 
@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
         sum(CASE WHEN alt_diff < 0 THEN abs(alt_diff) ELSE 0 END) AS loss_m
       FROM (
         SELECT alt_m - lag(alt_m) OVER (ORDER BY mono_ms) AS alt_diff
-        FROM v_position WHERE boot_id = ${id} AND alt_m IS NOT NULL
+        FROM position WHERE boot_id = ${id} AND alt_m IS NOT NULL
       )
     `),
 

@@ -11,13 +11,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const firstPos = await queryTsdbObjects(`
-    SELECT observed_at, lat, lon FROM v_position
+    SELECT observed_at, lat, lon FROM position
     WHERE boot_id = ${bid}
     ORDER BY mono_ms ASC LIMIT 1
   `)
 
   const lastPos = await queryTsdbObjects(`
-    SELECT observed_at, lat, lon FROM v_position
+    SELECT observed_at, lat, lon FROM position
     WHERE boot_id = ${bid}
     ORDER BY mono_ms DESC LIMIT 1
   `)
@@ -32,21 +32,22 @@ export default defineEventHandler(async (event) => {
         (SELECT min(mono_ms) FROM obd WHERE boot_id = ${bid}) AS first_obd_ms,
         (SELECT max(mono_ms) FROM obd WHERE boot_id = ${bid}) AS last_obd_ms,
         (SELECT min(mono_ms) FROM position WHERE boot_id = ${bid}) AS first_pos_ms,
-        (SELECT min(mono_ms) FROM v_position WHERE boot_id = ${bid}) AS first_fix_ms
+        (SELECT min(mono_ms) FROM position WHERE boot_id = ${bid} AND lat != 0 AND lon != 0) AS first_fix_ms
     `),
     queryTsdbObjects(`
       SELECT p.lat, p.lon, p.observed_at
-      FROM v_position p
+      FROM position p
       JOIN (
         SELECT boot_id FROM v_drive_summary
         WHERE boot_id != ${bid}
         AND boot_id IN (
-          SELECT boot_id FROM v_position GROUP BY boot_id
-          HAVING max(observed_at) < (SELECT min(observed_at) FROM v_position WHERE boot_id = ${bid})
+          SELECT boot_id FROM position GROUP BY boot_id
+          HAVING max(observed_at) < (SELECT min(observed_at) FROM position WHERE boot_id = ${bid})
         )
-        ORDER BY (SELECT max(observed_at) FROM v_position WHERE boot_id = v_drive_summary.boot_id) DESC
+        ORDER BY (SELECT max(observed_at) FROM position WHERE boot_id = v_drive_summary.boot_id) DESC
         LIMIT 1
       ) prev ON p.boot_id = prev.boot_id
+      WHERE p.lat != 0 AND p.lon != 0
       ORDER BY p.mono_ms DESC
       LIMIT 1
     `),

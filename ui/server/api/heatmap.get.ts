@@ -1,7 +1,8 @@
 export default defineEventHandler(async () => {
   const rows = await queryTsdbObjects(`
     SELECT lat, lon, speed_mps
-    FROM v_position
+    FROM position
+    WHERE lat != 0 AND lon != 0
     ORDER BY boot_id, mono_ms
   `)
 
