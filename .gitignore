@@ -49,6 +49,7 @@ firmware/cairn-v2/test/host/build/
 # Compiled server binaries (see server/Makefile)
 server/bin/
 server/cairn-tsdb
+server/cairn-push
 server/cairn-verify
 
 # mTLS material: the CA private key must never be committed (public repo)
