@@ -44,7 +44,7 @@
 
 ## Screenshots
 
-The web UI (`ui/`) running against **invented data**: a fictional owner in Carmel-by-the-Sea, California, five weeks of commutes to Monterey, grocery runs and Highway 1 drives down to Big Sur. The roads are real; the drives, car and device are not. Nothing here comes from a real capture.
+The web UI (`ui/`) running against **invented data**: a fictional owner in Carmel-by-the-Sea, Monterey County, California, and two weeks of errands, beach and Mission runs, Point Lobos, Pebble Beach and Carmel Valley Road, all within a few miles of home. The roads are real; the drives, car and device are not. Nothing here comes from a real capture.
 
 <table>
   <tr>
@@ -80,7 +80,7 @@ cd ui && npx nuxt dev --port 3123                # in a second terminal
 cd ui && node scripts/screenshots.mjs http://localhost:3123 ../docs/screenshots
 ```
 
-Put a CARTO key in `ui/.env` (`NUXT_PUBLIC_CARTO_KEY=...`, gitignored) so the maps use CARTO's dark tiles. Without one, the capture script falls back to darkened OpenStreetMap tiles. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, basemap © CARTO.
+The shots are taken in day mode. Put a CARTO key in `ui/.env` (`NUXT_PUBLIC_CARTO_KEY=...`, gitignored) so the maps use CARTO's Voyager tiles; without one the capture script falls back to OpenStreetMap tiles. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, basemap © CARTO.
 
 </details>
 

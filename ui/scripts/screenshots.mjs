@@ -15,20 +15,21 @@ const browser = await chromium.launch()
 const ctx = await browser.newContext({
   viewport: { width: 1440, height: 900 },
   deviceScaleFactor: scale,
-  colorScheme: 'dark',
+  colorScheme: 'light',
   timezoneId: 'America/Los_Angeles',
   locale: 'en-US',
 })
 // With a CARTO key in ui/.env (NUXT_PUBLIC_CARTO_KEY, gitignored) the app asks
 // CARTO for tiles as designed and they pass straight through. Without one CARTO
 // answers with an "API KEY REQUIRED" watermark, so fall back to OpenStreetMap
-// tiles darkened in CSS. Attribution: map data (c) OpenStreetMap contributors.
+// tiles. Either way the shots are day mode: light UI, CARTO Voyager basemap
+// (the app itself only asks for dark_all). Attribution: map data (c) OpenStreetMap contributors.
 const keyed = !!process.env.NUXT_PUBLIC_CARTO_KEY ||
   (existsSync('.env') && /^NUXT_PUBLIC_CARTO_KEY=\S+/m.test(readFileSync('.env', 'utf8')))
-if (!keyed) console.log('no CARTO key found; using darkened OpenStreetMap tiles')
+if (!keyed) console.log('no CARTO key found; using OpenStreetMap tiles')
 await ctx.route('**/basemaps.cartocdn.com/**', async (route) => {
   const url = route.request().url()
-  if (keyed) return route.continue()
+  if (keyed) return route.continue({ url: url.replace('/dark_all/', '/voyager/') }) // day mode
   const m = url.match(/\/(\d+)\/(\d+)\/(\d+)(?:@2x)?\.png/)
   if (!m) return route.abort()
   const res = await ctx.request.get(`https://tile.openstreetmap.org/${m[1]}/${m[2]}/${m[3]}.png`, {
@@ -37,17 +38,17 @@ await ctx.route('**/basemaps.cartocdn.com/**', async (route) => {
   await route.fulfill({ response: res })
 })
 const hideDevtools = '#nuxt-devtools-container,nuxt-devtools-inspect-panel,#vue-tracer-overlay{display:none!important}'
-await ctx.addInitScript(({ hide, dark }) => {
+await ctx.addInitScript(({ hide }) => {
   addEventListener('DOMContentLoaded', () => {
     const s = document.createElement('style')
-    s.textContent = hide + dark
+    s.textContent = hide
     document.head.appendChild(s)
   })
-}, { hide: hideDevtools, dark: keyed ? '' : '.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(.92) saturate(.55)}' })
+}, { hide: hideDevtools })
 const page = await ctx.newPage()
 
 const { trips } = await (await page.request.get(`${base}/api/trips?limit=200`)).json()
-const long = trips.filter(t => t.duration_s > 1500).sort((a, b) => b.start_time.localeCompare(a.start_time))
+const long = trips.filter(t => t.duration_s > 600).sort((a, b) => b.start_time.localeCompare(a.start_time))
 const featured = long[0]
 
 const shots = [
