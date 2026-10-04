@@ -23,8 +23,8 @@ onMounted(async () => {
 
     const { cartoKey } = useRuntimeConfig().public
     const tileUrl = cartoKey
-      ? `https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png?key=${cartoKey}`
-      : 'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'
+      ? `https://basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png?key=${cartoKey}`
+      : 'https://basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png'
 
     map = L.map(mapEl.value, {
       zoomControl: false,
@@ -34,6 +34,11 @@ onMounted(async () => {
     L.control.zoom({ position: 'topright' }).addTo(map)
 
     L.tileLayer(tileUrl, { maxZoom: 19 }).addTo(map)
+
+    const tilePane = map.getPane('tilePane')
+    if (tilePane) {
+      tilePane.style.filter = 'brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7)'
+    }
 
     ready.value = true
     renderHeat()
@@ -51,18 +56,19 @@ function renderHeat() {
   if (!heatFn) return
 
   const heat = heatFn(points, {
-    radius: 20,
-    blur: 25,
+    radius: 12,
+    blur: 15,
     maxZoom: 17,
-    max: 80,
-    minOpacity: 0.4,
+    max: 60,
+    minOpacity: 0.35,
     gradient: {
-      0.0: '#1e3a5f',
-      0.2: '#3b82f6',
-      0.4: '#22c55e',
-      0.6: '#f59e0b',
-      0.85: '#ef4444',
-      1.0: '#ffffff',
+      0.0: '#1e3a8f',
+      0.15: '#3b82f6',
+      0.35: '#22d3ee',
+      0.55: '#22c55e',
+      0.75: '#f59e0b',
+      0.9: '#ef4444',
+      1.0: '#fbbf24',
     },
   })
   heat.addTo(map)
