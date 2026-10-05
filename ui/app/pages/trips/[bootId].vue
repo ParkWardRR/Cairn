@@ -46,6 +46,7 @@ const { data: routeData } = useFetch<RouteData>(
   () => `/api/trips/${bootId.value}/route`,
 )
 interface StopPlace {
+  saved_id?: number | null
   name: string | null
   category: string | null
   address: string | null
@@ -56,6 +57,8 @@ interface StopPlace {
 interface TripStop {
   start_at: string | null
   start_offset_s: number
+  start_mono_ms: number
+  end_mono_ms: number
   duration_s: number
   lat: number
   lon: number
@@ -220,18 +223,28 @@ const gpsAcq = computed(() => {
 
 const insights = computed(() => insightsData.value?.insights ?? [])
 
-const timelineHighlight = ref<{ lat: number; lon: number } | null>(null)
+// The scrubber under the map. The playhead is the trip time being shown; hovering
+// the track previews a point without moving it.
+const playhead = ref<number | null>(null)
+const scrubPos = ref<{ lat: number; lon: number } | null>(null)
+const previewPos = ref<{ lat: number; lon: number } | null>(null)
+const timelineHighlight = computed(() => previewPos.value ?? scrubPos.value)
 
-function onTimelineHover(pos: { lat: number; lon: number; mono_ms: number } | null) {
-  timelineHighlight.value = pos ? { lat: pos.lat, lon: pos.lon } : null
+// Wall-clock ms at mono_ms = 0, rebuilt from any stop that has a real timestamp.
+const wallBaseMs = computed(() => {
+  const s = stops.value.find(x => x.start_at)
+  return s ? Date.parse(s.start_at!) - s.start_mono_ms : null
+})
+
+function selectStop(i: number) {
+  selectedStop.value = i
 }
 
-function onTimelineSelect(data: any) {
-  if (data) {
-    timelineHighlight.value = { lat: data.lat, lon: data.lon }
-  }
-}
-
+// Choosing a stop from the list also jumps the scrubber to it.
+watch(selectedStop, (i) => {
+  const s = i == null ? null : stops.value[i]
+  if (s) playhead.value = s.start_mono_ms
+})
 const hasValidRoute = computed(() => {
   return coordinates.value.filter(c => c[0] !== 0 && c[1] !== 0).length >= 2
 })
@@ -330,7 +343,8 @@ function insightIcon(icon: string | undefined): string {
 
       <!-- Map + stops -->
       <div class="grid gap-4 mb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div class="rounded-xl overflow-hidden self-start" :style="{ border: '1px solid var(--color-border)' }">
+      <div class="min-w-0 space-y-3">
+      <div class="rounded-xl overflow-hidden" :style="{ border: '1px solid var(--color-border)' }">
         <ClientOnly>
           <div v-if="hasValidRoute" style="height: 420px">
             <MapsTripMap
@@ -345,6 +359,7 @@ function insightIcon(icon: string | undefined): string {
               :highlight-pos="timelineHighlight"
               :stops="stops"
               :selected-stop="selectedStop"
+              :follow-highlight="!previewPos"
               @select-stop="onStopClick"
             />
           </div>
@@ -364,12 +379,29 @@ function insightIcon(icon: string | undefined): string {
         </div>
       </div>
 
+        <ClientOnly>
+          <ChartsTripScrubber
+            v-if="hasValidRoute"
+            v-model="playhead"
+            :boot-id="bootId"
+            :stops="stops"
+            :selected-stop="selectedStop"
+            :wall-base-ms="wallBaseMs"
+            :first-fix-ms="trip?.first_fix_ms"
+            @position="scrubPos = $event ? { lat: $event.lat, lon: $event.lon } : null"
+            @hover="previewPos = $event ? { lat: $event.lat, lon: $event.lon } : null"
+            @select-stop="selectStop"
+          />
+        </ClientOnly>
+      </div>
+
         <!-- Stops sidebar -->
-        <aside
-          v-if="stops.length"
-          class="rounded-xl flex flex-col max-h-72 lg:max-h-none lg:h-[420px] overflow-hidden"
-          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
-        >
+        <aside v-if="stops.length" class="relative">
+          <!-- Absolute on wide screens, so a long list scrolls instead of stretching the row. -->
+          <div
+            class="rounded-xl flex flex-col max-h-72 lg:max-h-none overflow-hidden lg:absolute lg:inset-0"
+            :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+          >
           <div class="px-3.5 pt-3 pb-2" style="border-bottom: 1px solid var(--color-border)">
             <div class="flex items-center justify-between">
               <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Stops</span>
@@ -397,6 +429,7 @@ function insightIcon(icon: string | undefined): string {
               </span>
               <span class="min-w-0 flex-1">
                 <span class="flex items-baseline gap-2 text-[12px]">
+                  <span v-if="s.place?.saved_id != null" style="color: #a78bfa" title="Named by you">★</span>
                   <span class="font-semibold">{{ STOP_LABEL[s.category] }}</span>
                   <span class="font-mono">{{ fmtStop(s.duration_s) }}</span>
                   <span class="font-mono text-[10.5px] ml-auto" style="color: var(--color-text-secondary)">{{ fmtClock(s) }}</span>
@@ -406,6 +439,7 @@ function insightIcon(icon: string | undefined): string {
                 <span v-if="s.inferred" class="block text-[10px]" style="color: var(--color-text-secondary)">no GPS fixes while stopped</span>
               </span>
             </button>
+          </div>
           </div>
         </aside>
       </div>
@@ -444,14 +478,7 @@ function insightIcon(icon: string | undefined): string {
       <!-- Interactive timeline + GPS health -->
       <div class="mb-4">
         <ClientOnly>
-          <ChartsTripTimeline
-            :boot-id="bootId"
-            :first-obd-ms="trip?.first_obd_ms"
-            :last-obd-ms="trip?.last_obd_ms"
-            :first-fix-ms="trip?.first_fix_ms"
-            @hover="onTimelineHover"
-            @select="onTimelineSelect"
-          />
+          <ChartsTripTimeline :boot-id="bootId" :first-obd-ms="trip?.first_obd_ms" />
           <template #fallback>
             <div class="skeleton rounded-xl" style="height: 180px" />
           </template>

@@ -21,6 +21,9 @@ const props = defineProps<{
     place?: { name: string | null } | null
   }>
   selectedStop?: number | null
+  // Keep the highlight in view by panning when it nears the edge (used while the
+  // trip is playing).
+  followHighlight?: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'select-stop', index: number): void }>()
@@ -73,6 +76,9 @@ watch(() => props.highlightPos, async (pos) => {
       iconAnchor: [8, 8],
     })
     highlightMarker = L.marker([pos.lat, pos.lon], { icon, interactive: false }).addTo(map)
+    if (props.followHighlight && !map.getBounds().pad(-0.2).contains([pos.lat, pos.lon])) {
+      map.panTo([pos.lat, pos.lon], { animate: true, duration: 0.4 })
+    }
   }
 })
 
