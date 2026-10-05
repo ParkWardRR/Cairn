@@ -18,7 +18,7 @@ const props = defineProps<{
     duration_s: number
     category: StopCategory
     inferred: boolean
-    place?: { name: string | null } | null
+    place?: { name: string | null; kind?: string | null } | null
   }>
   selectedStop?: number | null
   // Keep the highlight in view by panning when it nears the edge (used while the
@@ -101,7 +101,7 @@ function stopIcon(L: any, stop: NonNullable<typeof props.stops>[number], selecte
   const size = STOP_SIZE[stop.category]
   return L.divIcon({
     className: '',
-    html: stopBadgeHtml(stop.category, { selected, inferred: stop.inferred }),
+    html: stopBadgeHtml(stop.category, { selected, inferred: stop.inferred, kind: stop.place?.kind }),
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   })

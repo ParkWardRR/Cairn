@@ -16,6 +16,7 @@ interface PlaceLabel {
   status: 'resolved' | 'pending' | 'none'
   name: string | null
   category: string | null
+  kind: string
   address: string | null
   confidence: number
   sources: string[]
@@ -41,7 +42,7 @@ interface PlaceItem {
   last_at: string | null
 }
 
-const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; saved: SavedPlace[]; storage: Storage; pending: boolean; attribution: string[] }>('/api/places')
+const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; saved: SavedPlace[]; hints: { home_place_id: number | null }; storage: Storage; pending: boolean; attribution: string[] }>('/api/places')
 
 // Names are looked up in the background the first time; ask again until done.
 let polls = 0
@@ -114,6 +115,7 @@ interface SavedPlace {
   id: number
   name: string
   category: string | null
+  kind: string
   lat: number
   lon: number
   radius_m: number
@@ -132,11 +134,12 @@ interface Storage {
 interface Suggestion {
   name: string
   category: string | null
+  kind: string
   source: string
   dist_m: number
 }
 
-const CATEGORIES = ['Home', 'Work', 'Gym', 'Groceries', 'Food', 'Fuel', 'Shopping', 'Friends', 'Other']
+const KIND_CHOICES = PLACE_KINDS.filter(k => k.id !== 'other')
 const RADII = [50, 100, 150, 250, 400]
 
 // What the user is changing. lat/lon follow the pin if it is dragged.
@@ -154,6 +157,42 @@ const draft = ref<Draft | null>(null)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 let editCircle: any = null
+
+const homeSuggestion = computed(() => {
+  const id = data.value?.hints?.home_place_id
+  return id == null ? null : places.value.find(p => p.id === id) ?? null
+})
+
+function kindOfPlace(p: PlaceItem): string {
+  return p.label?.kind ?? 'other'
+}
+
+// The kind picked in the editor, from the label it stores.
+function draftKind(): string | null {
+  return kindFromLabel(draft.value?.category) ?? null
+}
+
+// Names offered for the spot, those that look like the chosen kind first.
+function rankedSuggestions(p: PlaceItem): Suggestion[] {
+  return rankByKind(p.suggestions, draftKind())
+}
+
+function pickKind(id: string) {
+  const d = draft.value
+  if (!d) return
+  const k = placeKind(id)
+  if (draftKind() === id) { d.category = null; return }
+  d.category = k.label
+  // A kind with an obvious name (Home, Work) fills it in if nothing is there yet.
+  if (!d.name.trim() && k.defaultName) d.name = k.defaultName
+}
+
+// The engine thinks this spot is home: open the editor already set to Home.
+function setAsHome(p: PlaceItem) {
+  select(p.id)
+  startEdit(p)
+  if (draft.value) { draft.value.category = 'Home'; draft.value.name = 'Home' }
+}
 
 function savedFor(p: PlaceItem): SavedPlace | null {
   const id = p.label?.saved_id
@@ -325,14 +364,14 @@ function renderMarkers(fit = false) {
   const allPts: [number, number][] = []
   for (const p of places.value) {
     const selected = p.id === selectedId.value
-    const size = p.longest_category ? STOP_SIZE[p.longest_category] : 14
+    const size = p.longest_category ? STOP_SIZE[p.longest_category] : (kindOfPlace(p) !== 'other' ? 24 : 14)
     const color = placeColor(p)
     const ring = selected ? '3px solid #fff' : '2px solid #0f1117'
     const icon = L.divIcon({
       className: '',
       html: p.longest_category
-        ? stopBadgeHtml(p.longest_category, { selected })
-        : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
+        ? stopBadgeHtml(p.longest_category, { selected, kind: kindOfPlace(p) })
+        : endpointMarkerHtml(kindOfPlace(p), size, color, ring),
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     })
@@ -369,6 +408,13 @@ function renderMarkers(fit = false) {
   if (fit && allPts.length) {
     map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 })
   }
+}
+
+// A trip start/end place: a plain dot, or a circle holding its kind's icon.
+function endpointMarkerHtml(kind: string, size: number, color: string, ring: string): string {
+  const frame = `width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)`
+  if (kind === 'other') return `<div style="${frame}"></div>`
+  return `<div style="${frame};display:flex;align-items:center;justify-content:center">${placeIconSvg(kind, { size: Math.round(size * 0.62), color: '#fff', strokeWidth: 2.2 })}</div>`
 }
 
 // The circle shows which visits the place will claim.
@@ -426,7 +472,7 @@ onUnmounted(() => {
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #2dd4bf" /> Medium</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #a78bfa" /> Long</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #64748b" /> Trip start / end</span>
-        <span style="opacity: .6">colour = longest stop</span>
+        <span style="opacity: .6">colour = longest stop · icon = kind of place</span>
       </div>
     </div>
 
@@ -439,6 +485,22 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
+      <!-- The engine's guess at home -->
+      <div
+        v-if="homeSuggestion"
+        class="flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 mb-4 text-[13px]"
+        style="background: rgba(167,139,250,.08); border: 1px solid rgba(167,139,250,.3)"
+      >
+        <span class="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style="background: rgba(167,139,250,.18); color: #a78bfa">
+          <PlaceIcon kind="home" :size="17" />
+        </span>
+        <span class="flex-1 min-w-[14rem]">
+          <span class="font-semibold">This looks like home.</span>
+          <span style="color: var(--color-text-secondary)"> Your trips start and end here more than anywhere else. Marking it helps the engine name your other places and trips.</span>
+        </span>
+        <button type="button" class="px-3 py-1.5 rounded-lg text-[12px] font-semibold" style="background: var(--color-accent); color: #fff" @click="setAsHome(homeSuggestion)">Set as Home</button>
+      </div>
+
       <!-- Places -->
       <h2 class="text-[11px] font-bold uppercase tracking-wider mb-3" style="color: var(--color-text-secondary)">Places</h2>
       <div class="space-y-2 mb-8">
@@ -454,7 +516,14 @@ onUnmounted(() => {
           @click="select(p.id)"
         >
           <div class="flex items-center gap-3">
-            <span class="w-3 h-3 shrink-0" :class="p.longest_category ? 'rounded-[3px]' : 'rounded-full'" :style="{ background: placeColor(p) }" />
+            <span
+              class="w-8 h-8 shrink-0 flex items-center justify-center"
+              :class="p.longest_category ? 'rounded-[9px]' : 'rounded-full'"
+              :style="{ background: placeColor(p) + '26', color: placeColor(p) }"
+              :title="placeKind(kindOfPlace(p)).label"
+            >
+              <PlaceIcon :kind="kindOfPlace(p)" :size="17" />
+            </span>
             <div class="flex-1 min-w-0">
               <p class="text-[13px] font-medium truncate">
                 <span v-if="p.label?.saved_id != null && !isLearned(p)" class="mr-1" style="color: #a78bfa" title="Named by you">★</span>{{ placeTitle(p) }}
@@ -472,7 +541,16 @@ onUnmounted(() => {
             </div>
             <div class="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
               <button
-                v-if="isFrequent(p) && selectedId !== p.id"
+                v-if="data?.hints?.home_place_id === p.id && selectedId !== p.id"
+                type="button"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md transition-colors hover:brightness-125"
+                style="background: rgba(167,139,250,.15); color: #a78bfa"
+                @click.stop="setAsHome(p)"
+              >
+                <PlaceIcon kind="home" :size="12" />Looks like home
+              </button>
+              <button
+                v-else-if="isFrequent(p) && selectedId !== p.id"
                 type="button"
                 class="px-2 py-0.5 rounded-md transition-colors hover:brightness-125"
                 style="background: rgba(167,139,250,.15); color: #a78bfa"
@@ -528,33 +606,38 @@ onUnmounted(() => {
                 >
               </div>
 
-              <div v-if="p.suggestions.length">
-                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Nearby, tap to use</p>
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">
+                  Kind <span class="normal-case font-normal tracking-normal opacity-70">a hint: it ranks the names below and sets the icon</span>
+                </p>
                 <div class="flex flex-wrap gap-1.5">
                   <button
-                    v-for="s in p.suggestions"
-                    :key="s.name"
+                    v-for="k in KIND_CHOICES"
+                    :key="k.id"
                     type="button"
-                    class="px-2 py-0.5 rounded-md text-[11px] transition-colors hover:brightness-125"
-                    :style="{ background: draft.name === s.name ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.name === s.name ? 'var(--color-accent)' : 'var(--color-text)' }"
-                    @click="pickSuggestion(s)"
+                    class="inline-flex items-center gap-1.5 pl-1.5 pr-2.5 py-1 rounded-lg text-[12px] transition-colors"
+                    :style="{ background: draftKind() === k.id ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid ' + (draftKind() === k.id ? 'var(--color-accent)' : 'var(--color-border)'), color: draftKind() === k.id ? 'var(--color-accent)' : 'var(--color-text)' }"
+                    @click="pickKind(k.id)"
                   >
-                    {{ s.name }}<span v-if="s.dist_m" class="opacity-50"> · {{ s.dist_m }} m</span>
+                    <PlaceIcon :kind="k.id" :size="15" />{{ k.label }}
                   </button>
                 </div>
               </div>
 
-              <div>
-                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Kind</p>
+              <div v-if="p.suggestions.length">
+                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Nearby, tap to use</p>
                 <div class="flex flex-wrap gap-1.5">
                   <button
-                    v-for="c in CATEGORIES"
-                    :key="c"
+                    v-for="s in rankedSuggestions(p)"
+                    :key="s.name"
                     type="button"
-                    class="px-2 py-0.5 rounded-md text-[11px] transition-colors"
-                    :style="{ background: draft.category === c ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.category === c ? 'var(--color-accent)' : 'var(--color-text)' }"
-                    @click="draft.category = draft.category === c ? null : c"
-                  >{{ c }}</button>
+                    class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] transition-colors hover:brightness-125"
+                    :style="{ background: draft.name === s.name ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.name === s.name ? 'var(--color-accent)' : 'var(--color-text)' }"
+                    @click="pickSuggestion(s)"
+                  >
+                    <PlaceIcon v-if="s.kind !== 'other'" :kind="s.kind" :size="12" />
+                    {{ s.name }}<span v-if="s.dist_m" class="opacity-50"> · {{ s.dist_m }} m</span>
+                  </button>
                 </div>
               </div>
 

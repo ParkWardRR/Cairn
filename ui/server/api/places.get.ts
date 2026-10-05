@@ -1,3 +1,6 @@
+import { kindForCategory } from '../../shared/utils/placeKinds'
+import { suggestHome } from '../utils/placeHints'
+
 export default defineEventHandler(async () => {
   const trips = await queryTsdbObjects(`
     SELECT
@@ -39,7 +42,9 @@ export default defineEventHandler(async () => {
   const saved = resolver.saved.list()
   return {
     trips,
-    saved,
+    saved: saved.map(s => ({ ...s, kind: kindForCategory(s.category, s.name) })),
+    // A place the engine suggests is home; it is only a suggestion until accepted.
+    hints: { home_place_id: suggestHome(places, saved) },
     storage: {
       saved: saved.filter(s => s.source === 'user').length,
       learned: saved.filter(s => s.source === 'learned').length,

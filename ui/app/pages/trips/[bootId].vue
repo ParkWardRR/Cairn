@@ -46,6 +46,7 @@ const { data: routeData } = useFetch<RouteData>(
   () => `/api/trips/${bootId.value}/route`,
 )
 interface StopPlace {
+  kind?: string
   saved_id?: number | null
   name: string | null
   category: string | null
@@ -336,9 +337,15 @@ function insightIcon(icon: string | undefined): string {
 
       <!-- Where -->
       <p v-if="trip.start?.place?.name || trip.end?.place?.name" class="text-[12px] px-1 mb-3 flex flex-wrap items-center gap-x-2" style="color: var(--color-text-secondary)">
-        <span class="font-semibold">{{ trip.start?.place?.name ?? 'Unknown start' }}</span>
+        <span class="inline-flex items-center gap-1.5 font-semibold">
+          <PlaceIcon v-if="trip.start?.place?.kind && trip.start.place.kind !== 'other'" :kind="trip.start.place.kind" :size="14" />
+          {{ trip.start?.place?.name ?? 'Unknown start' }}
+        </span>
         <span>→</span>
-        <span class="font-semibold">{{ trip.end?.place?.name ?? 'Unknown end' }}</span>
+        <span class="inline-flex items-center gap-1.5 font-semibold">
+          <PlaceIcon v-if="trip.end?.place?.kind && trip.end.place.kind !== 'other'" :kind="trip.end.place.kind" :size="14" />
+          {{ trip.end?.place?.name ?? 'Unknown end' }}
+        </span>
       </p>
 
       <!-- Map + stops -->
@@ -421,11 +428,15 @@ function insightIcon(icon: string | undefined): string {
               @click="onStopClick(i)"
             >
               <span
-                class="mt-0.5 w-4 h-4 rounded-[4px] shrink-0 flex items-center justify-center gap-[2px]"
-                :style="{ background: STOP_COLOR[s.category], opacity: s.inferred ? 0.75 : 1 }"
+                class="mt-0.5 w-5 h-5 rounded-[5px] shrink-0 flex items-center justify-center gap-[2px]"
+                :style="{ background: STOP_COLOR[s.category], opacity: s.inferred ? 0.75 : 1, color: '#0f1117' }"
+                :title="s.place?.kind && s.place.kind !== 'other' ? placeKind(s.place.kind).label : undefined"
               >
-                <span class="w-[2px] h-[7px] rounded-[1px]" style="background: #0f1117" />
-                <span class="w-[2px] h-[7px] rounded-[1px]" style="background: #0f1117" />
+                <PlaceIcon v-if="s.place?.kind && s.place.kind !== 'other'" :kind="s.place.kind" :size="13" />
+                <template v-else>
+                  <span class="w-[2px] h-[8px] rounded-[1px]" style="background: #0f1117" />
+                  <span class="w-[2px] h-[8px] rounded-[1px]" style="background: #0f1117" />
+                </template>
               </span>
               <span class="min-w-0 flex-1">
                 <span class="flex items-baseline gap-2 text-[12px]">

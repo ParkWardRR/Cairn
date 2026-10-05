@@ -53,3 +53,22 @@ bundle -> intake -> CAS -> outbox -> decode -> cairn-tsdb
 
 The ingest is idempotent: it replaces a trip's visits as a whole, and trips that
 later disappear from cairn-tsdb keep the visits already recorded.
+
+## Kinds and icons
+
+Every place has a kind: Home, Work, Gym, Fuel, Health, School, Travel, Groceries,
+Food, Leisure, Shopping, Friends, or Other. The kind sets the icon on the map
+markers, the place list and the trip's stop list, and the catalogue lives in one
+file, `ui/shared/utils/placeKinds.ts`, shared by the app and the server.
+
+Picking a kind in the editor is a hint the engine uses:
+
+- it ranks the nearby names so the ones that look like that kind come first
+  (choose Gym and the fitness centres move to the front);
+- it fills in a name when there is none (Home, Work);
+- it is stored with the place, so learned and saved places keep their icon;
+- for places nobody has tagged, the kind is worked out from the category the
+  lookup returned (`supermarket` is Groceries, `fitness centre` is Gym).
+
+The engine also suggests Home: the spot trips most often start from and end at,
+on at least 3 trips. It only suggests, and stops once a Home exists.

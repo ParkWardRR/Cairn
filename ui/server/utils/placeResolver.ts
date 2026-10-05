@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import type { PlaceAddress, PlaceCandidate, PlaceContext, PlaceLabel, PlaceSource } from './placeLabel'
 import { FETCH_VERSION, VISIT_MIN_S, chooseLabel, normalizeName } from './placeLabel'
+import { kindForCategory } from '../../shared/utils/placeKinds'
 import { PlaceStore, type CachedPlace } from './placeStore'
 import { SavedPlaces } from './placeSaved'
 import { fetchGeoapify, fetchOsm, fsqCandidate } from './placeSources'
@@ -17,6 +18,8 @@ export interface PlaceResult extends PlaceLabel {
 export interface PlaceSuggestion {
   name: string
   category: string | null
+  // What kind of place the name looks like, so the picker can rank by a kind hint.
+  kind: string
   source: PlaceSource | 'address'
   dist_m: number
 }
@@ -108,11 +111,11 @@ export class PlaceResolver {
       const key = normalizeName(c.name)
       if (!key || seen.has(key)) continue
       seen.add(key)
-      out.push({ name: c.name.trim(), category: c.category, source: c.source, dist_m: c.dist_m })
+      out.push({ name: c.name.trim(), category: c.category, kind: kindForCategory(c.category, c.name), source: c.source, dist_m: c.dist_m })
       if (out.length >= limit) break
     }
     const addr = row.address?.line ?? row.address?.formatted
-    if (addr && out.length < limit) out.push({ name: addr, category: 'address', source: 'address', dist_m: 0 })
+    if (addr && out.length < limit) out.push({ name: addr, category: 'address', kind: 'other', source: 'address', dist_m: 0 })
     return out
   }
 
