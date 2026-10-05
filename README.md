@@ -104,12 +104,21 @@ data). One trust model instead of three features:
   bundle carries its vehicle, assignment and a monotonic device counter, so a
   restored card or a cloned dongle is caught. A 2017 M240i (B58) joins the N20.
 
-**Status:** the server side is done and tested (vehicles, counters, escrowed
-keys, intake binding, the app API, `cairn-admin`, format v3 Go reference with
-33 conformance vectors). **Not done:** the Rust emulator and C firmware ports of
-format v3, the device-side key handling, and the ESP32 secure boot / flash
-encryption step. Full design: [docs/trust-model-v3.md](docs/trust-model-v3.md);
-plan: [ROADMAP.md](ROADMAP.md) Phases 19–25.
+**Status (2026-10-05):**
+
+| | |
+|---|---|
+| Server | **Deployed on the Cairn VM.** Vehicles, device counters, escrowed keys, intake binding, the app API (LAN TLS verified end to end), sealed device enrolment, `cairn-admin` and `cairn-provision` |
+| Format v3 | Go reference, Rust emulator and C firmware agree on 33 conformance vectors; the emulator's fault matrix passes 20/20 against a live v3 server |
+| Derived layers | `vehicle_id` through decode, PostgreSQL (non-destructive migration), tsdb, the snapshot and the UI; analysis never blends two cars |
+| The car's dongle | v3 firmware flashed; **provisioned and enrolled** over USB (root escrowed, mTLS key and Wi-Fi in NVS, never on the card). **No SD card in it yet**, so capture → seal → upload on v3 is not yet run on hardware ([runbook](docs/hardware-roundtrip.md)) |
+| Tailscale | Installed on the host; the login is waiting for approval |
+| iOS app | Issues #1–#13 filed against the finished protocol |
+| Not done | BLE session authentication (firmware Phase 22), ESP32 secure boot / flash encryption (Phase 24, gated; the chip is revision v1.0, so V1 only), the hardware round trip |
+
+Full design: [docs/trust-model-v3.md](docs/trust-model-v3.md); provisioning:
+[docs/device-provisioning.md](docs/device-provisioning.md); plan:
+[ROADMAP.md](ROADMAP.md) Phases 19–25.
 
 ---
 
@@ -999,6 +1008,8 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
 | **[Trust Model v3](docs/trust-model-v3.md)** | **Encrypted storage, enrolled app, Tailscale, vehicles — one trust model, with the threat table** |
 | **[Bundle Format v3](docs/bundle-format-v3.md)** | **Normative spec — byte layouts, AEAD frames, manifest, receipt, transfer protocol** |
+| **[Device Provisioning](docs/device-provisioning.md)** | **The sealed enrolment blob, the USB console protocol and its rules, the operator procedure** |
+| [Hardware Round Trip](docs/hardware-roundtrip.md) | Runbook for the one check the host suites cannot make |
 | **[App Sync Protocol](docs/app-sync-protocol.md)** | **The iOS client's contract: signing, enrolment, operations, cursor — with test vectors** |
 | [Tailscale Deployment](docs/tailscale-deployment.md) | Host install, Serve, ACLs, Funnel off |
 | [ESP32 Hardening](docs/esp32-hardening.md) | Flash encryption, secure boot, irreversibility, what the chip can and cannot do |

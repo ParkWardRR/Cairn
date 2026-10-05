@@ -16,13 +16,14 @@ Last reviewed 2026-10-04.
 
 | Layer | State |
 |---|---|
-| Bundle format v2 | **Complete.** Three implementations (Go, Rust, firmware C) agree byte-for-byte on 25 conformance vectors |
-| Firmware | **Running on hardware.** Capture → seal → offer → commit → receipt → verified prune; mTLS on 8443; standby with wake-on-motion; secure OTA written, install unexercised |
-| Ingest server | **Deployed** as a hardened systemd unit on the Cairn VM, mutual TLS, receipt-gated |
-| Decode pipeline | **Complete.** Idempotent and reproducible; PostgreSQL/PostGIS derived layer with full boost parity |
+| Bundle format v3 | **Complete on the host.** Every frame AEAD-encrypted, every bundle bound to a vehicle, an assignment and a device counter. Three implementations (Go, Rust, firmware C) agree on 33 conformance vectors, structural and keyed. v2 is retired |
+| Firmware | **v3 flashed on the car's dongle, provisioned and enrolled** (root escrowed, credentials in NVS, assigned to the 428i). Capture → seal → upload on v3 is **not yet run on hardware: the unit has no SD card in it**. Secure OTA written, install unexercised |
+| Ingest server | **Deployed v3** on the Cairn VM: mutual TLS device listener, a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
+| Decode pipeline | **Complete and per vehicle.** Idempotent and reproducible; PostgreSQL/PostGIS and DuckDB layers both carry `vehicle_id`; non-destructive migration 005 |
 | Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
 | Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
-| Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), reads the analytical store through server-side API proxying to `cairn-tsdb` |
+| Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), with a vehicle selector; analysis pages are single-vehicle and never blend two cars. Deployed |
+| iOS companion | Not yet adopted. Issues #1–#13 filed against the finished protocol; the server side is ready |
 | BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT, with radio handoff between BLE and Wi-Fi |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
 
@@ -271,7 +272,7 @@ rule).
 
 Breaking changes are authorised. There is no migration.
 
-## Phase 19 — Vehicles, assignments and the device counter — **server done; derived layers open**
+## Phase 19 — Vehicles, assignments and the device counter — **done**
 
 `server/internal/{vehicles,counters,keystore,jsonstore}`, binding in `internal/intake`.
 
@@ -304,18 +305,28 @@ Breaking changes are authorised. There is no migration.
       `key_missing` (every refusal requires a reason)
 - [x] `cairn-server -enroll` now requires `-enroll-root` and escrows it, returns
       the counter floor, and `cairn-admin` manages vehicles and assignments
-- [ ] `vehicle_id` through the derived layers: decode → PostgreSQL migration
-      (`vehicle_id` on every normalized and derived row, in every key), tsdb
-      tables and views, Parquet snapshot (so the app can filter by car), and a
-      vehicle selector in the Nuxt UI. Every analysis view is per-vehicle: fuel
-      trims and boost curves from an N20 must never blend with a B58's. Until
-      this lands, the app's snapshot endpoint is limited to all-vehicles clients
-- [ ] Seed the two vehicles on the VM (`cairn-admin vehicle add …`): the N20 428i
-      and `2017 BMW M240i — B58`
-- [ ] Emulator matrix rows for the device side of these properties (counter
-      persistence across power cut, restored card, device moved between cars)
+- [x] `vehicle_id` through the derived layers. **decode** carries the manifest's
+      vehicle on every row and in the output digest (decoder version 3).
+      **tsdb**: every table and view carries it and every join and ASOF join
+      keys on it; a two-car test shares boot ids and timestamps so only
+      `vehicle_id` can separate the cars, and four join mutations are each caught.
+      **PostgreSQL** migration `005_vehicle.sql` is non-destructive (existing rows
+      are labelled with the all-zero "unassigned" vehicle, verified on a
+      populated database; the default is then dropped so new inserts must name
+      a vehicle) and a rollup is a vehicle's day. **Snapshot**:
+      `GET /snapshot?vehicle=` filters every table. **UI**: a vehicle selector;
+      analysis pages are single-vehicle and never fall back to a blend
+- [x] Seeded on the VM: `BMW 428i (F32) — N20` (year not recorded) and
+      `2017 BMW M240i — B58`; the dongle is assigned to the 428i
+- [x] Emulator matrix rows for the device side (counter across a power cut
+      mid-seal, restored card, wrong-key card, torn tail under encryption)
+- [x] The DB-only store tests had been **silently skipped** in ordinary runs and
+      had gone stale; they now run against a real PostGIS (OrbStack locally, the
+      CI service in the pipeline) and pass. One asserted behaviour the null-island
+      sanitization had already changed and was restated; one lacked the key
+      provider
 
-## Phase 20 — App identity and the sync API — **server done; follow-ups open**
+## Phase 20 — App identity and the sync API — **done and deployed on the LAN; Tailnet awaiting login**
 
 `server/internal/{clients,syncapi,audit}`, `server/cmd/{cairn-admin,cairn-server}`,
 [docs/app-sync-protocol.md](docs/app-sync-protocol.md). 27 test functions, with the
@@ -343,18 +354,31 @@ admin check).
 - [x] Append-only audit log; a test greps it for payload markers, coordinates,
       tokens, signatures, public keys and the VIN
 - [x] Separate app listener (`-app-addr`); plain HTTP only on loopback
-- [x] `GET /v1/snapshot`: authenticated proxy of the loopback `cairn-tsdb`
-      snapshot, all-vehicles clients only
+- [x] `GET /v1/snapshot?vehicle=`: authenticated proxy of the loopback
+      `cairn-tsdb` snapshot. A scoped client must name a vehicle of its own; a
+      full-scope client may omit it. Out-of-scope and malformed ids never reach
+      the analytical store (three scope mutations caught)
 - [x] Published, test-pinned vectors for the signing string and canonical-JSON
       content hash, for the iOS client
 - [x] `cairn-admin`: vehicles, assignments, counters, invitations, client
       revocation
-- [ ] Decode worker publishes `trip_summary` entities into the sync log so the
-      app can pull trips (the publish API exists and is tested)
-- [ ] Deploy on the VM and exercise end to end from a real phone over both the
-      LAN and the Tailnet
-- [ ] `cairn-admin device enrol` with the sealed-root enrolment blob (the device
-      side is Phase 22); today `cairn-server -enroll -enroll-root` is the path
+- [x] `trip_summary` entities are published from tsdb's `v_trip_summary` by a
+      publisher inside cairn-server (the sync log is single-writer, so the decode
+      worker cannot write it). Integers only, idempotent by content digest,
+      scoped per vehicle; schema in `docs/app-sync-protocol.md`
+- [x] A loopback-only local listener serves vehicle display names to the UI. It
+      has no authentication of its own (the loopback bind is the control) and
+      refuses anything carrying Tailscale or Funnel headers
+- [x] **Deployed on the VM and exercised end to end over the LAN** from the Mac
+      against verified TLS: enrolment, signed pull returning both cars with no
+      VIN material, admin listing, unsigned calls refused, and a revocation
+      that took effect on the next request
+- [ ] Exercise from a real phone over the LAN and the Tailnet (the Tailnet side
+      needs the host's Tailscale login to be approved — see Phase 23)
+- [x] `cairn-admin device enroll` with the sealed-root enrolment blob, requiring
+      the operator to confirm the device's fingerprint; refuses a changed
+      signing key, a different root for an escrowed version, a revoked device
+      and a shredded key version before writing anything
 
 ## Phase 21 — Bundle format v3: encrypted segments — **done on the host; hardware round trip open**
 
@@ -399,27 +423,46 @@ verified).
       finer wherever there is headroom, and that at least one axis has some
       (mutation-checked both ways). Plain `make` runs through to the BLE and
       mtprobe suites again
-- [ ] Hardware round trip: capture → seal → upload → decode with encryption on
+- [ ] Hardware round trip: capture → seal → upload → decode with encryption on —
+      **blocked: the dongle has no SD card in it** (`GO_IDLE_STATE failed` on every
+      mount attempt). Runbook: [docs/hardware-roundtrip.md](docs/hardware-roundtrip.md)
 - [x] The firmware host Makefile now tracks every header as a dependency, so a
       stale `build/` can no longer mask or fake a result
 
-## Phase 22 — Firmware: keys, counter, assignment, secrets off the card — **in progress (host-tested, not on hardware)**
+## Phase 22 — Firmware: keys, counter, assignment, secrets off the card — **done on the dongle except BLE auth and the SD round trip**
 
 - [x] `K_root` generated on first boot with the hardware RNG (`esp_fill_random`), stored in NVS — built and host-tested, not run on hardware
-- [ ] Enrolment blob: public key + `K_root` sealed to the server's enrolment key,
-      signed for proof of possession; `cairn-admin device enroll`
+- [x] Enrolment blob: public key + `K_root` sealed to the server's enrolment key
+      (X25519, HKDF, XChaCha20-Poly1305), signed for proof of possession.
+      **Verified on the car's dongle**: the server unsealed the real device's
+      blob and escrowed its root; byte-identical to the Go reference. X25519 is
+      constant-time and checked against RFC 7748. See
+      [docs/device-provisioning.md](docs/device-provisioning.md)
 - [x] Device bundle counter in NVS (not on the card). It is **reserved and made
       durable before the first segment header exists** (the counter is in every
       header and authenticated into every frame, so it cannot wait until seal) and
       committed again before the manifest is signed; a bundle that never seals
       leaves a gap the server reports, never a reused counter. Built and
       host-tested
-- [ ] Resume above the server's counter floor after re-enrolment (the floor is
-      returned by `cairn-server -enroll`; the device does not read it yet)
-- [ ] Assignment push over the trusted connection; segments carry the assigned
+- [x] Resume above the server's counter floor after re-enrolment: delivered
+      over the console and applied as "raise only, never lower"
+- [x] Assignment installed over the console; segments carry the assigned
       `vehicle_id` / `assignment_id`
-- [ ] **mTLS client key moved from the SD card to encrypted NVS**
-- [ ] Wi-Fi credentials provisioned into encrypted NVS instead of compiled in
+- [x] **mTLS client key moved off the SD card into NVS.** A private key found on
+      the card is reported and ignored
+- [x] Wi-Fi credentials provisioned into NVS instead of compiled in (a
+      development fallback remains behind `CAIRN_COMPILED_WIFI_FALLBACK`, off
+      everywhere else). NVS is plain until Phase 24 turns on flash and NVS
+      encryption together
+- [x] Serial provisioning protocol and `cairn-provision`: never during a trip, a
+      60 s window after boot once provisioned, idle timeout, atomic two-slot
+      credential commit, no secret echoed or logged (canary-tested), 8 KiB UART
+      receive buffer (a long PEM line overran the default 256 B on real
+      hardware). Non-interactive runs are still checked with
+      `--expect-device-id` / `--expect-fingerprint`
+- [x] The dongle is provisioned and enrolled: same key id as its 2026-10-01
+      enrolment, root escrowed as version 1, assigned to the 428i, credentials in
+      NVS, boot log says `credentials are provisioned`
 - [x] Encrypted append path integrated into capture/seal/prune; recovery scan
       works key-free and never deletes anything because of an authentication
       failure. A resumed bundle keeps the boot, vehicle, assignment and counter
@@ -430,18 +473,23 @@ verified).
 - [x] Host fault matrix rows for encrypted append, torn tail under encryption,
       wrong-key card, counter persistence across power cut
 - [ ] On-hardware: capture → seal → upload → decode round trip with encryption on
+      (see Phase 21: needs an SD card)
 
-## Phase 23 — Tailscale and deployment hardening — **planned**
+## Phase 23 — Tailscale and deployment hardening — **in progress**
 
 [docs/tailscale-deployment.md](docs/tailscale-deployment.md).
 
-- [ ] `tailscaled` on the VM host, tagged `tag:cairn-server`, ACL limited to the
-      owner's phone and the app port, Funnel off, no subnet router, device
-      approval on
+- [ ] `tailscaled` on the VM host (**installed, running, SSH off, DNS untouched;
+      the login URL is waiting for approval**), then tag it `tag:cairn-server`
+      (needs the tag defined in your ACL first), ACL limited to the owner's phone
+      and the app port, Funnel off, no subnet router, device approval on
 - [ ] `tailscale serve` fronting the loopback app listener; verified unreachable
       from outside the Tailnet and unauthenticated calls refused
-- [ ] Keystore master key moved out of the backed-up data directory
-      (systemd credential or separate mount); backup restore tested
+- [x] Keystore master key lives in `/etc/cairn` (root:cairn, outside the data
+      directory) and is handed to the services as a systemd credential
+- [ ] Backup restore tested with the master key held apart from the data
+- [x] The legacy v1 `cairn-ingest` user unit, which silently took `:8443` the moment
+      the real server stopped, is disabled
 - [ ] systemd unit hardening for the app listener; rootless Podman and
       read-only rootfs where the Compose stack allows
 - [ ] MQTT scoped by device and vehicle; no database port published
