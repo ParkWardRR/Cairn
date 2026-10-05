@@ -102,3 +102,39 @@ export function clusterPlaces(visits: PlaceVisit[]): Place[] {
     .sort((a, b) => b.stop_seconds - a.stop_seconds || (b.arrivals + b.departures) - (a.arrivals + a.departures))
     .map((p, i) => ({ ...p, id: i }))
 }
+
+// Folds every auto-detected place that lies inside a saved place into that one
+// place, centred where the user put it. This is what makes repeat visits to
+// somewhere you have named read as one place with a history, however the
+// automatic clustering happened to split them.
+export function mergeIntoSaved(
+  clusters: Place[],
+  match: (lat: number, lon: number) => { id: number; lat: number; lon: number } | null,
+): Place[] {
+  const free: Place[] = []
+  const bySaved = new Map<number, Place>()
+
+  for (const c of clusters) {
+    const s = match(c.lat, c.lon)
+    if (!s) { free.push(c); continue }
+    const m = bySaved.get(s.id)
+    if (!m) {
+      bySaved.set(s.id, { ...c, lat: s.lat, lon: s.lon, trips: [...c.trips] })
+      continue
+    }
+    m.stops += c.stops
+    m.stop_seconds += c.stop_seconds
+    m.short += c.short
+    m.medium += c.medium
+    m.long += c.long
+    m.arrivals += c.arrivals
+    m.departures += c.departures
+    for (const t of c.trips) if (!m.trips.includes(t)) m.trips.push(t)
+    if (c.longest_s > m.longest_s) { m.longest_s = c.longest_s; m.longest_category = c.longest_category }
+    if (c.last_at && (!m.last_at || c.last_at > m.last_at)) m.last_at = c.last_at
+  }
+
+  return [...bySaved.values(), ...free]
+    .sort((a, b) => b.stop_seconds - a.stop_seconds || (b.arrivals + b.departures) - (a.arrivals + a.departures))
+    .map((p, i) => ({ ...p, id: i }))
+}

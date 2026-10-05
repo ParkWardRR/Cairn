@@ -13,12 +13,12 @@ function drive(from: number, secs: number, lat0: number): StopFix[] {
 }
 
 describe('categorize', () => {
-  it('buckets by duration', () => {
-    expect(categorize(30)).toBe('quick')
-    expect(categorize(119)).toBe('quick')
-    expect(categorize(120)).toBe('medium')
-    expect(categorize(599)).toBe('medium')
-    expect(categorize(600)).toBe('long')
+  it('buckets by duration: short 3-5 min, medium 5-20, long 20+', () => {
+    expect(categorize(180)).toBe('short')
+    expect(categorize(300)).toBe('short')
+    expect(categorize(301)).toBe('medium')
+    expect(categorize(1200)).toBe('medium')
+    expect(categorize(1201)).toBe('long')
   })
 })
 

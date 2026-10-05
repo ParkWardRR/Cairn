@@ -59,7 +59,7 @@ interface TripStop {
   duration_s: number
   lat: number
   lon: number
-  category: 'quick' | 'medium' | 'long'
+  category: 'short' | 'medium' | 'long'
   inferred: boolean
   place: StopPlace | null
 }
@@ -376,7 +376,7 @@ function insightIcon(icon: string | undefined): string {
               <span class="text-[11px] font-mono" style="color: var(--color-text-secondary)">{{ stops.length }}</span>
             </div>
             <p class="text-[10px] mt-1" style="color: var(--color-text-secondary)">
-              quick &lt; 2 min · medium 2–10 · long 10+. Click to show on the map, click again to open in Places.
+              short 3–5 min · medium 5–20 · long 20+. Click to show on the map, click again to open in Places.
             </p>
           </div>
           <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">

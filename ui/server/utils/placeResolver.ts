@@ -1,7 +1,8 @@
 import { join } from 'node:path'
 import type { PlaceAddress, PlaceCandidate, PlaceContext, PlaceLabel, PlaceSource } from './placeLabel'
-import { FETCH_VERSION, VISIT_MIN_S, chooseLabel } from './placeLabel'
+import { FETCH_VERSION, VISIT_MIN_S, chooseLabel, normalizeName } from './placeLabel'
 import { PlaceStore, type CachedPlace } from './placeStore'
+import { SavedPlaces } from './placeSaved'
 import { fetchGeoapify, fetchOsm, fsqCandidate } from './placeSources'
 
 // Resolves coordinates to names. Lookups never block a request: a cache miss
@@ -9,6 +10,15 @@ import { fetchGeoapify, fetchOsm, fsqCandidate } from './placeSources'
 
 export interface PlaceResult extends PlaceLabel {
   status: 'resolved' | 'pending' | 'none'
+  // Set when the name is one the user saved rather than one that was looked up.
+  saved_id?: number
+}
+
+export interface PlaceSuggestion {
+  name: string
+  category: string | null
+  source: PlaceSource | 'address'
+  dist_m: number
 }
 
 const RETRY_FAILED_MS = 10 * 60 * 1000
@@ -28,14 +38,16 @@ interface Job { lat: number; lon: number; wantArea: boolean; key: string }
 
 export class PlaceResolver {
   readonly store: PlaceStore
+  readonly saved: SavedPlaces
   private queue: Job[] = []
   private queued = new Set<string>()
   private running = false
   private lastOsm = 0
   readonly ready: Promise<void>
 
-  constructor(readonly cfg: ResolverConfig, store?: PlaceStore) {
+  constructor(readonly cfg: ResolverConfig, store?: PlaceStore, saved?: SavedPlaces) {
     this.store = store ?? new PlaceStore(join(cfg.dataDir, 'places.sqlite'))
+    this.saved = saved ?? new SavedPlaces(cfg.dataDir === ':memory:' ? ':memory:' : join(cfg.dataDir, 'saved-places.sqlite'))
     const file = cfg.fsqFile ?? join(cfg.dataDir, 'fsq-pois.ndjson')
     this.ready = this.store.importFsq(file).then(
       (n) => { if (n) console.log(`[places] loaded ${n} Foursquare POIs`) },
@@ -55,6 +67,13 @@ export class PlaceResolver {
 
   // Non-blocking: returns what is known now and queues a lookup if needed.
   lookup(lat: number, lon: number, ctx: PlaceContext): PlaceResult {
+    // A place the user named wins over anything looked up, for every visit past
+    // and future inside its circle.
+    const mine = this.saved.match(lat, lon)
+    if (mine) {
+      return { status: 'resolved', name: mine.name, category: mine.category, address: null, confidence: 1, sources: ['user'], saved_id: mine.id }
+    }
+
     const cached = this.store.nearest(lat, lon)
     const now = Date.now()
 
@@ -74,6 +93,24 @@ export class PlaceResolver {
     if (this.enabledSources().length === 0) return { status: 'none', name: null, category: null, address: null, confidence: 0, sources: [] }
     this.enqueue(lat, lon, ctx)
     return { status: 'pending', name: null, category: null, address: null, confidence: 0, sources: [] }
+  }
+
+  // Names the sources found near a spot, for the user to pick from when fixing it.
+  suggestions(lat: number, lon: number, limit = 8): PlaceSuggestion[] {
+    const row = this.store.nearest(lat, lon)
+    if (!row) return []
+    const seen = new Set<string>()
+    const out: PlaceSuggestion[] = []
+    for (const c of [...row.candidates].filter(c => c.kind !== 'street' && c.name.trim()).sort((a, b) => a.dist_m - b.dist_m)) {
+      const key = normalizeName(c.name)
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      out.push({ name: c.name.trim(), category: c.category, source: c.source, dist_m: c.dist_m })
+      if (out.length >= limit) break
+    }
+    const addr = row.address?.line ?? row.address?.formatted
+    if (addr && out.length < limit) out.push({ name: addr, category: 'address', source: 'address', dist_m: 0 })
+    return out
   }
 
   private label(row: CachedPlace, ctx: PlaceContext): PlaceResult {

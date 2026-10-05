@@ -1,10 +1,13 @@
-export type StopCategory = 'quick' | 'medium' | 'long'
+export type StopCategory = 'short' | 'medium' | 'long'
 
 export interface Stop {
   // Wall-clock start, or null when the trip has no trustworthy UTC basis.
   start_at: string | null
   // Seconds from the trip's first fix; always available.
   start_offset_s: number
+  // Absolute monotonic times, so a stop can be placed on the trip scrubber.
+  start_mono_ms: number
+  end_mono_ms: number
   duration_s: number
   lat: number
   lon: number
@@ -34,12 +37,14 @@ export function tripBaseMs(fixes: StopFix[]): number | null {
   return null
 }
 
-// Stop length buckets, in seconds. Under QUICK_MAX is a light, a drive-through
-// or a pickup; under MEDIUM_MAX is an errand; beyond that the car was parked.
-export const QUICK_MAX_S = 120
-export const MEDIUM_MAX_S = 600
-
-const MIN_STOP_S = 20
+// What counts as a stop, and how long each kind is, in seconds. Anything under
+// MIN_STOP_S is a light or a queue and is not reported.
+//   short  3-5 min    a pickup, a drive-through, a quick errand
+//   medium 5-20 min   a shop, a meal to go
+//   long   20+ min    parked for a while
+export const MIN_STOP_S = 180
+export const SHORT_MAX_S = 300
+export const MEDIUM_MAX_S = 1200
 const STILL_RADIUS_M = 60
 const STILL_SPEED_MPS = 1.5
 // The device records sparsely while stationary, so a pause in fixes between two
@@ -54,8 +59,8 @@ function distM(lat1: number, lon1: number, lat2: number, lon2: number): number {
 }
 
 export function categorize(durationS: number): StopCategory {
-  if (durationS < QUICK_MAX_S) return 'quick'
-  if (durationS < MEDIUM_MAX_S) return 'medium'
+  if (durationS <= SHORT_MAX_S) return 'short'
+  if (durationS <= MEDIUM_MAX_S) return 'medium'
   return 'long'
 }
 
@@ -107,6 +112,8 @@ export function detectStops(fixes: StopFix[]): Stop[] {
     stops.push({
       start_at: base != null ? new Date(base + fixes[r.from].mono_ms).toISOString() : null,
       start_offset_s: Math.round((fixes[r.from].mono_ms - firstMs) / 1000),
+      start_mono_ms: fixes[r.from].mono_ms,
+      end_mono_ms: fixes[r.to].mono_ms,
       duration_s: Math.round(r.secs),
       lat,
       lon,

@@ -1,6 +1,6 @@
 // How a stop is drawn, shared by the trip map, the stops sidebar and Places.
 // Cool colours on purpose: red and amber filled circles read as crash markers.
-export type StopCategory = 'quick' | 'medium' | 'long'
+export type StopCategory = 'short' | 'medium' | 'long'
 
 export const STOP_COLOR: Record<StopCategory, string> = {
   quick: '#38bdf8',
@@ -9,7 +9,7 @@ export const STOP_COLOR: Record<StopCategory, string> = {
 }
 
 export const STOP_LABEL: Record<StopCategory, string> = {
-  quick: 'Quick',
+  quick: 'Short',
   medium: 'Medium',
   long: 'Long',
 }

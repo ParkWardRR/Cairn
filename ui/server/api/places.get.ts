@@ -48,7 +48,19 @@ export default defineEventHandler(async () => {
     visits.push({ boot_id: bootId, kind: 'arrival', lat: last.lat, lon: last.lon, at: at(last) })
   }
 
-  const places = clusterPlaces(visits)
+  const resolver = getPlaceResolver()
+  const clusters = mergeIntoSaved(clusterPlaces(visits), (la, lo) => resolver.saved.match(la, lo))
+
+  // A saved place with no visits yet (added by hand, or its trips were pruned)
+  // still belongs on the map, so it is added as a place with no history.
+  const empty = { stops: 0, stop_seconds: 0, short: 0, medium: 0, long: 0, longest_s: 0, longest_category: null, arrivals: 0, departures: 0, trips: [] as string[], last_at: null }
+  const places: Place[] = [...clusters]
+  for (const s of resolver.saved.list()) {
+    if (!clusters.some(c => resolver.saved.match(c.lat, c.lon)?.id === s.id)) {
+      places.push({ id: places.length, lat: s.lat, lon: s.lon, ...empty })
+    }
+  }
+
   const { results, pending } = lookupPlaces(
     places.map(p => ({
       lat: p.lat,
@@ -59,7 +71,12 @@ export default defineEventHandler(async () => {
 
   return {
     trips,
-    places: places.map((p, i) => ({ ...p, label: placeForApi(results[i]) })),
+    saved: resolver.saved.list(),
+    places: places.map((p, i) => ({
+      ...p,
+      label: placeForApi(results[i]),
+      suggestions: resolver.suggestions(p.lat, p.lon),
+    })),
     pending,
     attribution: attributionForResults(results),
   }

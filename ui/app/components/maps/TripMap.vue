@@ -325,7 +325,7 @@ onUnmounted(() => {
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #f59e0b" /> Fast</span>
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #ef4444" /> WOT</span>
       <span v-if="stops?.length" class="flex items-center gap-1 pl-2" style="border-left: 1px solid var(--color-border)">Stops</span>
-      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm" style="background: #38bdf8" /> Quick</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm" style="background: #38bdf8" /> Short</span>
       <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background: #2dd4bf" /> Medium</span>
       <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background: #a78bfa" /> Long</span>
     </div>

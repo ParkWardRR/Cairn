@@ -19,16 +19,18 @@ interface PlaceLabel {
   address: string | null
   confidence: number
   sources: string[]
+  saved_id: number | null
 }
 
 interface PlaceItem {
   id: number
   label: PlaceLabel | null
+  suggestions: Suggestion[]
   lat: number
   lon: number
   stops: number
   stop_seconds: number
-  quick: number
+  short: number
   medium: number
   long: number
   longest_s: number
@@ -39,7 +41,7 @@ interface PlaceItem {
   last_at: string | null
 }
 
-const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; pending: boolean; attribution: string[] }>('/api/places')
+const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; saved: SavedPlace[]; pending: boolean; attribution: string[] }>('/api/places')
 
 // Names are looked up in the background the first time; ask again until done.
 let polls = 0
@@ -106,6 +108,122 @@ function placeTitle(p: PlaceItem): string {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+}
+
+interface SavedPlace {
+  id: number
+  name: string
+  category: string | null
+  lat: number
+  lon: number
+  radius_m: number
+  note: string | null
+}
+
+interface Suggestion {
+  name: string
+  category: string | null
+  source: string
+  dist_m: number
+}
+
+const CATEGORIES = ['Home', 'Work', 'Gym', 'Groceries', 'Food', 'Fuel', 'Shopping', 'Friends', 'Other']
+const RADII = [50, 100, 150, 250, 400]
+
+// What the user is changing. lat/lon follow the pin if it is dragged.
+interface Draft {
+  placeId: number
+  savedId: number | null
+  name: string
+  category: string | null
+  radius_m: number
+  lat: number
+  lon: number
+}
+
+const draft = ref<Draft | null>(null)
+const saving = ref(false)
+const saveError = ref<string | null>(null)
+let editCircle: any = null
+
+function savedFor(p: PlaceItem): SavedPlace | null {
+  const id = p.label?.saved_id
+  return id == null ? null : (data.value?.saved ?? []).find(s => s.id === id) ?? null
+}
+
+function startEdit(p: PlaceItem) {
+  const s = savedFor(p)
+  saveError.value = null
+  draft.value = {
+    placeId: p.id,
+    savedId: s?.id ?? null,
+    // Start from what is shown, so fixing a near-miss is a small edit.
+    name: s?.name ?? p.label?.name ?? '',
+    category: s?.category ?? null,
+    radius_m: s?.radius_m ?? 100,
+    lat: s?.lat ?? p.lat,
+    lon: s?.lon ?? p.lon,
+  }
+  renderMarkers()
+}
+
+function cancelEdit() {
+  draft.value = null
+  saveError.value = null
+  renderMarkers()
+}
+
+function pickSuggestion(s: Suggestion) {
+  if (!draft.value) return
+  draft.value.name = s.name
+}
+
+async function saveDraft() {
+  const d = draft.value
+  if (!d) return
+  saving.value = true
+  saveError.value = null
+  try {
+    const body = { name: d.name, category: d.category, radius_m: d.radius_m, lat: d.lat, lon: d.lon }
+    if (d.savedId != null) await $fetch(`/api/places/saved/${d.savedId}`, { method: 'PATCH', body })
+    else await $fetch('/api/places/saved', { method: 'POST', body })
+    draft.value = null
+    await refresh()
+    selectNear(d.lat, d.lon)
+  } catch (e: any) {
+    saveError.value = e?.data?.statusMessage ?? e?.statusMessage ?? e?.message ?? 'Could not save'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function removeSaved(p: PlaceItem) {
+  const s = savedFor(p)
+  if (!s) return
+  if (!confirm(`Stop using "${s.name}" for this place? Visits go back to their automatic names.`)) return
+  try {
+    await $fetch(`/api/places/saved/${s.id}`, { method: 'DELETE' })
+    draft.value = null
+    await refresh()
+    selectNear(s.lat, s.lon)
+  } catch (e: any) {
+    saveError.value = e?.data?.statusMessage ?? 'Could not remove'
+  }
+}
+
+function selectNear(lat: number, lon: number) {
+  let best: PlaceItem | null = null
+  let bestD = Infinity
+  for (const p of places.value) {
+    const d = Math.hypot((p.lat - lat) * 110540, (p.lon - lon) * 111320 * Math.cos(lat * Math.PI / 180))
+    if (d < bestD) { best = p; bestD = d }
+  }
+  if (best) select(best.id, false)
+}
+
+// A spot you keep coming back to is worth naming once.
+function isFrequent(p: PlaceItem): boolean {
+  return p.trips.length >= 2 && p.label?.saved_id == null
 }
 
 function select(id: number | null, fly = true) {
@@ -178,7 +296,7 @@ function renderMarkers(fit = false) {
     const parts: string[] = []
     if (p.long) parts.push(`${p.long} long`)
     if (p.medium) parts.push(`${p.medium} medium`)
-    if (p.quick) parts.push(`${p.quick} quick`)
+    if (p.short) parts.push(`${p.short} short`)
     const html = `<div style="font-size:12px;line-height:1.5;font-family:Inter,sans-serif">
       <div style="font-weight:600;margin-bottom:2px">${escapeHtml(placeTitle(p))}</div>
       ${p.label?.name ? `<div style="opacity:.8">${placeSummary(p)}</div>` : ''}
@@ -187,18 +305,41 @@ function renderMarkers(fit = false) {
       <div style="opacity:.6;font-size:11px">${p.arrivals} arrival${p.arrivals === 1 ? '' : 's'} · ${p.departures} departure${p.departures === 1 ? '' : 's'}</div>
     </div>`
 
-    const marker = L.marker([p.lat, p.lon], { icon, zIndexOffset: selected ? 1000 : 0 })
+    // The place being edited follows its draft, and its pin can be dragged.
+    const editingThis = draft.value?.placeId === p.id
+    const at: [number, number] = editingThis ? [draft.value!.lat, draft.value!.lon] : [p.lat, p.lon]
+    const marker = L.marker(at, { icon, zIndexOffset: selected ? 1000 : 0, draggable: editingThis })
       .bindTooltip(html, { direction: 'top', offset: [0, -size / 2], className: 'trip-tooltip' })
       .on('click', () => select(p.id, false))
+      .on('dragend', (e: any) => {
+        const ll = e.target.getLatLng()
+        if (draft.value) { draft.value.lat = ll.lat; draft.value.lon = ll.lng; drawEditCircle() }
+      })
       .addTo(map)
     markers.set(p.id, marker)
     allPts.push([p.lat, p.lon])
   }
 
+  drawEditCircle()
+
   if (fit && allPts.length) {
     map.fitBounds(L.latLngBounds(allPts), { padding: [40, 40], maxZoom: 15 })
   }
 }
+
+// The circle shows which visits the place will claim.
+function drawEditCircle() {
+  const L = leaflet
+  if (!map || !L) return
+  if (editCircle) { map.removeLayer(editCircle); editCircle = null }
+  const d = draft.value
+  if (!d) return
+  editCircle = L.circle([d.lat, d.lon], {
+    radius: d.radius_m, color: '#a78bfa', weight: 1.5, fillColor: '#a78bfa', fillOpacity: 0.08, dashArray: '4 4', interactive: false,
+  }).addTo(map)
+}
+
+watch(() => draft.value?.radius_m, () => drawEditCircle())
 
 let fitted = false
 watch(places, () => {
@@ -237,7 +378,7 @@ onUnmounted(() => {
         class="absolute top-3 left-3 z-[1000] flex items-center gap-4 px-3 py-1.5 rounded-lg text-[10px] font-semibold"
         style="background: rgba(15, 17, 23, 0.85); backdrop-filter: blur(8px); color: var(--color-text-secondary)"
       >
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #38bdf8" /> Quick</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #38bdf8" /> Short</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #2dd4bf" /> Medium</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #a78bfa" /> Long</span>
         <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #64748b" /> Trip start / end</span>
@@ -272,7 +413,7 @@ onUnmounted(() => {
             <span class="w-3 h-3 shrink-0" :class="p.longest_category ? 'rounded-[3px]' : 'rounded-full'" :style="{ background: placeColor(p) }" />
             <div class="flex-1 min-w-0">
               <p class="text-[13px] font-medium truncate">
-                {{ placeTitle(p) }}
+                <span v-if="p.label?.saved_id != null" class="mr-1" style="color: #a78bfa" title="Named by you">★</span>{{ placeTitle(p) }}
                 <span v-if="p.label?.status === 'pending'" class="text-[11px] font-normal" style="color: var(--color-text-secondary)">identifying…</span>
               </p>
               <p v-if="p.label?.name" class="text-[12px] mt-0.5" style="color: var(--color-text-secondary)">
@@ -280,32 +421,133 @@ onUnmounted(() => {
               </p>
               <p class="text-[11px] font-mono mt-0.5" style="color: var(--color-text-secondary)">
                 {{ p.lat.toFixed(4) }}, {{ p.lon.toFixed(4) }}
+                <template v-if="p.trips.length"> · {{ p.trips.length }} trip{{ p.trips.length === 1 ? '' : 's' }}</template>
                 <template v-if="p.last_at"> · last {{ formatDate(p.last_at) }}</template>
               </p>
             </div>
             <div class="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
+              <button
+                v-if="isFrequent(p) && selectedId !== p.id"
+                type="button"
+                class="px-2 py-0.5 rounded-md transition-colors hover:brightness-125"
+                style="background: rgba(167,139,250,.15); color: #a78bfa"
+                @click.stop="select(p.id); startEdit(p)"
+              >Name this place</button>
               <span v-if="p.long" class="px-1.5 py-0.5 rounded" style="background: rgba(167,139,250,.15); color: #a78bfa">{{ p.long }} long</span>
               <span v-if="p.medium" class="px-1.5 py-0.5 rounded" style="background: rgba(45,212,191,.15); color: #2dd4bf">{{ p.medium }} medium</span>
-              <span v-if="p.quick" class="px-1.5 py-0.5 rounded" style="background: rgba(56,189,248,.15); color: #38bdf8">{{ p.quick }} quick</span>
+              <span v-if="p.short" class="px-1.5 py-0.5 rounded" style="background: rgba(56,189,248,.15); color: #38bdf8">{{ p.short }} short</span>
             </div>
           </div>
 
-          <div v-if="selectedId === p.id" class="mt-3 pt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]" style="border-top: 1px solid var(--color-border)">
-            <span style="color: var(--color-text-secondary)">
-              {{ p.arrivals }} arrival{{ p.arrivals === 1 ? '' : 's' }} · {{ p.departures }} departure{{ p.departures === 1 ? '' : 's' }}
-              <template v-if="p.longest_category"> · longest {{ STOP_LABEL[p.longest_category].toLowerCase() }} stop {{ formatDwell(p.longest_s) }}</template>
-            </span>
-            <NuxtLink
-              v-for="b in p.trips.slice(0, 6)"
-              :key="b"
-              :to="`/trips/${b}`"
-              class="font-mono underline-offset-2 hover:underline"
-              style="color: var(--color-accent)"
-              @click.stop
-            >
-              trip {{ b.slice(0, 8) }}
-            </NuxtLink>
-            <span v-if="p.trips.length > 6" style="color: var(--color-text-secondary)">+{{ p.trips.length - 6 }} more</span>
+          <div v-if="selectedId === p.id" class="mt-3 pt-3 text-[12px]" style="border-top: 1px solid var(--color-border)" @click.stop>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <span style="color: var(--color-text-secondary)">
+                {{ p.arrivals }} arrival{{ p.arrivals === 1 ? '' : 's' }} · {{ p.departures }} departure{{ p.departures === 1 ? '' : 's' }}
+                <template v-if="p.longest_category"> · longest {{ STOP_LABEL[p.longest_category].toLowerCase() }} stop {{ formatDwell(p.longest_s) }}</template>
+              </span>
+              <NuxtLink
+                v-for="b in p.trips.slice(0, 6)"
+                :key="b"
+                :to="`/trips/${b}`"
+                class="font-mono underline-offset-2 hover:underline"
+                style="color: var(--color-accent)"
+              >
+                trip {{ b.slice(0, 8) }}
+              </NuxtLink>
+              <span v-if="p.trips.length > 6" style="color: var(--color-text-secondary)">+{{ p.trips.length - 6 }} more</span>
+              <button
+                v-if="draft?.placeId !== p.id"
+                type="button"
+                class="ml-auto px-3 py-1 rounded-lg text-[12px] font-semibold transition-colors hover:brightness-125"
+                style="background: var(--color-accent-soft); color: var(--color-accent)"
+                @click="startEdit(p)"
+              >{{ p.label?.saved_id != null ? 'Edit place' : 'Name or fix this place' }}</button>
+            </div>
+
+            <!-- Editor -->
+            <form v-if="draft && draft.placeId === p.id" class="mt-3 space-y-3 rounded-lg p-3" style="background: var(--color-surface-elevated)" @submit.prevent="saveDraft">
+              <div>
+                <label class="block text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Name</label>
+                <input
+                  v-model="draft.name"
+                  type="text"
+                  maxlength="80"
+                  placeholder="e.g. Home, Gym, Mom's house"
+                  class="w-full rounded-md px-2.5 py-1.5 text-[13px] outline-none"
+                  style="background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text)"
+                  autofocus
+                >
+              </div>
+
+              <div v-if="p.suggestions.length">
+                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Nearby, tap to use</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="s in p.suggestions"
+                    :key="s.name"
+                    type="button"
+                    class="px-2 py-0.5 rounded-md text-[11px] transition-colors hover:brightness-125"
+                    :style="{ background: draft.name === s.name ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.name === s.name ? 'var(--color-accent)' : 'var(--color-text)' }"
+                    @click="pickSuggestion(s)"
+                  >
+                    {{ s.name }}<span v-if="s.dist_m" class="opacity-50"> · {{ s.dist_m }} m</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Kind</p>
+                <div class="flex flex-wrap gap-1.5">
+                  <button
+                    v-for="c in CATEGORIES"
+                    :key="c"
+                    type="button"
+                    class="px-2 py-0.5 rounded-md text-[11px] transition-colors"
+                    :style="{ background: draft.category === c ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.category === c ? 'var(--color-accent)' : 'var(--color-text)' }"
+                    @click="draft.category = draft.category === c ? null : c"
+                  >{{ c }}</button>
+                </div>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <div>
+                  <p class="text-[10px] font-semibold uppercase tracking-wider mb-1" style="color: var(--color-text-secondary)">Covers visits within</p>
+                  <div class="flex gap-1.5">
+                    <button
+                      v-for="r in RADII"
+                      :key="r"
+                      type="button"
+                      class="px-2 py-0.5 rounded-md text-[11px] font-mono transition-colors"
+                      :style="{ background: draft.radius_m === r ? 'var(--color-accent-soft)' : 'var(--color-surface)', border: '1px solid var(--color-border)', color: draft.radius_m === r ? 'var(--color-accent)' : 'var(--color-text)' }"
+                      @click="draft.radius_m = r"
+                    >{{ r }} m</button>
+                  </div>
+                </div>
+                <p class="text-[11px]" style="color: var(--color-text-secondary)">Drag the highlighted pin on the map to move it. The dashed circle shows what it covers.</p>
+              </div>
+
+              <p v-if="saveError" class="text-[12px]" style="color: var(--color-danger)">{{ saveError }}</p>
+
+              <div class="flex items-center gap-2">
+                <button
+                  type="submit"
+                  :disabled="saving || !draft.name.trim()"
+                  class="px-3.5 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-40"
+                  style="background: var(--color-accent); color: #fff"
+                >{{ saving ? 'Saving…' : 'Save' }}</button>
+                <button type="button" class="px-3 py-1.5 rounded-lg text-[12px]" style="color: var(--color-text-secondary)" @click="cancelEdit">Cancel</button>
+                <button
+                  v-if="draft.savedId != null"
+                  type="button"
+                  class="ml-auto px-3 py-1.5 rounded-lg text-[12px]"
+                  style="color: var(--color-danger)"
+                  @click="removeSaved(p)"
+                >Stop using this name</button>
+              </div>
+              <p class="text-[10px]" style="color: var(--color-text-secondary)">
+                Saving applies to every past and future visit inside the circle, and nothing here is sent to any lookup service.
+              </p>
+            </form>
           </div>
         </div>
       </div>

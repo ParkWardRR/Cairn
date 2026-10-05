@@ -4,6 +4,7 @@ import { attributionFor } from './placeLabel'
 // The shape of a resolved place as the API returns it.
 export function placeForApi(r: PlaceResult) {
   return {
+    saved_id: r.saved_id ?? null,
     status: r.status,
     name: r.name,
     category: r.category,

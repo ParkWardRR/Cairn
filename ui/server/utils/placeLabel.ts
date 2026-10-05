@@ -3,7 +3,7 @@
 // Pure functions only: no I/O, so the scoring is unit-tested and can be re-run
 // over cached candidates when the rules change.
 
-export type PlaceSource = 'fsq' | 'osm' | 'geoapify'
+export type PlaceSource = 'fsq' | 'osm' | 'geoapify' | 'user'
 
 export interface PlaceCandidate {
   source: PlaceSource
@@ -49,8 +49,8 @@ export const FETCH_VERSION = 2
 
 const POI_RADIUS_M = 90
 const STREET_RADIUS_M = 40
-// A stop shorter than this is almost always a light or a queue, not a visit.
-export const VISIT_MIN_S = 120
+// Stops are 3 minutes or longer (see MIN_STOP_S), so every stop is a visit.
+export const VISIT_MIN_S = 180
 
 const SOURCE_WEIGHT: Record<PlaceSource, number> = { fsq: 1.0, osm: 0.95, geoapify: 0.85 }
 // Geoapify's places are built largely from OpenStreetMap, so the two agreeing
