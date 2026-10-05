@@ -476,7 +476,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="status === 'pending'" class="space-y-2">
+    <div v-if="status === 'pending' && !data" class="space-y-2">
       <div v-for="i in 4" :key="i" class="skeleton h-16" />
     </div>
 

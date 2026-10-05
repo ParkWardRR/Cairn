@@ -308,7 +308,7 @@ function insightIcon(icon: string | undefined): string {
     </LayoutPageHeader>
 
     <!-- Loading -->
-    <div v-if="tripStatus === 'pending'" class="flex items-center justify-center py-20">
+    <div v-if="tripStatus === 'pending' && !trip" class="flex items-center justify-center py-20">
       <div class="spinner" />
     </div>
 
