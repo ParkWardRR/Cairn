@@ -8,6 +8,8 @@ export const PLACE_RADIUS_M = 150
 export interface PlaceVisit {
   boot_id: string
   kind: 'stop' | 'arrival' | 'departure'
+  // A monotonic time that identifies the visit within its trip.
+  key_ms: number
   lat: number
   lon: number
   // Wall-clock time, or null when the trip has no trustworthy UTC basis.
@@ -44,6 +46,7 @@ export function visitsFromStops(bootId: string, stops: Stop[]): PlaceVisit[] {
   return stops.map(s => ({
     boot_id: bootId,
     kind: 'stop' as const,
+    key_ms: s.start_mono_ms,
     lat: s.lat,
     lon: s.lon,
     at: s.start_at,

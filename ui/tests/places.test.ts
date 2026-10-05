@@ -34,8 +34,8 @@ describe('clusterPlaces', () => {
 
   it('counts trip starts and ends without inventing stops', () => {
     const places = clusterPlaces([
-      { boot_id: 'a', kind: 'departure', lat: 34.0, lon: -118.4, at: null },
-      { boot_id: 'b', kind: 'arrival', lat: 34.0001, lon: -118.4, at: null },
+      { boot_id: 'a', kind: 'departure', key_ms: 0, lat: 34.0, lon: -118.4, at: null },
+      { boot_id: 'b', kind: 'arrival', key_ms: 9, lat: 34.0001, lon: -118.4, at: null },
     ])
     expect(places).toHaveLength(1)
     expect(places[0].stops).toBe(0)
@@ -54,7 +54,7 @@ describe('mergeIntoSaved', () => {
     const clusters = clusterPlaces([
       ...visitsFromStops('a', [stop(34.0, -118.4, 400, 'medium')]),
       ...visitsFromStops('b', [stop(34.0016, -118.4, 1500, 'long')]), // ~177 m: a separate cluster
-      { boot_id: 'c', kind: 'arrival' as const, lat: 34.0001, lon: -118.4, at: '2026-10-04T00:00:00.000Z' },
+      { boot_id: 'c', kind: 'arrival' as const, key_ms: 1, lat: 34.0001, lon: -118.4, at: '2026-10-04T00:00:00.000Z' },
       ...visitsFromStops('d', [stop(34.05, -118.4, 200, 'short')]),
     ])
     expect(clusters).toHaveLength(3)

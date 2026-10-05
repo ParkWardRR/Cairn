@@ -47,7 +47,10 @@ export class PlaceResolver {
 
   constructor(readonly cfg: ResolverConfig, store?: PlaceStore, saved?: SavedPlaces) {
     this.store = store ?? new PlaceStore(join(cfg.dataDir, 'places.sqlite'))
-    this.saved = saved ?? new SavedPlaces(cfg.dataDir === ':memory:' ? ':memory:' : join(cfg.dataDir, 'saved-places.sqlite'))
+    // Saved places are written out as JSON beside the database after every change.
+    this.saved = saved ?? (cfg.dataDir === ':memory:'
+      ? new SavedPlaces(':memory:')
+      : new SavedPlaces(join(cfg.dataDir, 'saved-places.sqlite'), { backupDir: cfg.dataDir }))
     const file = cfg.fsqFile ?? join(cfg.dataDir, 'fsq-pois.ndjson')
     this.ready = this.store.importFsq(file).then(
       (n) => { if (n) console.log(`[places] loaded ${n} Foursquare POIs`) },

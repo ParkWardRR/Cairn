@@ -5,6 +5,7 @@ import { dirname } from 'node:path'
 import type { PlaceAddress, PlaceCandidate, PlaceSource } from './placeLabel'
 import { distM } from './placeLabel'
 import type { FsqRow } from './placeSources'
+import type { PlaceVisit } from './places'
 
 // Persistent cache of everything the external sources told us about a spot, so
 // each location is looked up once. Candidates are stored raw: labels are chosen
@@ -40,6 +41,17 @@ CREATE TABLE IF NOT EXISTS fsq_poi (
   lat REAL NOT NULL, lon REAL NOT NULL, name TEXT NOT NULL, category TEXT
 );
 CREATE INDEX IF NOT EXISTS fsq_poi_lat ON fsq_poi (lat, lon);
+CREATE TABLE IF NOT EXISTS place_visits (
+  boot_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  key_ms INTEGER NOT NULL,
+  lat REAL NOT NULL, lon REAL NOT NULL,
+  at TEXT,
+  duration_s INTEGER,
+  category TEXT,
+  inferred INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (boot_id, kind, key_ms)
+);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 `
 
@@ -114,6 +126,38 @@ export class PlaceStore {
     return this.db.prepare(
       'SELECT lat, lon, name, category FROM fsq_poi WHERE lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?',
     ).all(lat - dLat, lat + dLat, lon - dLon, lon + dLon) as unknown as FsqRow[]
+  }
+
+  // The visit history. Visits are replaced a trip at a time, so re-running over a
+  // trip is harmless, and trips that later leave the source data keep theirs.
+  replaceVisits(bootId: string, visits: PlaceVisit[]): void {
+    this.db.exec('BEGIN')
+    try {
+      this.db.prepare('DELETE FROM place_visits WHERE boot_id = ?').run(bootId)
+      const ins = this.db.prepare(`INSERT OR REPLACE INTO place_visits
+        (boot_id, kind, key_ms, lat, lon, at, duration_s, category, inferred) VALUES (?,?,?,?,?,?,?,?,?)`)
+      for (const v of visits) {
+        ins.run(v.boot_id, v.kind, v.key_ms, v.lat, v.lon, v.at, v.duration_s ?? null, v.category ?? null, v.inferred ? 1 : 0)
+      }
+      this.db.exec('COMMIT')
+    } catch (e) {
+      this.db.exec('ROLLBACK')
+      throw e
+    }
+  }
+
+  allVisits(): PlaceVisit[] {
+    const rows = this.db.prepare('SELECT * FROM place_visits ORDER BY boot_id, key_ms, kind').all() as any[]
+    return rows.map(r => ({
+      boot_id: r.boot_id, kind: r.kind, key_ms: r.key_ms, lat: r.lat, lon: r.lon, at: r.at,
+      ...(r.duration_s != null ? { duration_s: r.duration_s } : {}),
+      ...(r.category ? { category: r.category } : {}),
+      ...(r.inferred ? { inferred: true } : {}),
+    }))
+  }
+
+  visitTripCount(): number {
+    return (this.db.prepare('SELECT count(DISTINCT boot_id) AS n FROM place_visits').get() as any).n
   }
 
   getMeta(key: string): string | null {

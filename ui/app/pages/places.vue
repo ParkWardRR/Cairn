@@ -41,7 +41,7 @@ interface PlaceItem {
   last_at: string | null
 }
 
-const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; saved: SavedPlace[]; pending: boolean; attribution: string[] }>('/api/places')
+const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; saved: SavedPlace[]; storage: Storage; pending: boolean; attribution: string[] }>('/api/places')
 
 // Names are looked up in the background the first time; ask again until done.
 let polls = 0
@@ -118,6 +118,15 @@ interface SavedPlace {
   lon: number
   radius_m: number
   note: string | null
+  source: 'user' | 'learned'
+  learned_from: string | null
+}
+
+interface Storage {
+  saved: number
+  learned: number
+  backup_at: number | null
+  trips_recorded: number
 }
 
 interface Suggestion {
@@ -219,6 +228,41 @@ function selectNear(lat: number, lon: number) {
     if (d < bestD) { best = p; bestD = d }
   }
   if (best) select(best.id, false)
+}
+
+function isLearned(p: PlaceItem): boolean {
+  return savedFor(p)?.source === 'learned'
+}
+
+function learnedTrips(p: PlaceItem): number | null {
+  try { return JSON.parse(savedFor(p)?.learned_from ?? 'null')?.trips ?? null } catch { return null }
+}
+
+async function confirmLearned(p: PlaceItem) {
+  const s = savedFor(p)
+  if (!s) return
+  await $fetch(`/api/places/saved/${s.id}`, { method: 'PATCH', body: { confirm: true } })
+  await refresh()
+  selectNear(s.lat, s.lon)
+}
+
+const importMsg = ref<string | null>(null)
+async function importFile(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    const r = await $fetch<{ added: number; skipped: number }>('/api/places/saved/import', { method: 'POST', body: JSON.parse(await file.text()) })
+    importMsg.value = `Imported ${r.added} place${r.added === 1 ? '' : 's'}, skipped ${r.skipped} already here`
+    await refresh()
+  } catch (err: any) {
+    importMsg.value = err?.data?.statusMessage ?? 'That file is not a Cairn saved-places export'
+  } finally {
+    (e.target as HTMLInputElement).value = ''
+  }
+}
+
+function fmtBackup(ms: number | null): string {
+  return ms ? new Date(ms).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'not yet'
 }
 
 // A spot you keep coming back to is worth naming once.
@@ -413,7 +457,8 @@ onUnmounted(() => {
             <span class="w-3 h-3 shrink-0" :class="p.longest_category ? 'rounded-[3px]' : 'rounded-full'" :style="{ background: placeColor(p) }" />
             <div class="flex-1 min-w-0">
               <p class="text-[13px] font-medium truncate">
-                <span v-if="p.label?.saved_id != null" class="mr-1" style="color: #a78bfa" title="Named by you">★</span>{{ placeTitle(p) }}
+                <span v-if="p.label?.saved_id != null && !isLearned(p)" class="mr-1" style="color: #a78bfa" title="Named by you">★</span>{{ placeTitle(p) }}
+                <span v-if="isLearned(p)" class="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold align-middle" style="background: rgba(45,212,191,.15); color: #2dd4bf" title="Found automatically because you keep coming here">Learned</span>
                 <span v-if="p.label?.status === 'pending'" class="text-[11px] font-normal" style="color: var(--color-text-secondary)">identifying…</span>
               </p>
               <p v-if="p.label?.name" class="text-[12px] mt-0.5" style="color: var(--color-text-secondary)">
@@ -455,6 +500,10 @@ onUnmounted(() => {
                 trip {{ b.slice(0, 8) }}
               </NuxtLink>
               <span v-if="p.trips.length > 6" style="color: var(--color-text-secondary)">+{{ p.trips.length - 6 }} more</span>
+              <span v-if="isLearned(p)" class="text-[11px]" style="color: var(--color-text-secondary)">
+                Learned from {{ learnedTrips(p) ?? 'several' }} trips.
+                <button type="button" class="font-semibold underline-offset-2 hover:underline" style="color: #2dd4bf" @click="confirmLearned(p)">Confirm</button>
+              </span>
               <button
                 v-if="draft?.placeId !== p.id"
                 type="button"
@@ -584,6 +633,29 @@ onUnmounted(() => {
         </div>
       </template>
     </template>
+
+
+    <!-- Where saved places are kept -->
+    <div v-if="data?.storage" class="mt-6 rounded-xl px-4 py-3 text-[12px]" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span class="font-semibold">Saved places</span>
+        <span style="color: var(--color-text-secondary)">
+          {{ data.storage.saved }} yours · {{ data.storage.learned }} learned · {{ data.storage.trips_recorded }} trip{{ data.storage.trips_recorded === 1 ? '' : 's' }} in the visit history
+        </span>
+        <span style="color: var(--color-text-secondary)">last backup {{ fmtBackup(data.storage.backup_at) }}</span>
+        <span class="ml-auto flex items-center gap-3">
+          <a href="/api/places/saved/export" download class="font-semibold underline-offset-2 hover:underline" style="color: var(--color-accent)">Export</a>
+          <label class="font-semibold cursor-pointer underline-offset-2 hover:underline" style="color: var(--color-accent)">
+            Import
+            <input type="file" accept="application/json,.json" class="hidden" @change="importFile">
+          </label>
+        </span>
+      </div>
+      <p v-if="importMsg" class="mt-1.5" style="color: var(--color-text-secondary)">{{ importMsg }}</p>
+      <p class="mt-1.5 text-[11px]" style="color: var(--color-text-secondary)">
+        Every change is also written to a JSON file beside the database and copied into rotating backups on the server, and restored from it if the database is lost.
+      </p>
+    </div>
 
     <p v-if="data?.attribution?.length" class="text-[10px] mt-6 px-1" style="color: var(--color-text-secondary)">
       Place names: {{ data.attribution.join(' · ') }}
