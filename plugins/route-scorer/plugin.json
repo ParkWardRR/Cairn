@@ -1,7 +1,0 @@
-{
-  "name": "route-scorer",
-  "version": "0.1.0",
-  "type": "scorer",
-  "entry_function": "score_route",
-  "description": "Scores routes for repetition and novelty against historical data"
-}

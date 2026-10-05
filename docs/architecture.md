@@ -91,8 +91,10 @@ Phase 25.
 
 ### Side tooling (optional, must not affect a drive)
 
-Gleam trip orchestrator, MoonBit plugins (WASM, no I/O), Odin desktop tools,
-Rust emulator and fault-injection harness.
+The Rust emulator (`emulator/`): a byte-level conformance check of bundle
+format v3 against the committed vectors, and a fault-injection matrix. The
+former Gleam, MoonBit, Odin and Zig tooling was retired on 2026-10-05; see
+ROADMAP.md "Decisions".
 
 ## Data flow
 
@@ -117,5 +119,8 @@ forwarding. See [tailscale-deployment.md](tailscale-deployment.md).
 
 ## Deployment
 
-systemd units on the VM (`deploy/systemd`) and a Compose/Podman stack
-(`deploy/`) for PostgreSQL, Caddy and Mosquitto. See [deploying.md](deploying.md).
+systemd units on the VM (`deploy/systemd`: `cairn-server`, `cairn-tsdb`, `cairn-ui`),
+installed by `deploy/deploy-v3.sh` and `deploy/deploy-ui.sh`; Caddy fronts the UI
+only. PostgreSQL and any MQTT broker are installed on the host separately and are
+not shipped in this repository (schema: `deploy/migrations/`). See
+[deploying.md](deploying.md).

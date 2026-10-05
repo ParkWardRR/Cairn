@@ -5,12 +5,11 @@
 > more than one car.** Phases 1–12 (the rebuild) are complete and kept below as
 > the record; Phases 13–18 turn what v2 records into answers; **Phases 19–25 are
 > the v3 trust-and-transport refactor**, designed as one coherent model in
-> [docs/trust-model-v3.md](docs/trust-model-v3.md). The v1 plan is dead and lives
-> in [docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md) — nothing in it is
-> scheduled. **v2 is now dead too:** v3 breaks the bundle format, the manifest
+> [docs/trust-model-v3.md](docs/trust-model-v3.md). The v1 plan is dead; its roadmap document was removed on 2026-10-05
+> (it remains in git history) and nothing in it is scheduled. **v2 is now dead too:** v3 breaks the bundle format, the manifest
 > and the one-device-one-car assumption on purpose, with no migration.
 
-Last reviewed 2026-10-04.
+Last reviewed 2026-10-05.
 
 ## Where Cairn is
 
@@ -59,9 +58,9 @@ Last reviewed 2026-10-04.
 | Firmware | ESP-IDF application with `arduino-esp32` as a component, keeping the vendored FreematicsPlus drivers. Rebuild the application, not the hardware access — this repo already contains one failed custom HAL |
 | Server | Go, in a top-level `server/` directory |
 | Rebuilt | Firmware, ingest server, database schema, bundle format, emulator |
-| Kept | Odin tools, MoonBit plugins, Gleam orchestrator |
+| Retired | **2026-10-05, repo cleanup:** Odin tools, MoonBit plugins (WASM, wazero), the Gleam orchestrator, the Zig bundle/CLI tools (`tripctl`) and the v1 Go ingest, the Rust trajectory tool, the Mojo and `moonbit/` experiments, the v1 Compose/Podman stack and the emulator's v1 capture path. They were optional side tooling that no longer fed anything on the v3 path; they remain in git history. The v0.1.0 release tool tarballs no longer exist |
 | Replaced | SvelteKit web UI → Nuxt 3 + Vue 3 dashboard (`ui/`) |
-| Stack shape | Core data path is C and Go only; Odin, MoonBit and Gleam remain optional side tooling that must be able to break without affecting a drive |
+| Stack shape | C (firmware), Go (server), Rust (emulator: conformance and fault matrix only) and the Nuxt/TypeScript UI, plus SQL migrations and shell/systemd deploy scripts. Odin, MoonBit, Gleam and Zig were retired on 2026-10-05; see the Retired row |
 | Analytical store | **In-memory DuckDB**, behind a small Go service. Chosen because the data is tiny (hundreds of KB today) and the useful questions are ASOF joins across streams polled at different rates — OBD against boost against GNSS. InfluxDB 3 was rejected as UTC-keyed and, as far as was checked, without ASOF; QuestDB as a JVM that is memory-mapped rather than in-memory, on a 7.3 GB box shared with the runner and ingest stack |
 | Analytical time key | `(boot_id, mono_ms)`, never UTC. UTC rides along as a column |
 | v1 | **Dead.** No reader, no migration, no compatibility. Tools that scan an SD card ignore `trips/` and load only sealed bundles from `bundles/` |
@@ -248,7 +247,7 @@ the analytical store remove the block.
 
 ## Phase 18 — Hardening — **planned**
 
-- [ ] Plugin timeout and storage-full matrix rows (open since Phase 3)
+- [ ] Storage-full matrix row (open since Phase 3). ~~Plugin timeout row~~ — retired 2026-10-05: the plugin system was removed
 - [ ] Exercise the OTA install on the device; it has only been verified on the
       host
 - [x] ~~Decide on flash encryption and secure boot~~ — decided 2026-10-04: **yes,
@@ -490,9 +489,17 @@ verified).
 - [ ] Backup restore tested with the master key held apart from the data
 - [x] The legacy v1 `cairn-ingest` user unit, which silently took `:8443` the moment
       the real server stopped, is disabled
-- [ ] systemd unit hardening for the app listener; rootless Podman and
-      read-only rootfs where the Compose stack allows
+- [ ] systemd unit hardening for the app listener. ~~Rootless Podman and
+      read-only rootfs where the Compose stack allows~~ — retired 2026-10-05: the
+      Compose stack was removed; services run as systemd units
 - [ ] MQTT scoped by device and vehicle; no database port published
+- [x] 2026-10-05: repo cleanup. Removed the retired Zig, Gleam, MoonBit, Odin, Mojo and
+      Rust trajectory tooling, the v1 Go ingest and its `/api/v1` API, the Compose/Podman stack
+      and its smoke test, the emulator's v1 capture path and its v1 fixtures, the v1
+      firmware sources (the vendored `firmware/freematics-base/lib` drivers stay),
+      and the v1 roadmap archive; flattened the migrations to
+      `deploy/migrations/001_raw.sql` … `005_vehicle.sql`. What remains: C firmware, Go
+      server, Rust emulator, Nuxt UI, SQL and shell/systemd deploy
 
 ## Phase 24 — ESP32 chip hardening — **planned, gated**
 
@@ -532,7 +539,7 @@ authentication item (#9) is blocked on Phase 22.
 | A v1 reader or migration | v1 is dead. Not deferred — refused |
 | Persisting the analytical store | Rebuild is ~60 ms. Revisit only if a rebuild exceeds ~5 s |
 | InfluxDB / QuestDB | Evaluated and rejected for this data and this VM; see Decisions |
-| Arbitrary user plugins | Until the raw format, decoder ABI, receipt semantics and replay tooling are stable |
+| ~~Arbitrary user plugins~~ | Retired 2026-10-05 along with the MoonBit plugin system; not planned. Would need the raw format, decoder ABI, receipt semantics and replay tooling to be stable first |
 | MinIO | A CAS directory on ZFS is sufficient; keep the abstraction, skip the daemon |
 | TimescaleDB | Native range partitioning first; adopt only on measured need. Analytical reads go to the in-memory store, which lowers that need further |
 | `previous_bundle_root` enforcement | Field is populated in v2; detecting deleted historical bundles is a different threat model from detecting corruption |
@@ -559,7 +566,7 @@ rather than future concerns:
 Rather than remediate in place, the core data path is being **rebuilt from a
 clean slate**: no format compatibility, no migration, no reissuing of historical
 receipts. The v1 plan is dead and archived in
-[docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md).
+the v1 roadmap (removed 2026-10-05; see git history).
 
 ## Build order
 
@@ -616,8 +623,8 @@ against the fault matrix.
       device's durable state and the server's reported state, never stdout
 - [x] **16 matrix rows pass, 0 skipped.** CI gates conformance and the matrix
 - [x] Decoder upgrade reproducibility — closed by Phase 4's decode pipeline
-- [ ] Plugin timeout; storage full — these need Phase 9's degraded modes and the
-      plugin queue to exist
+- [ ] Storage full — needs Phase 9's degraded modes. ~~Plugin timeout~~ — retired
+      2026-10-05 with the plugin system
 - [x] **Standing rule: every later phase adds its own matrix rows before it closes**
 
 #### What the matrix proves
@@ -649,7 +656,7 @@ against the fault matrix.
 
 ### Phase 4 — Schema and decode workers — **complete**
 
-- [x] Fresh migrations in `deploy/migrations/v2/` — raw / normalized / derived
+- [x] Fresh migrations in `deploy/migrations/` (originally `v2/`, flattened to `001_raw.sql` … `005_vehicle.sql` on 2026-10-05) — raw / normalized / derived
       layers, no `ALTER`s against the v1 schema
 - [x] Range-partitioned sample tables with on-demand monthly partitions and a
       default partition, so a decode can never fail for want of one

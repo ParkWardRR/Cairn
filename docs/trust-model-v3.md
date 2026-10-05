@@ -318,14 +318,15 @@ issues; firmware work in Phase 22.
 
 ## 9. Deployment hardening
 
-Keep the existing Compose/Podman/Caddy/Mosquitto separation. Add a **host-level**
-Tailscale unit — never embed Tailnet credentials in Compose.
+Keep the services as separate systemd units (`deploy/systemd`), with Caddy fronting the
+UI only. Run Tailscale as a **host-level** unit — never embed Tailnet credentials in a
+container or compose file.
 
 | Layer | Hardening |
 |---|---|
 | Host | Full-disk encryption; unattended security updates; locked-down SSH |
 | Tailscale | Host install; tag `tag:cairn-server`; ACL allows only the owner's phone to TCP 443/8444; **Funnel off**; no subnet router; no SSH; device approval on; one-time tagged auth key, never in an image or repo; MagicDNS name |
-| Containers | Rootless Podman where practical; read-only rootfs; dropped capabilities; isolated networks |
+| Containers | If PostgreSQL or a broker runs in one: rootless Podman where practical; read-only rootfs; dropped capabilities; isolated networks |
 | Database | No published port |
 | MQTT | LAN or internal only; mTLS per device; ACL topics scoped by device and vehicle |
 | Keys | Runtime secret files, mode 0600; **keystore master key kept apart from the backed-up data directory**; never in image layers, Git, logs or environment dumps |

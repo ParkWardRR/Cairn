@@ -7,60 +7,17 @@ on:
     branches: [main]
 
 jobs:
-  build-zig:
+  # CI runs on the self-hosted `cairn` runner only, never a GitHub-hosted one.
+  # GitHub offers no setting to forbid hosted runners, so this is the guard.
+  runner-policy:
     runs-on: [self-hosted, cairn]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Zig
-        uses: goto-bus-stop/setup-zig@v2
-        with:
-          version: 0.16.0
+      - name: Every job is on the self-hosted runner
+        run: tests/check-runners.sh
 
-      - name: Build common
-        working-directory: zig/common
-        run: zig build
-
-      - name: Test common
-        working-directory: zig/common
-        run: zig build test
-
-      - name: Build bundle
-        working-directory: zig/bundle
-        run: zig build
-
-      - name: Build CLI
-        working-directory: zig/cli
-        run: zig build
-
-      - name: CLI smoke test
-        working-directory: zig/cli
-        run: |
-          ./zig-out/bin/tripctl generate --duration-minutes 5 --output /tmp/ci-test-trip
-          ./zig-out/bin/tripctl validate /tmp/ci-test-trip
-          ./zig-out/bin/tripctl inspect /tmp/ci-test-trip
-          ./zig-out/bin/tripctl export-gpx /tmp/ci-test-trip --output /tmp/ci-test.gpx
-          rm -rf /tmp/ci-test-trip /tmp/ci-test.gpx
-
-  build-go:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-
-      - name: Build ingest service
-        working-directory: zig/ingest
-        run: go build ./cmd/ingestd/
-
-      - name: Vet
-        working-directory: zig/ingest
-        run: go vet ./...
-
-  # v2 server. Gates the bundle format reference implementation against the
+  # Server. Gates the bundle format reference implementation against the
   # committed conformance vectors, so an accidental format change fails CI
   # instead of silently diverging from the firmware and emulator.
   build-server:
@@ -130,12 +87,12 @@ jobs:
         with:
           go-version: '1.27'
 
-      - name: Apply the v2 migrations
+      - name: Apply the migrations
         env:
           PGPASSWORD: test
         run: |
           set -euo pipefail
-          for f in deploy/migrations/v2/*.sql; do
+          for f in deploy/migrations/*.sql; do
             echo "applying $f"
             psql -h 127.0.0.1 -U postgres -d cairn -v ON_ERROR_STOP=1 -q -f "$f"
           done
@@ -347,196 +304,3 @@ jobs:
 
       - name: Verify binary
         run: ./emulator/target/release/cairn-emulator --help
-
-  build-trajectory:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build trajectory tool
-        working-directory: rust/trajectory
-        run: cargo build --release
-
-      - name: Test trajectory tool
-        working-directory: rust/trajectory
-        run: cargo test
-
-      - name: Verify binary
-        run: ./rust/trajectory/target/release/cairn-trajectory --help
-
-  emulator-test:
-    runs-on: [self-hosted, cairn]
-    needs: [build-go, build-rust]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build emulator
-        working-directory: emulator
-        run: cargo build --release
-
-      - name: Generate and validate fixtures
-        run: |
-          ./emulator/target/release/cairn-emulator \
-            --scenario normal_commute \
-            --speedup 1000 \
-            --seed 12345 \
-            --output /tmp/ci-fixtures
-          # Verify binary alignment and hash integrity
-          for d in /tmp/ci-fixtures/cairn-emulator-01/*/; do
-            [ -f "$d/samples.bin" ] || continue
-            sb=$(wc -c < "$d/samples.bin" | tr -d ' ')
-            if [ $((sb % 32)) -ne 0 ]; then
-              echo "FAIL: samples.bin not 32-byte aligned in $d"
-              exit 1
-            fi
-            while IFS='  ' read -r expected name; do
-              actual=$(shasum -a 256 "$d/$name" | cut -d' ' -f1)
-              if [ "$expected" != "$actual" ]; then
-                echo "FAIL: hash mismatch for $name in $d"
-                exit 1
-              fi
-            done < "$d/sha256sums.txt"
-            echo "OK: $d ($((sb / 32)) GNSS samples)"
-          done
-          rm -rf /tmp/ci-fixtures
-
-      - name: Emulator scenarios against live ingest
-        run: |
-          if curl -sf --max-time 5 http://localhost:8443/api/v1/health >/dev/null 2>&1; then
-            for scenario in normal_commute short_errand power_loss_upload; do
-              ./emulator/target/release/cairn-emulator \
-                --scenario "$scenario" \
-                --server http://localhost:8443 \
-                --speedup 1000 \
-                --output /tmp/ci-emulator-output \
-                --seed $RANDOM
-            done
-            rm -rf /tmp/ci-emulator-output
-          else
-            echo "Ingest service not running -- skipping emulator tests"
-          fi
-
-  build-odin:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Odin tools
-        run: |
-          for tool in trip-inspector trip-diff trip-replay route-density sd-recover; do
-            echo "Building $tool..."
-            odin build "odin/$tool/" -o:speed -out:"odin/$tool/$tool"
-          done
-
-      - name: Smoke test trip-inspector
-        run: |
-          # Generate a test bundle
-          if [ -x emulator/target/release/cairn-emulator ]; then
-            emulator/target/release/cairn-emulator \
-              --scenario normal_commute --speedup 1000 --seed 99 \
-              --output /tmp/ci-odin-test
-            BUNDLE=$(find /tmp/ci-odin-test -name manifest.json -exec dirname {} \;| head -1)
-            odin/trip-inspector/trip-inspector "$BUNDLE"
-            rm -rf /tmp/ci-odin-test
-          else
-            echo "Emulator not available -- skipping smoke test"
-          fi
-
-  build-gleam:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build trip-orchestrator
-        working-directory: gleam/trip-orchestrator
-        run: gleam build
-
-      - name: Test trip-orchestrator
-        working-directory: gleam/trip-orchestrator
-        run: gleam test
-
-  build-plugins:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install MoonBit
-        run: |
-          if ! command -v moon &>/dev/null; then
-            curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
-          fi
-
-      - name: Build trip-classifier
-        working-directory: plugins/trip-classifier
-        run: |
-          moon install
-          moon build --target wasm
-
-      - name: Build privacy-redactor
-        working-directory: plugins/privacy-redactor
-        run: |
-          moon install
-          moon build --target wasm
-
-      - name: Build export-transformer
-        working-directory: plugins/export-transformer
-        run: |
-          moon install
-          moon build --target wasm
-
-      - name: Build route-scorer
-        working-directory: plugins/route-scorer
-        run: |
-          moon install
-          moon build --target wasm
-
-      - name: Build data-quality-detector
-        working-directory: plugins/data-quality-detector
-        run: |
-          moon install
-          moon build --target wasm
-
-      - name: Verify WASM outputs
-        run: |
-          find plugins -name '*.wasm' -type f | while read f; do
-            echo "OK: $f ($(wc -c < "$f" | tr -d ' ') bytes)"
-          done
-
-  validate-pwa:
-    runs-on: [self-hosted, cairn]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate PWA files exist
-        run: |
-          for f in pwa/index.html pwa/app.js pwa/style.css pwa/manifest.json pwa/sw.js; do
-            test -f "$f" || { echo "FAIL: missing $f"; exit 1; }
-          done
-          echo "All PWA files present"
-
-  integration-test:
-    runs-on: [self-hosted, cairn]
-    needs: [build-go, build-rust]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build emulator
-        working-directory: emulator
-        run: cargo build --release
-
-      - name: Smoke test against live ingest
-        run: |
-          if curl -sf --max-time 5 http://localhost:8443/api/v1/health >/dev/null 2>&1; then
-            bash tests/smoke_test.sh http://localhost:8443
-          else
-            echo "Ingest service not running -- skipping integration tests"
-          fi

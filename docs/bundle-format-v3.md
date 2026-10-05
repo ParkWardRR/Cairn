@@ -528,7 +528,7 @@ in the capture segment for transitions occurring during capture.
 | 16 | 4 | `reserved2`, zero |
 
 Recording both evidence scores and the `policy_version` at every transition is
-what makes a retune attributable and lets `trip-replay` prove *why* a trip
+what makes a retune attributable and lets a replay tool prove *why* a trip
 started, continued, split, finalized, retried or was retained.
 
 #### 4.7.1 Power transitions in the health region

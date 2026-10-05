@@ -1,7 +1,0 @@
-{
-  "name": "privacy-redactor",
-  "version": "0.1.0",
-  "type": "redactor",
-  "entry_function": "redact",
-  "description": "Redacts route points that fall within configured privacy zones"
-}

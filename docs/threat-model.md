@@ -55,7 +55,7 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 | Non-home Wi-Fi networks | Device only syncs on trusted BSSID/SSID |
 | Identically-named SSIDs | BSSID validation prevents evil-twin attacks |
 | OBD-II bus | Not read; no diagnostic polling in v1 |
-| MoonBit plugins | Run in WASM sandbox; no network/disk/DB access |
+| Server-side plugins | None exist: the MoonBit WASM plugin system was retired 2026-10-05 |
 
 ## Threats and Mitigations
 
@@ -148,13 +148,13 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 | **Mitigation** | CAS holds ciphertext; roots are wrapped under a master key kept outside the data directory; full-disk encryption on the host; destroying a root crypto-shreds all copies of that device's history |
 | **Residual risk** | Master key stored alongside the backup defeats this; the deployment guide forbids it |
 
-### T7: Plugin escape
+### T7: Plugin escape (retired)
 
-| Aspect | Detail |
-|--------|--------|
-| **Threat** | Malicious or buggy MoonBit plugin escapes sandbox |
-| **Mitigation** | WASM runtime with no WASI capabilities granted. No filesystem, network, or database access. Host validates all outputs. Plugins cannot alter raw data. |
-| **Residual risk** | WASM runtime bugs (mitigated by keeping runtime updated) |
+The MoonBit/WASM plugin system this threat applied to was removed on 2026-10-05,
+so there is no plugin execution surface. The number is kept so T8 and later
+references stay stable. If server-side plugins are ever reintroduced, the original
+design was: WASM runtime with no WASI capabilities, no filesystem, network or
+database access, host-validated outputs, and no ability to alter raw data.
 
 ### T8: Server compromise
 
