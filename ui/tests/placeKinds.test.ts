@@ -42,6 +42,12 @@ describe('place kinds', () => {
     expect(kindForCategory(null, 'The Barn')).toBe('other')
   })
 
+  it('does not let the name override a real category', () => {
+    expect(kindForCategory('social facility', 'Westside Food Bank')).toBe('other')
+    expect(kindForCategory('supermarket', 'Gym Snacks')).toBe('groceries')
+    expect(kindForCategory('street', 'Planet Fitness')).toBe('gym') // a street is no category at all
+  })
+
   it('falls back to the name when there is no category', () => {
     expect(kindForCategory(null, 'Planet Fitness')).toBe('gym')
     expect(kindForCategory('', 'Shell gas station')).toBe('fuel')

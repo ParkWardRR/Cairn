@@ -115,7 +115,11 @@ function kindOfText(text: string | null | undefined): PlaceKindId | null {
 // lookup said) decides first; the name is only a fallback, for places named
 // "Anytime Fitness" with no category.
 export function kindForCategory(category: string | null | undefined, name?: string | null): PlaceKindId {
-  return kindOfText(category) ?? kindOfText(name) ?? 'other'
+  const c = (category ?? '').trim().toLowerCase()
+  // A real category is final: "social facility" at "Westside Food Bank" is not a
+  // restaurant. The name is only consulted when there is nothing better.
+  if (c && c !== 'address' && c !== 'street') return kindOfText(c) ?? 'other'
+  return kindOfText(name) ?? 'other'
 }
 
 // The kind with this exact label (what the picker stores), if any.
