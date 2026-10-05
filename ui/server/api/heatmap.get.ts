@@ -1,9 +1,10 @@
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
+  const v = await vehicleScope(event)
   const rows = await queryTsdbObjects(`
     SELECT lat, lon, speed_mps
     FROM position
-    WHERE lat != 0 AND lon != 0
-    ORDER BY boot_id, mono_ms
+    WHERE lat != 0 AND lon != 0${v.and()}
+    ORDER BY vehicle_id, boot_id, mono_ms
   `)
 
   return {

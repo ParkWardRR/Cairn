@@ -1,15 +1,16 @@
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
+  const v = await vehicleScope(event, 'single')
   const [samples, perTrip, timingByLoad] = await Promise.all([
     queryTsdbObjects(`
       SELECT o.speed_kph, b.maf_cgps, b.lambda_ratio, o.rpm,
         o.timing_advance_deg, o.load_pct, b.boost_psi, b.ltft_pct,
         b.boot_id, b.mono_ms
       FROM boost b
-      ASOF JOIN obd o ON b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
+      ASOF JOIN obd o ON b.vehicle_id = o.vehicle_id AND b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
       WHERE b.maf_cgps IS NOT NULL AND b.lambda_ratio IS NOT NULL
         AND b.lambda_ratio > 0.7 AND b.lambda_ratio < 1.3
         AND o.speed_kph IS NOT NULL AND o.speed_kph > 5
-        AND o.rpm IS NOT NULL AND o.rpm > 0
+        AND o.rpm IS NOT NULL AND o.rpm > 0${v.and('b')}
       ORDER BY b.boot_id, b.mono_ms
     `),
     queryTsdbObjects(`
@@ -26,12 +27,12 @@ export default defineEventHandler(async () => {
         avg(o.load_pct)::decimal(4,1) as avg_load,
         (max(b.mono_ms) - min(b.mono_ms)) / 1000.0 as duration_s
       FROM boost b
-      ASOF JOIN obd o ON b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
+      ASOF JOIN obd o ON b.vehicle_id = o.vehicle_id AND b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
       WHERE b.maf_cgps IS NOT NULL AND b.lambda_ratio IS NOT NULL
         AND b.lambda_ratio > 0.7 AND b.lambda_ratio < 1.3
         AND o.speed_kph IS NOT NULL AND o.speed_kph > 5
-        AND o.rpm IS NOT NULL AND o.rpm > 0
-      GROUP BY b.boot_id
+        AND o.rpm IS NOT NULL AND o.rpm > 0${v.and('b')}
+      GROUP BY b.vehicle_id, b.boot_id
       ORDER BY first_seen
     `),
     queryTsdbObjects(`
@@ -48,17 +49,17 @@ export default defineEventHandler(async () => {
         avg(o.rpm)::decimal(6,0) as avg_rpm,
         count(*) as samples
       FROM boost b
-      ASOF JOIN obd o ON b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
+      ASOF JOIN obd o ON b.vehicle_id = o.vehicle_id AND b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
       WHERE b.maf_cgps IS NOT NULL AND b.lambda_ratio IS NOT NULL
         AND b.lambda_ratio > 0.7 AND b.lambda_ratio < 1.3
         AND o.speed_kph IS NOT NULL AND o.speed_kph > 5
         AND o.rpm IS NOT NULL AND o.rpm > 0
         AND o.timing_advance_deg IS NOT NULL
-        AND o.load_pct IS NOT NULL
-      GROUP BY load_zone
+        AND o.load_pct IS NOT NULL${v.and('b')}
+      GROUP BY b.vehicle_id, load_zone
       ORDER BY avg_speed
     `),
   ])
 
-  return { samples, perTrip, timingByLoad }
+  return { samples, perTrip, timingByLoad, vehicle_id: v.id }
 })

@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
     queryTsdbObjects(`
       SELECT o.speed_kph, b.maf_cgps, b.lambda_ratio, b.mono_ms
       FROM boost b
-      ASOF JOIN obd o ON b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
+      ASOF JOIN obd o ON b.vehicle_id = o.vehicle_id AND b.boot_id = o.boot_id AND b.mono_ms >= o.mono_ms
       WHERE b.boot_id = ${id}
         AND b.maf_cgps IS NOT NULL AND b.lambda_ratio IS NOT NULL
         AND b.lambda_ratio > 0.7 AND b.lambda_ratio < 1.3

@@ -1,3 +1,6 @@
+// Raw passthrough: the caller's SQL runs as written. Every table holds every
+// car, so callers must filter on vehicle_id and put it in every join, window
+// and GROUP BY, or one engine's samples will be averaged into another's.
 export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const sql = typeof body === 'string' ? body : body?.sql

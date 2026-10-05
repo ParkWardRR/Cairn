@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
   const allowed = ['observed_at', 'duration_s', 'max_speed_kph', 'max_rpm', 'boot_id']
   const orderBy = allowed.includes(sortCol) ? sortCol : 'observed_at'
   const dir = desc ? 'DESC' : 'ASC'
+  const v = await vehicleScope(event)
 
   const trips = await queryTsdbObjects(`
     SELECT d.*,
@@ -16,14 +17,14 @@ export default defineEventHandler(async (event) => {
       first_pos.lon AS start_lon
     FROM v_drive_summary d
     LEFT JOIN (
-      SELECT boot_id, observed_at, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM position) WHERE rn = 1
-    ) first_pos USING (boot_id)
+      SELECT vehicle_id, boot_id, observed_at, lat, lon
+      FROM (SELECT *, row_number() OVER (PARTITION BY vehicle_id, boot_id ORDER BY mono_ms ASC) AS rn FROM position${v.where()}) WHERE rn = 1
+    ) first_pos USING (vehicle_id, boot_id)${v.where('d')}
     ORDER BY ${orderBy === 'observed_at' ? 'first_pos.observed_at' : orderBy} ${dir}
     LIMIT ${limit} OFFSET ${offset}
   `)
 
-  const countResult = await queryTsdbObjects(`SELECT count(*) AS total FROM v_drive_summary`)
+  const countResult = await queryTsdbObjects(`SELECT count(*) AS total FROM v_drive_summary${v.where()}`)
 
   return { trips, total: countResult[0]?.total ?? 0 }
 })

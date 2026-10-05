@@ -1,7 +1,8 @@
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
+  const v = await vehicleScope(event)
   const rows = await queryTsdbObjects(`
     SELECT battery_mv, device_temp_c, sd_free_mib, rssi_dbm, health_state, observed_at
-    FROM status
+    FROM status${v.where()}
     ORDER BY observed_at DESC
     LIMIT 1
   `)

@@ -40,6 +40,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     tsdbUrl: 'http://127.0.0.1:8480',
+    // Loopback cairn-server local API, for vehicle display names. Empty = ids only.
+    cairnLocalUrl: '',
     // Place naming. Coordinates are sent to Overpass (and Geoapify, if a key is
     // set) to find names; results are cached on disk and never re-fetched.
     // Set NUXT_PLACES_EXTERNAL=false to keep all coordinates local.

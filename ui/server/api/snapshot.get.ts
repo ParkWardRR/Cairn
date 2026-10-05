@@ -9,6 +9,8 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const params = new URLSearchParams()
   if (query.format) params.set('format', String(query.format))
+  const vehicle = parseVehicleParam(query.vehicle)
+  if (vehicle) params.set('vehicle', vehicle)
   const qs = params.toString()
 
   const res = await fetch(`${config.tsdbUrl}/snapshot${qs ? '?' + qs : ''}`, { headers })

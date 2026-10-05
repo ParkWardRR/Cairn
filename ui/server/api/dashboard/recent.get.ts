@@ -1,4 +1,5 @@
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
+  const v = await vehicleScope(event)
   const trips = await queryTsdbObjects(`
     SELECT d.*,
       first_pos.observed_at AS start_time,
@@ -6,13 +7,13 @@ export default defineEventHandler(async () => {
       last_pos.lat AS end_lat, last_pos.lon AS end_lon
     FROM v_drive_summary d
     LEFT JOIN (
-      SELECT boot_id, observed_at, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms ASC) AS rn FROM position) WHERE rn = 1
-    ) first_pos USING (boot_id)
+      SELECT vehicle_id, boot_id, observed_at, lat, lon
+      FROM (SELECT *, row_number() OVER (PARTITION BY vehicle_id, boot_id ORDER BY mono_ms ASC) AS rn FROM position${v.where()}) WHERE rn = 1
+    ) first_pos USING (vehicle_id, boot_id)
     LEFT JOIN (
-      SELECT boot_id, lat, lon
-      FROM (SELECT *, row_number() OVER (PARTITION BY boot_id ORDER BY mono_ms DESC) AS rn FROM position) WHERE rn = 1
-    ) last_pos USING (boot_id)
+      SELECT vehicle_id, boot_id, lat, lon
+      FROM (SELECT *, row_number() OVER (PARTITION BY vehicle_id, boot_id ORDER BY mono_ms DESC) AS rn FROM position${v.where()}) WHERE rn = 1
+    ) last_pos USING (vehicle_id, boot_id)${v.where('d')}
     ORDER BY first_pos.observed_at DESC
     LIMIT 5
   `)
