@@ -1,0 +1,41 @@
+{
+  "description": "Cairn device enrolment blob v1 (docs/device-provisioning.md). Every key here is a PUBLIC TEST KEY derived from a published label; none protects anything.",
+  "vectors": [
+    {
+      "name": "first enrolment, key version 1",
+      "device_seed": "b4adf97edfea6ed59335d1e6ba3a7f4cdcea0d2f34b16411dfd52288b5602aca",
+      "device_public_key": "dc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a69411",
+      "device_id": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "storage_key_version": 1,
+      "storage_root": "b4972678cf64445d0a596051abd797b3605f7a119e8f20c4bfb9627ec9a8a0de",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "server_public_key": "4502ca9c3f52c9fd2e07e87ee13b8cf486d51464bc843de1fb870e853b8f3616",
+      "ephemeral_private_key": "27f102a6e5d62c86023b67f3f762ac80a898ff3edc5af7c1be97ab6913757dfc",
+      "ephemeral_public_key": "c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143",
+      "nonce": "a17eed422cf2152e2a8fae22615756c19c9a40346204a75f",
+      "shared_secret": "d74f69c8315bdacff6dca1c2763d6bf14253b439ecbea14810c1e6b12c877000",
+      "seal_key": "dd70d64425f3fc3989c39f7c4d4f474f9a8c70d9d8d43780da4b72e8cbf214eb",
+      "fingerprint": "5fd41190",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "blob_text": "ENROLL-BLOB Q0VOUgGgoaKjpKWmp6ipqqusra6v3GE1lQ9naTQM3GezC+mV/YkKCJS8kFENiYPzsfKmlBEBAAAAx1GGAsdZVxUgxL4maDJ8MBffLBVA6Neq7US7QqahwUOhfu1CLPIVLiqPriJhV1bBnJpANGIEp19krzJFCOrmYIrKleKqDhUZi3vthco3VmiD8yao6mRNmMX/DeoEigJ9wODc7mLJ3OSzc7r/+wZ4WfJ7kT6Ex4mSMqrP+E7zYzqm7UnbTP54VhnsQ2fLyoFjDdI6Bxo61ONelaejMtv2e2xZZiq1uHEN"
+    },
+    {
+      "name": "rotated root, key version 0x01020304",
+      "device_seed": "fb1d9e047052d39a60398976c5894847bd66d8f381d09fb09fe2357fd28e81d7",
+      "device_public_key": "84923e9411f917847eb8e43962fcee299ed4325bc7cd9a3b8e01408dee08f81b",
+      "device_id": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecf",
+      "storage_key_version": 16909060,
+      "storage_root": "5b25cd6f7460af2c8f157a683375e7e257d1cdcfe27c77ec541b10fa72058cec",
+      "server_private_key": "c4ac257836e7d18f79f7579513d54551b07017846a4ef9b905f6dd291598c378",
+      "server_public_key": "0e29d4df15c7841608ec723facfca3acff0aa7508c63b4eee0f9449d67e62f2f",
+      "ephemeral_private_key": "c2665f79bf917dae56f82a1f316ebea105ffb0b629a9f9e5f009d2091faa338d",
+      "ephemeral_public_key": "960b2044657124ee40a27c46e4d2c470de270cedcde4b9b2275ee27189f39f4c",
+      "nonce": "7861af74ce6e58000fcc6451ece1b3604c660d354b48bde4",
+      "shared_secret": "cfa172d64bc6e7d2869294a66c92fc35986ef4bb503a4b9f895344da94a20a6d",
+      "seal_key": "e7e1d78c3b1972595fcbb337583ae01864ebf1421d80a0749be5c3a3fca0ed5c",
+      "fingerprint": "ec119208",
+      "blob": "43454e5201c0c1c2c3c4c5c6c7c8c9cacbcccdcecf84923e9411f917847eb8e43962fcee299ed4325bc7cd9a3b8e01408dee08f81b04030201960b2044657124ee40a27c46e4d2c470de270cedcde4b9b2275ee27189f39f4c7861af74ce6e58000fcc6451ece1b3604c660d354b48bde48598bfc2523acc5e72be7fba1044a31dc9443266580b6d86d61663b147b1a8d588b9efb76b02836b72265a47d72d5c1e3cec517cdab43d2abce843eceaeb40180e5dcfac2699e8979e940f00fb31c3c29cb49948f058d744012444b1193be424e35f3b33c54c745be85a0236f1e3b105",
+      "blob_text": "ENROLL-BLOB Q0VOUgHAwcLDxMXGx8jJysvMzc7PhJI+lBH5F4R+uOQ5YvzuKZ7UMlvHzZo7jgFAje4I+BsEAwIBlgsgRGVxJO5AonxG5NLEcN4nDO3N5LmyJ17icYnzn0x4Ya90zm5YAA/MZFHs4bNgTGYNNUtIveSFmL/CUjrMXnK+f7oQRKMdyUQyZlgLbYbWFmOxR7Go1Yi577drAoNrciZaR9ctXB487FF82rQ9KrzoQ+zq60AYDl3PrCaZ6JeelA8A+zHDwpy0mUjwWNdEASREsRk75CTjXzszxUx0W+haAjbx47EF"
+    }
+  ]
+}
