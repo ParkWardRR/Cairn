@@ -92,8 +92,8 @@ jobs:
       - name: Conformance vectors are reproducible
         working-directory: server
         run: |
-          go run ./cmd/mkvectors -out ../fixtures/format-v2
-          git diff --exit-code -- ../fixtures/format-v2 || {
+          go run ./cmd/mkvectors -out ../fixtures/format-v3
+          git diff --exit-code -- ../fixtures/format-v3 || {
             echo "Regenerating the vectors produced a diff."
             echo "If the format change is intended, commit the regenerated vectors."
             exit 1
@@ -164,7 +164,7 @@ jobs:
 
       - name: Conformance against the committed vectors
         working-directory: emulator
-        run: cargo run --release -- conformance --vectors ../fixtures/format-v2
+        run: cargo run --release -- conformance --vectors ../fixtures/format-v3
 
   # The vectors are generated deterministically, which is what makes them usable
   # as a shared input rather than one implementation's output. Regenerating must
@@ -183,16 +183,16 @@ jobs:
 
       - name: Regenerate the vectors
         working-directory: server
-        run: go run ./cmd/mkvectors -out ../fixtures/format-v2
+        run: go run ./cmd/mkvectors -out ../fixtures/format-v3
 
       - name: The committed vectors must be unchanged
         run: |
-          if ! git diff --quiet -- fixtures/format-v2; then
+          if ! git diff --quiet -- fixtures/format-v3; then
             echo "Regenerating the vectors changed committed files."
             echo "Either the generator is not deterministic, or a change to it"
             echo "was committed without regenerating. Run:"
-            echo "  cd server && go run ./cmd/mkvectors -out ../fixtures/format-v2"
-            git diff --stat -- fixtures/format-v2
+            echo "  cd server && go run ./cmd/mkvectors -out ../fixtures/format-v3"
+            git diff --stat -- fixtures/format-v3
             exit 1
           fi
 
@@ -290,16 +290,31 @@ jobs:
         run: |
           set -euo pipefail
           DATA="$(mktemp -d)"
-          cd server && go build -o /tmp/cairn-server ./cmd/cairn-server && cd ..
+          cd server && go build -o /tmp/cairn-server ./cmd/cairn-server \
+            && go build -o /tmp/cairn-admin ./cmd/cairn-admin && cd ..
+
+          # v3 intake needs, for every device: an escrowed storage root, a
+          # vehicle, and an assignment of the device to it. These are the
+          # emulator's PUBLIC test values (its default root and a fixed pair of
+          # ids); they protect nothing.
+          ROOT=636169726e2d656d756c61746f722d7075626c69632d746573742d726f6f7421
+          VEHICLE=606162636465666768696a6b6c6d6e6f
+          ASSIGNMENT=707172737475767778797a7b7c7d7e7f
+          MASTER="$(mktemp -d)/keystore.master"
 
           # A persistent signing key: an ephemeral one would invalidate every
           # receipt on restart, which the crash test exercises deliberately.
-          /tmp/cairn-server -data "$DATA" \
+          /tmp/cairn-server -data "$DATA" -keystore-master "$MASTER" \
             -enroll 101112131415161718191a1b1c1d1e1f \
             -enroll-key 9f8d4bbc0bf6feeabbabe4d2aff165db4f77fc4b6d46619818af409ddab507bf \
+            -enroll-root "$ROOT" \
             -enroll-name ci-device
+          /tmp/cairn-admin -data "$DATA" vehicle add --id "$VEHICLE" --name "ci car"
+          /tmp/cairn-admin -data "$DATA" assign --assignment-id "$ASSIGNMENT" \
+            101112131415161718191a1b1c1d1e1f "$VEHICLE"
 
           /tmp/cairn-server -data "$DATA" -addr 127.0.0.1:18700 -dev \
+            -keystore-master "$MASTER" \
             -receipt-key "$DATA/receipt.seed" &
           SERVER_PID=$!
           trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
@@ -312,6 +327,7 @@ jobs:
           cd emulator
           cargo run --release -- fault-matrix \
             --work-dir target/fault-matrix-net \
+            --root-key "$ROOT" --vehicle-id "$VEHICLE" --assignment-id "$ASSIGNMENT" \
             --server http://127.0.0.1:18700 --verbose
 
       - name: Server crash during commit
