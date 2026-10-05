@@ -40,7 +40,7 @@ model covering three things that were previously designed separately:
 | Who authorises deletion on the dongle | A server-signed receipt, verified against a pinned key | **Unchanged.** The receipt is now handed over by the phone instead of received directly |
 | Who can read a trip in transit | Anyone who broke TLS | Nobody on the path: the phone carries **ciphertext only** (frames are AEAD-encrypted under keys it never holds) |
 | What a stolen or hostile phone can do | n/a | Fail to upload. It cannot read a trip, forge a receipt, or make the dongle delete anything |
-| Secrets on the chip beyond the storage root | Wi-Fi password, client key | **None** |
+| Secrets on the chip beyond the storage root | Wi-Fi password, client key | **None in use.** A unit that ran earlier firmware may still hold a *residual* Wi-Fi password in flash (the key and certificate were overwritten; see device-provisioning.md). Flash encryption (Phase 24) removes the exposure |
 | What the BLE bond protects | Live phone GNSS and status | Also the **metadata** of what is stored (counts, sizes, times in the manifest). Not the data |
 | Cost | n/a | Trips reach the server only when the phone offloads them; the dongle must be awake and in range. See [ble-offload.md](ble-offload.md) §5 |
 
