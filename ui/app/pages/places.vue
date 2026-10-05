@@ -139,7 +139,7 @@ interface Suggestion {
   dist_m: number
 }
 
-const KIND_CHOICES = PLACE_KINDS.filter(k => k.id !== 'other')
+const KIND_CHOICES = PICKER_KINDS
 const RADII = [50, 100, 150, 250, 400]
 
 // What the user is changing. lat/lon follow the pin if it is dragged.
@@ -168,8 +168,8 @@ function kindOfPlace(p: PlaceItem): string {
 }
 
 // The kind picked in the editor, from the label it stores.
-function draftKind(): string | null {
-  return kindFromLabel(draft.value?.category) ?? null
+function draftKind(): string {
+  return kindForCategory(draft.value?.category)
 }
 
 // Names offered for the spot, those that look like the chosen kind first.
@@ -364,7 +364,7 @@ function renderMarkers(fit = false) {
   const allPts: [number, number][] = []
   for (const p of places.value) {
     const selected = p.id === selectedId.value
-    const size = p.longest_category ? STOP_SIZE[p.longest_category] : (kindOfPlace(p) !== 'other' ? 24 : 14)
+    const size = p.longest_category ? STOP_SIZE[p.longest_category] : 24
     const color = placeColor(p)
     const ring = selected ? '3px solid #fff' : '2px solid #0f1117'
     const icon = L.divIcon({
@@ -413,7 +413,6 @@ function renderMarkers(fit = false) {
 // A trip start/end place: a plain dot, or a circle holding its kind's icon.
 function endpointMarkerHtml(kind: string, size: number, color: string, ring: string): string {
   const frame = `width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)`
-  if (kind === 'other') return `<div style="${frame}"></div>`
   return `<div style="${frame};display:flex;align-items:center;justify-content:center">${placeIconSvg(kind, { size: Math.round(size * 0.62), color: '#fff', strokeWidth: 2.2 })}</div>`
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PLACE_KINDS, kindForCategory, kindFromLabel, placeIconSvg, placeKind, rankByKind } from '../shared/utils/placeKinds'
+import { PICKER_KINDS, PICKER_KIND_IDS, PLACE_KINDS, kindForCategory, kindFromLabel, placeIconSvg, placeKind, rankByKind } from '../shared/utils/placeKinds'
 import { suggestHome } from '../server/utils/placeHints'
 import type { Place } from '../server/utils/places'
 import type { SavedPlace } from '../server/utils/placeSaved'
@@ -24,9 +24,9 @@ describe('place kinds', () => {
       ['Home', 'home'],
       ['aerodrome', 'travel'],
       ['pharmacy', 'health'],
-      ['park', 'leisure'],
+      ['park', 'outdoors'],
       ['fuel', 'fuel'],
-      ['social facility', 'other'],
+      ['social facility', 'services'],
       ['street', 'other'],
     ]
     for (const [cat, kind] of cases) expect(kindForCategory(cat), cat).toBe(kind)
@@ -38,12 +38,12 @@ describe('place kinds', () => {
   })
 
   it('matches whole words only', () => {
-    expect(kindForCategory('barber')).toBe('other') // not "bar"
+    expect(kindForCategory('baroque')).toBe('other') // not "bar"
     expect(kindForCategory(null, 'The Barn')).toBe('other')
   })
 
   it('does not let the name override a real category', () => {
-    expect(kindForCategory('social facility', 'Westside Food Bank')).toBe('other')
+    expect(kindForCategory('social facility', 'Westside Food Bank')).toBe('services')
     expect(kindForCategory('supermarket', 'Gym Snacks')).toBe('groceries')
     expect(kindForCategory('street', 'Planet Fitness')).toBe('gym') // a street is no category at all
   })
@@ -108,5 +108,63 @@ describe('suggestHome', () => {
   it('does not suggest somewhere already named as something else', () => {
     const p = place(1, 5, 2, 5, 34.01)
     expect(suggestHome([p], [saved('Gym', 'Gym', 34.01)])).toBeNull()
+  })
+})
+
+describe('fewer places end up unsorted', () => {
+  // Real categories that lookups returned for this car's trips, and the common
+  // ones from each source, grouped by the kind they should land in.
+  const expected: Record<string, string[]> = {
+    food: ['fast food', 'restaurant', 'cafe', 'pizzeria', 'ice cream', 'sushi bar', 'juice bar', 'bar and grill', 'bagel'],
+    nightlife: ['bar', 'pub', 'wine bar', 'dive bar', 'nightclub', 'brewery'],
+    groceries: ['supermarket', 'convenience', 'grocery store', 'butcher'],
+    shopping: ['variety store', 'mobile phone', 'alcohol', 'bicycle', 'bed', 'doityourself', 'shoes', 'department store'],
+    health: ['pharmacy', 'chemist', 'dentist', 'hospital', 'optician', 'clinic'],
+    gym: ['fitness centre', 'gym', 'yoga', 'sports centre', 'health club'],
+    school: ['school', 'university', 'kindergarten'],
+    fuel: ['fuel', 'gas station', 'charging station', 'service station'],
+    parking: ['parking', 'parking garage', 'cars'],
+    auto: ['car repair', 'tyres', 'car wash', 'car dealer', 'tire'],
+    services: ['bank', 'atm', 'post office', 'copyshop', 'insurance', 'laundry', 'lawyer', 'social facility', 'community centre'],
+    civic: ['townhall', 'courthouse', 'police', 'fire station', 'library', 'government'],
+    worship: ['place of worship', 'church', 'mosque', 'temple'],
+    beauty: ['hairdresser', 'salon', 'barber', 'spa', 'tattoo', 'nail salon'],
+    pets: ['veterinary', 'pet', 'dog park', 'pet store'],
+    outdoors: ['park', 'nature reserve', 'beach', 'trailhead', 'garden', 'playground'],
+    leisure: ['cinema', 'arts centre', 'artwork', 'museum', 'theatre', 'stadium', 'bowling'],
+    travel: ['aerodrome', 'airport', 'hotel', 'train station', 'car rental', 'bus stop', 'travel'],
+    work: ['company', 'office', 'it', 'coworking'],
+  }
+
+  for (const [kind, cats] of Object.entries(expected)) {
+    it(`sorts ${kind}`, () => {
+      for (const c of cats) expect(kindForCategory(c), c).toBe(kind)
+    })
+  }
+
+  it('leaves genuinely unknown things unsorted, with a plain pin', () => {
+    for (const c of ['social_thing', 'xyzzy', 'vending machine', 'drinking water']) expect(kindForCategory(c), c).toBe('other')
+    const other = placeKind('other')
+    expect(other.label).toBe('Unsorted')
+    expect(other.paths).toHaveLength(2) // the map-pin outline: a ring and a drop
+    expect(placeIconSvg('nothing-known')).toBe(placeIconSvg('other'))
+  })
+
+  it('offers every kind but Unsorted in the editor, each once', () => {
+    expect(PICKER_KIND_IDS).not.toContain('other')
+    expect(new Set(PICKER_KIND_IDS).size).toBe(PICKER_KIND_IDS.length)
+    expect(PICKER_KINDS.map(k => k.id).sort()).toEqual(PLACE_KINDS.filter(k => k.id !== 'other').map(k => k.id).sort())
+    expect(PICKER_KINDS.slice(0, 4).map(k => k.id)).toEqual(['home', 'work', 'gym', 'leisure'])
+  })
+
+  it('keeps each keyword in one kind only, so order is the only tiebreak that matters', () => {
+    const seen = new Map<string, string>()
+    for (const k of PLACE_KINDS) {
+      for (const w of k.keywords) {
+        const prior = seen.get(w)
+        expect(prior, `"${w}" is in both ${prior} and ${k.id}`).toBeUndefined()
+        seen.set(w, k.id)
+      }
+    }
   })
 })

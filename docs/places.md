@@ -56,8 +56,10 @@ later disappear from cairn-tsdb keep the visits already recorded.
 
 ## Kinds and icons
 
-Every place has a kind: Home, Work, Gym, Fuel, Health, School, Travel, Groceries,
-Food, Leisure, Shopping, Friends, or Other. The kind sets the icon on the map
+Every place has a kind: Home, Work, Gym, Leisure, Food, Nightlife, Groceries,
+Shopping, Fuel, Parking, Auto, Health, Beauty, Pets, School, Friends, Services,
+Civic, Worship, Outdoors or Travel, or Unsorted when nothing fits. Unsorted gets a
+plain map pin on purpose: no guess. The kind sets the icon on the map
 markers, the place list and the trip's stop list, and the catalogue lives in one
 file, `ui/shared/utils/placeKinds.ts`, shared by the app and the server.
 
@@ -69,6 +71,9 @@ Picking a kind in the editor is a hint the engine uses:
 - it is stored with the place, so learned and saved places keep their icon;
 - for places nobody has tagged, the kind is worked out from the category the
   lookup returned (`supermarket` is Groceries, `fitness centre` is Gym).
+  The first kind whose keyword matches wins, so the specific kinds are tried
+  before the broad ones (a pet store is Pets, a post office is Services, not
+  Work). Home, Work and Friends are mostly picked by hand, so they come last.
 
 The engine also suggests Home: the spot trips most often start from and end at,
 on at least 3 trips. It only suggests, and stops once a Home exists.
