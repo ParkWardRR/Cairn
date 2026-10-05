@@ -23,7 +23,7 @@ Tailnet is not a credential.
 | `POST /v1/sync/push` | signed or bearer | Send operations |
 | `GET /v1/sync/pull` | signed or bearer | Receive changes after a cursor |
 | `POST /v1/sync/ack` | signed or bearer | Record how far this client has durably applied |
-| `GET /v1/snapshot` | signed or bearer, **all-vehicles scope** | Parquet snapshot of the analytical store (the History tab's data); proxied from `cairn-tsdb`. `?format=` and `If-None-Match`/`ETag` are honoured. `403 scope_too_narrow` for a client scoped to specific vehicles — the tables are not yet filtered per car (ROADMAP Phase 19) |
+| `GET /v1/snapshot?vehicle=<id>` | signed or bearer | Parquet snapshot of the analytical store (the History tab's data), filtered to one vehicle. **A client scoped to specific vehicles must name one of its own**; a client scoped to every vehicle (`*`) may omit it for the whole archive. `?format=` and `If-None-Match`/`ETag` are honoured. `403 vehicle_required` / `403 scope` otherwise |
 | `GET /v1/devices` | signed, admin | List dongles (status only) |
 | `POST /v1/devices/{id}/revoke` | signed, admin | Disable a dongle immediately |
 | `GET /v1/clients` | signed, admin | List app installations |
@@ -319,3 +319,44 @@ Bearer tokens, signatures, request bodies, GPS coordinates, SSIDs, the full VIN,
 the invitation code. The server's audit log records actor, route, transport and
 a body hash only; hold your own logs to the same standard (the existing
 `cairn-drive.log` is user-shareable, so keep these out of it).
+
+## 12. Appendix: the snapshot and trip_summary entities
+
+### Vehicle-scoped snapshot
+
+`GET /v1/snapshot?vehicle=<32 hex>` returns the Parquet archive with **every table
+filtered to that one vehicle**; each table carries a `vehicle_id` column. The
+manifest's `schema_version` is bumped for this: the app must keep its
+`isSupported` guard and tell the user to update rather than misread tables that
+now have a column it does not know about.
+
+| Request | Client scope `*` | Client scoped to specific vehicles |
+|---|---|---|
+| no `vehicle` | whole archive, every car | **403 `vehicle_required`** |
+| `vehicle` = one of its own | that car | that car |
+| `vehicle` = another car | that car | **403 `scope`** |
+| malformed `vehicle` | 400 | 400 |
+
+A vehicle the store has no rows for is `404` upstream, not an empty archive, so
+"no data for that car" is distinguishable from "that car has no trips in this
+table".
+
+### `trip_summary` entities
+
+Published in `pull` as `entity_type: "trip_summary"`, id `<vehicle_id>:<boot_id>`,
+scoped to the vehicle. **All values are integers** (§4.1): timestamps are epoch
+milliseconds, speeds are cm/s, distance is whole metres.
+
+```json
+{ "boot_id": "…", "device_id": "…",
+  "started_ms": 1790000000000, "ended_ms": 1790000600000, "duration_ms": 600000,
+  "distance_m": 5230,
+  "max_gnss_speed_cmps": 2410, "max_obd_speed_cmps": 2500, "max_rpm": 6100,
+  "obd_samples": 300, "gnss_samples": 590, "boost_samples": 300,
+  "gap_count": 1, "gap_duration_ms": 4000,
+  "bundle_count": 1, "decoder_version": 3 }
+```
+
+A later record for the same entity id supersedes the earlier one (a trip whose
+bundles were reprocessed, or that grew as more of it arrived). Treat the latest
+as the truth; do not merge.
