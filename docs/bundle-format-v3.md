@@ -464,7 +464,7 @@ ECU reported 0 kph" from "the ECU did not answer".
 | 2 | 2 | `sd_write_errors` | u16, cumulative this boot |
 | 4 | 2 | `sd_free_mib` | u16 |
 | 6 | 1 | `device_temp_c` | i8 |
-| 7 | 1 | `rssi_dbm` | i8, `0` when not associated |
+| 7 | 1 | `rssi_dbm` | i8. Always the unknown sentinel (`-128`) from firmware that has no Wi-Fi; the field is kept for format stability |
 | 8 | 2 | `ext_sensor_1` | u16 |
 | 10 | 2 | `ext_sensor_2` | u16 |
 | 12 | 1 | `health_state` | bitmap of active degraded states (§4.10) |
@@ -934,8 +934,13 @@ SHA-256, then recompute `content_root` and compare it to the signed value.
   not that a reconstructable bundle was committed.
 - Every protocol step is journaled on the device before it is attempted, so a
   reboot resumes rather than rediscovers.
-- Transport is mTLS on 8443. The device pins the private CA; the server verifies
-  per-device client certificates and consults a denylist.
+- **Transport (amended 2026-10-05).** The dongle has no network. The offer,
+  chunks, commit and receipt below are carried by the enrolled phone
+  ([app-sync-protocol.md](app-sync-protocol.md) §13) and the bytes reach the phone over
+  BLE ([ble-offload.md](ble-offload.md)). The server authenticates the **phone**
+  (signed request) and the **device** (the manifest's Ed25519 signature against the
+  enrolled key, plus a denylist). The legacy `:8443` mTLS path, where a device
+  certificate's CommonName identified the device, is retired.
 
 ### 6.3 Receipt
 

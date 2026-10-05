@@ -79,7 +79,7 @@ any diff — so "the vectors are deterministic" is enforced rather than asserted
 | A lost receipt is recoverable by retrying commit | Rust matrix: `receipt_lost_in_transit` |
 | Quotas contain a misbehaving device | `TestOfferRejectsOverQuota`, `TestQuotaAccumulatesAcrossBundles`, `TestZeroQuotaImposesNoLimit` |
 | Revocation takes effect without a restart | `TestRevocationTakesEffectWithoutRestart` — **written by this audit**; the behaviour existed and had no row |
-| mTLS binds the transport identity to the manifest's claimed device | `TestClientIdentityBinding`, `TestNoClientCertificateIsRefused` — **written by this audit**. A comment in the test harness pointed at `TestClientIdentityBinding` as though it existed; it did not |
+| mTLS binds the transport identity to the manifest's claimed device (**legacy device path; since 2026-10-05 the dongle has no network and the relay authenticates the phone, with the device identified by the manifest signature: equivalent tests are open work, Cairn #5**) | `TestClientIdentityBinding`, `TestNoClientCertificateIsRefused` — **written by this audit**. A comment in the test harness pointed at `TestClientIdentityBinding` as though it existed; it did not |
 | Ingest has no database dependency | `TestSyncSucceedsWithNoWorkerOrDatabase` |
 | Decode is idempotent | `TestReDecodeIsIdempotent` |
 | Decode is reproducible | `TestDecodeIsReproducible` |
@@ -119,7 +119,7 @@ The honest part. These are documented behaviours with no corresponding row.
   valid. The *decisions* are tested; the flash operations are not.
 - The signature-before-download ordering. It is a property of the code's
   structure, and a test would need a server that counts image requests.
-- ~~The mTLS handshake on-device~~ — **verified 2026-10-01.** The device
+- ~~The mTLS handshake on-device~~ — **verified 2026-10-01; no longer applicable** (the dongle has no TLS client since 2026-10-05). The device
   completed offer, chunk upload and commit over HTTPS on 8443 against the
   private CA, and the server attributed all three to `device=8777228e`, which it
   can only derive from the client certificate's CommonName. So the identity
@@ -207,8 +207,8 @@ row is aspirational.
   enrolment blob, trust-model §4.1). Until then the server cannot decrypt what a
   real device writes.
 - **ESP32 flash encryption and secure boot are not enabled**, so the root, the
-  signing seed and the mTLS key are readable from an extracted chip, and the mTLS
-  client key is still on the SD card.
+  signing seed are readable from an extracted chip. (The mTLS key and Wi-Fi
+  credentials that used to be readable too are gone: the dongle has neither.)
 - **Nonce-cache replay window after a server restart** (bounded by the ±120 s
   timestamp window; documented in `syncapi`).
 - **The decode worker does not yet publish `trip_summary` entities**, and the

@@ -1,5 +1,14 @@
 # Cairn v3 — Trust Model, Transport and Vehicle Scope
 
+> **Amendment 2026-10-05 — the dongle has no Wi-Fi.** All server sync goes through the
+> enrolled iOS app: the phone pulls sealed bundles over BLE and uploads them on the
+> dongle's behalf ([ble-offload.md](ble-offload.md), [app-sync-protocol.md](app-sync-protocol.md) §13).
+> Wherever this document says the dongle talks to the server over mTLS, read: the
+> **phone** talks to the server over signed requests, and the dongle's integrity
+> evidence is unchanged (Ed25519 manifest, server-signed receipt verified against a
+> pinned key). The dongle holds **no network credential of any kind**: no SSID, no
+> password, no client certificate, no transport private key. Details in §0.1.
+
 **Status:** normative design for Phases 19–24 in [ROADMAP.md](../ROADMAP.md).
 **Date:** 2026-10-04. **Breaking:** yes, deliberately. v2 bundles, v2 manifests
 and the single-device-equals-single-car assumption are not carried forward; old
@@ -22,12 +31,26 @@ model covering three things that were previously designed separately:
 
 ---
 
+
+## 0.1 What the Wi-Fi removal changes (2026-10-05)
+
+| | Before | Now |
+|---|---|---|
+| Who talks to the server | The dongle, over mTLS on home Wi-Fi | The **phone**, with signed requests, on LAN or Tailnet |
+| Who authorises deletion on the dongle | A server-signed receipt, verified against a pinned key | **Unchanged.** The receipt is now handed over by the phone instead of received directly |
+| Who can read a trip in transit | Anyone who broke TLS | Nobody on the path: the phone carries **ciphertext only** (frames are AEAD-encrypted under keys it never holds) |
+| What a stolen or hostile phone can do | n/a | Fail to upload. It cannot read a trip, forge a receipt, or make the dongle delete anything |
+| Secrets on the chip beyond the storage root | Wi-Fi password, client key | **None** |
+| What the BLE bond protects | Live phone GNSS and status | Also the **metadata** of what is stored (counts, sizes, times in the manifest). Not the data |
+| Cost | n/a | Trips reach the server only when the phone offloads them; the dongle must be awake and in range. See [ble-offload.md](ble-offload.md) §5 |
+
 ## 1. Actors, paths and what authenticates each
 
 | Path | Transport | Authentication | Role | Exposure |
 |---|---|---|---|---|
-| Dongle → server (home Wi-Fi) | HTTPS, **mTLS**, `:8443` | Per-device client certificate (CN = device id) **and** Ed25519-signed manifest, bound to each other | Bulk upload of encrypted, sealed bundles | LAN only |
-| iPhone → dongle | BLE (existing); local OBD Wi-Fi only by deliberate join | BLE bonding + passkey; app-layer messages replay-safe (§8) | Live GPS assist, diagnostics, local recovery export | Physical proximity |
+| ~~Dongle → server (home Wi-Fi)~~ | **Removed 2026-10-05.** The dongle has no network stack | n/a | n/a | n/a |
+| iPhone → dongle | BLE only | BLE bonding + passkey (the access control); a receipt, not the link, is what authorises a deletion | Live GPS assist, diagnostics, **bundle offload** ([ble-offload.md](ble-offload.md)) | Physical proximity |
+| iPhone → server, carrying the dongle's bundles | Signed requests / bearer tokens on `/v1/relay/*` | The phone's enrolled P-256 key; the bundle's own device signature is verified by the server | Upload of encrypted sealed bundles on the dongle's behalf | LAN or Tailnet |
 | iPhone → server, LAN | HTTPS, `:8444` | **Signed requests** from an enrolled app identity (P-256) | Browse trips, sync metadata, manage vehicles | LAN |
 | iPhone → server, remote | **Tailscale** → `tailscale serve` → loopback HTTP | The same signed requests, **plus** Tailnet reachability | Same API as LAN | Tailnet only |
 | Server host → Tailnet | `tailscaled` on the host | Tagged node, ACL policy | Private reachability | Tailnet only |
@@ -40,7 +63,7 @@ design:
 - `tailscale serve` terminates TLS on the host, so **a client certificate cannot
   reach Cairn on that path**. App authentication therefore cannot be mTLS. It is
   a per-request signature that is identical over the LAN listener and the
-  tailnet-proxied one. (The dongle stays on mTLS: it never goes through Serve.)
+  tailnet-proxied one. (The dongle no longer speaks to the server at all; the phone does.)
 
 Funnel is never used. A car journal is location history; Funnel turns a
 private-tailnet design into an internet-facing service, and the app listener
@@ -50,7 +73,7 @@ rejects any request carrying the Funnel header.
 
 | Listener | Default | TLS | Client auth | Audience |
 |---|---|---|---|---|
-| Device ingest | `:8443` | server cert | **mTLS required at handshake** | dongles |
+| Device ingest (**legacy; to be retired**, see Cairn #7) | `:8443` | server cert | mTLS required at handshake | none: no dongle uses it any more |
 | App API (LAN) | `:8444` | server cert | none at TLS; signed requests | iOS app |
 | App API (tailnet) | `127.0.0.1:8445` | plain HTTP, **loopback only** | signed requests; Tailscale identity headers honoured only from loopback | iOS app via `tailscale serve` |
 | `cairn-tsdb` | `127.0.0.1:8480` | — | loopback | UI server |
@@ -176,7 +199,7 @@ What actually holds on this chip, and what this design relies on:
 - With **flash encryption (release mode) + NVS encryption** enabled, the chip's
   flash — including NVS and the `nvs_keys` partition — is AES-256 encrypted
   under an eFuse key nothing can read back. `K_root`, the Ed25519 signing seed,
-  the mTLS client key and the Wi-Fi credentials are then protected at rest.
+  nothing network-related is on the chip to protect: there is no client key or Wi-Fi credential any more.
 - A copied card therefore cannot decrypt in another dongle (different `K_root`),
   and a stolen *unlocked, running* dongle is handled by **revocation**, not
   cryptography (§6).
@@ -188,9 +211,9 @@ Current state, checked against the code on 2026-10-04:
 | Secret | Today | Required |
 |---|---|---|
 | Trip data | Plaintext frames on the card | Encrypted frames (format v3) |
-| **mTLS client certificate key** | **On the card** (`CAIRN_PATH_CLIENT_KEY`) | **Move to encrypted NVS.** A copied card currently lets an attacker open an authenticated connection (bundles still need the Ed25519 signature, but the connection is not theirs to have) |
+| ~~mTLS client certificate key~~ | **Removed.** Was on the card, then in NVS | The dongle has no network client, so there is no key. Earlier firmware's copy is erased from NVS at boot |
 | Ed25519 manifest signing seed | NVS (plaintext until flash encryption) | NVS, flash-encrypted |
-| Wi-Fi SSID / password | Compiled into the firmware image (`secrets.h`), **not** on the card | Encrypted NVS provisioned at enrolment; with flash encryption the image is unreadable anyway |
+| ~~Wi-Fi SSID / password~~ | **Removed.** The dongle has no Wi-Fi | Nothing to protect; erased from NVS at boot if earlier firmware left it |
 | Pinned CA, receipt key | Compiled into firmware (trust anchors; correct) | Unchanged |
 
 ---
@@ -208,7 +231,7 @@ Two enrolments, both human-approved. No unauthenticated endpoint creates trust.
    key + HKDF + XChaCha20-Poly1305), signed with its own key as proof of
    possession.
 3. The operator presents the blob to `cairn-admin device enroll` on a trusted
-   workstation (or the device POSTs it over mTLS to be held **pending**). The
+   workstation (the device can no longer POST it anywhere; there is no network). The
    server unseals, checks the proof of possession, shows the device fingerprint
    for the operator to confirm against what the dongle displays, then records the
    device, escrows `K_root` (version 1) and returns the counter floor.
@@ -266,7 +289,7 @@ the VPN up in the background, so uploads resume when the app next gets time.
 
 | Scenario | Outcome |
 |---|---|
-| Card inserted into a laptop | Opaque ciphertext. No trip data, no `K_root`, no signing key. (Requires the mTLS key move in §3.3) |
+| Card inserted into a laptop | Opaque ciphertext. No trip data, no `K_root`, no signing key, and no network key (there is none) |
 | Card contents copied to another dongle | Different `K_root`; cannot decrypt, cannot authenticate |
 | Attacker edits queued data on the card | AEAD tag fails; CRC chain and Merkle root also break; server quarantines |
 | Frames deleted, reordered or spliced | `prev_crc32` chain and AAD binding detect it |
@@ -347,7 +370,7 @@ See [tailscale-deployment.md](tailscale-deployment.md).
 | Device registry: id + key | + storage-key escrow, revocation, counter high-water |
 | No app identity (an unauthenticated URL) | Enrolled, signed, revocable, audited app clients |
 | LAN only | LAN + Tailnet, one logical account |
-| mTLS key on the card | mTLS key in encrypted NVS |
+| ~~mTLS key on the card~~ | **Gone**: the dongle has no mTLS key |
 
 There is no migration. v2 recordings were test data; the v1 rule ("never write a
 reader for a dead format") now applies to v2 as well.

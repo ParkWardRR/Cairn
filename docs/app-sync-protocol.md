@@ -82,8 +82,8 @@ past the ±120 s window. For those:
    `{"token":"…","expires_at":"…","scope":"sync"}`
 2. Create the background request with `Authorization: Bearer <token>`.
 
-A token lasts 1 hour, works only on `/v1/sync/*`, never on administration or on
-`/v1/auth/token`, and **stops working the moment the client is revoked** (it is
+A token lasts 1 hour, works only on `/v1/sync/*` and `/v1/relay/*` (§13), never on
+administration or on `/v1/auth/token`, and **stops working the moment the client is revoked** (it is
 re-checked against the registry on every use). Treat it as a credential: Keychain
 only, never logged. A server restart invalidates outstanding tokens; mint a new
 one on 401.
@@ -132,7 +132,7 @@ reads you a code shown **once**, e.g. `ee02-6e94-4c7a-389c-6f80-3600-648b-75aa`
 
 ```json
 { "code": "ee026e944c7a389c6f803600648b75aa",
-  "name": "Twesh's iPhone",
+  "name": "Example iPhone",
   "public_key": "04…130 hex…",
   "proof": "<base64 DER signature>" }
 ```
@@ -360,3 +360,47 @@ milliseconds, speeds are cm/s, distance is whole metres.
 A later record for the same entity id supersedes the earlier one (a trip whose
 bundles were reprocessed, or that grew as more of it arrived). Treat the latest
 as the truth; do not merge.
+
+## 13. Bundle relay (the phone uploads on the dongle's behalf)
+
+The dongle has no network ([ble-offload.md](ble-offload.md)); the enrolled phone
+carries its sealed bundles to the server. These endpoints are the same
+offer → chunk → commit exchange the dongle used to make itself, now authenticated
+as **the phone** (§2) instead of by a device client certificate. They accept signed
+requests or bearer tokens, so a background `URLSession` upload works.
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `POST /v1/relay/bundles/offer` | `manifest.cbor` verbatim (`application/cbor`); header `X-Cairn-Signature: <manifest.sig, 128 hex>` | `200` `{ "bundle_id", "missing_chunks": [ { "index", "offset", "length", "sha256" } ], "receipt_available": bool }` |
+| `PUT /v1/relay/bundles/{bundle_id}/chunks/{sha256}` | the chunk's bytes (`application/octet-stream`) | `200` when the bytes hash to `{sha256}` and match the manifest's descriptor |
+| `POST /v1/relay/bundles/{bundle_id}/commit` | empty | `200`, body = the signed receipt (CBOR), **taken verbatim** — the signature covers those exact bytes |
+| `GET /v1/relay/bundles/{bundle_id}/receipt` | — | `200` the same receipt again; `404` if none yet |
+
+Unlike the retired device endpoint, `offer` returns each missing chunk's `offset`
+and `length` in the bundle byte stream, so the phone needs **no CBOR parser**: it
+reads exactly that range from the dongle (`READ`), checks the SHA-256 and `PUT`s it.
+Chunks are idempotent; offering a bundle the server already holds returns no
+missing chunks and `receipt_available: true`.
+
+### Who the server believes
+
+The manifest is signed by the **device** key, so the server checks the signature
+against the enrolled device, that the manifest's assignment is open and its
+counter is not a replay (the same rules as before, `docs/trust-model-v3.md` §4).
+The phone's signature authenticates *who is relaying*, not *what the data is*.
+
+**Scope.** The bundle's vehicle (from its manifest) must be in the requesting
+client's scope, or the answer is `403 scope`. An `*` client may relay for any car.
+
+### Errors
+
+`401` unauthenticated (§2.5) · `403 scope` · `403 assignment_refused` (the
+manifest names an assignment the server did not issue) · `403 no_storage_key` (the
+device's root was never escrowed) · `422 quarantined` (a counter reused with
+different content) · `409` chunk does not match the descriptor · `429` back off.
+A refused or quarantined bundle is **never** receipted, so it stays on the dongle.
+
+### What must never be logged
+
+Nothing new, but note the phone handles ciphertext and signed manifests only; there
+is no key material in this exchange.

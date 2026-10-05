@@ -25,7 +25,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/hardware-Freematics_ONE+_B-0D47A1?style=flat-square" alt="Freematics ONE+ Model B">
-  <img src="https://img.shields.io/badge/connectivity-Wi--Fi_LAN_only-27AE60?style=flat-square" alt="Wi-Fi LAN Only">
+  <img src="https://img.shields.io/badge/dongle_network-none_(BLE_via_iPhone)-27AE60?style=flat-square" alt="No dongle network: BLE via iPhone">
   <img src="https://img.shields.io/badge/cloud-none-95A5A6?style=flat-square" alt="No Cloud">
   <img src="https://img.shields.io/badge/LTE-disabled-E74C3C?style=flat-square" alt="LTE Disabled">
 </p>
@@ -107,9 +107,9 @@ data). One trust model instead of three features:
 | Server | **Deployed on the Cairn VM.** Vehicles, device counters, escrowed keys, intake binding, the app API (LAN TLS verified end to end), sealed device enrolment, `cairn-admin` and `cairn-provision` |
 | Format v3 | Go reference, Rust emulator and C firmware agree on 33 conformance vectors; the emulator's fault matrix passes 20/20 against a live v3 server |
 | Derived layers | `vehicle_id` through decode, PostgreSQL (non-destructive migration), tsdb, the snapshot and the UI; analysis never blends two cars |
-| The car's dongle | v3 firmware flashed; **provisioned and enrolled** over USB (root escrowed, mTLS key and Wi-Fi in NVS, never on the card). **No SD card in it yet**, so capture → seal → upload on v3 is not yet run on hardware ([runbook](docs/hardware-roundtrip.md)) |
+| The car's dongle | v3 provisioned and **enrolled** over USB (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. **No Wi-Fi, no network credentials**: trips leave over BLE via the phone. The Wi-Fi-free build passes the host suites and builds, but is **not flashed yet** (the unit needs a USB replug), and the BLE offload is specified, not written ([Phase 26](ROADMAP.md#phase-26--no-wi-fi-the-phone-is-the-uplink--in-progress), [runbook](docs/hardware-roundtrip.md)) |
 | Tailscale | Installed on the host; the login is waiting for approval |
-| iOS app | Issues #1–#13 filed against the finished protocol |
+| iOS app | Adopting (issues #1–#14); **the BLE bundle offload (#14) is the critical path** |
 | Not done | BLE session authentication (firmware Phase 22), ESP32 secure boot / flash encryption (Phase 24, gated; the chip is revision v1.0, so V1 only), the hardware round trip |
 
 Full design: [docs/trust-model-v3.md](docs/trust-model-v3.md); provisioning:
@@ -146,8 +146,8 @@ What is verified:
 - the **in-memory analytical store** (`server/internal/tsdb`, `cmd/cairn-tsdb`)
   — DuckDB rebuilt from the CAS and the SD card, reproducibility-gated, with
   Parquet snapshot export;
-- the **BLE companion** — phone GPS reinforcement via NimBLE GATT, radio
-  handoff between BLE and Wi-Fi, golden-vector validated;
+- the **BLE companion** — phone GPS reinforcement via NimBLE GATT, golden-vector
+  validated; bundle offload is specified ([docs/ble-offload.md](docs/ble-offload.md)), not yet written;
 - the local CLI tooling and the web UI.
 
 ### What first contact with hardware actually found
@@ -190,7 +190,7 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 | **Get in and drive** | Device wakes on motion, starts a local trip session |
 | **During the drive** | GNSS + IMU + OBD-II captured at adaptive rates, written to microSD |
 | **Park away from home** | Trip finalized locally; device sleeps; nothing transmitted |
-| **Return home** | Device detects trusted Wi-Fi, uploads pending trips via mTLS |
+| **Back in range of your phone** | The enrolled iPhone pulls sealed trips over BLE and uploads them to the server, then hands back the server's signed receipt so the dongle can free space. The dongle has **no Wi-Fi and no network credentials** |
 | **After sync** | Server validates, deduplicates, and exposes trips in the web UI |
 | **Review later** | Browse history, maps, parking, route stats, and export data |
 
@@ -230,8 +230,8 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 │    Ed25519-signed; atomic state: .open → .sealed                    │
 │                                                                     │
 │  Transfer plane                                                     │
-│    trusted Wi-Fi → mTLS → manifest-first, hash-addressed upload     │
-│    signed receipt verified locally before any prune                 │
+│    BLE → enrolled phone → relay → manifest-first, hash-addressed    │
+│    signed receipt verified on the dongle before any prune           │
 │                                                                     │
 │  Resilience: automatic boot recovery · power-cut safe · OTA A/B     │
 └───────────────────────────────┬─────────────────────────────────────┘
@@ -313,7 +313,7 @@ members, and **deletes nothing without a locally verified signed receipt**.
 | `src/lifecycle.cpp` | Four independent regions — capture, bundle, connectivity, health — each transitioning on its own evidence and journalling the policy version in force |
 | `src/sensor_task.cpp` | Sensing on its own core, reporting facts. One controller owns all state and is the only thing that touches the card |
 | `src/preroll.c` | 45 s pre-trip ring, so the start of a drive is not lost to the start dwell |
-| `src/ble_companion.cpp` | Phone GPS reinforcement via NimBLE GATT, passkey-protected, with radio handoff between BLE and Wi-Fi |
+| `src/ble_companion.cpp` | Phone GPS reinforcement via NimBLE GATT, passkey-protected (bundle offload to follow) |
 
 Three details carry most of the correctness weight. The recovery scan is
 *streaming*, so a segment larger than DRAM is recoverable and the buffer-based
@@ -719,13 +719,14 @@ routes (`ui/server/`) proxy to `cairn-tsdb` and are not a public API.
 - [Freematics ONE+ Model B](https://freematics.com/pages/products/freematics-one-plus/) with microSD card
 - Homelab server (Linux) running the Go server under systemd; PostgreSQL + PostGIS only if you run the decode worker
 - Toolchains for what you build: Go (see `server/go.mod`), Rust (emulator), Node + npm (UI), PlatformIO (firmware)
-- Home Wi-Fi network on **2.4 GHz** — the ESP32 has no 5 GHz radio
+- An iPhone running the Cairn companion app: it is the dongle's only route to the server (the dongle has no Wi-Fi)
 
 ### Firmware Configuration
 
 Build-time values live in an untracked `secrets.h`, so nothing
-environment-specific is ever committed. Wi-Fi credentials and the mTLS key for a
-production unit are provisioned over USB into NVS instead
+environment-specific is ever committed. It holds trust anchors only (the server's
+enrolment and receipt public keys, the BLE passkey): the dongle has **no Wi-Fi and no
+network credentials**. Its vehicle assignment is provisioned over USB
 ([docs/device-provisioning.md](docs/device-provisioning.md)).
 
 ```bash
@@ -851,6 +852,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on the self-hosted `cairn` runn
 | **[Bundle Format v3](docs/bundle-format-v3.md)** | **Normative spec — byte layouts, AEAD frames, manifest, receipt, transfer protocol** |
 | **[Device Provisioning](docs/device-provisioning.md)** | **The sealed enrolment blob, the USB console protocol and its rules, the operator procedure** |
 | [Hardware Round Trip](docs/hardware-roundtrip.md) | Runbook for the one check the host suites cannot make |
+| **[BLE Bundle Offload](docs/ble-offload.md)** | **How sealed bundles leave a dongle with no network: phone pulls over BLE, relays, returns the receipt** |
 | **[App Sync Protocol](docs/app-sync-protocol.md)** | **The iOS client's contract: signing, enrolment, operations, cursor — with test vectors** |
 | [Tailscale Deployment](docs/tailscale-deployment.md) | Host install, Serve, ACLs, Funnel off |
 | [ESP32 Hardening](docs/esp32-hardening.md) | Flash encryption, secure boot, irreversibility, what the chip can and cannot do |

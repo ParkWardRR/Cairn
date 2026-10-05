@@ -16,14 +16,14 @@ Last reviewed 2026-10-05.
 | Layer | State |
 |---|---|
 | Bundle format v3 | **Complete on the host.** Every frame AEAD-encrypted, every bundle bound to a vehicle, an assignment and a device counter. Three implementations (Go, Rust, firmware C) agree on 33 conformance vectors, structural and keyed. v2 is retired |
-| Firmware | **v3 flashed on the car's dongle, provisioned and enrolled** (root escrowed, credentials in NVS, assigned to the 428i). Capture → seal → upload on v3 is **not yet run on hardware: the unit has no SD card in it**. Secure OTA written, install unexercised |
-| Ingest server | **Deployed v3** on the Cairn VM: mutual TLS device listener, a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
+| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--in-progress)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The Wi-Fi removal is built and host-tested but **not yet flashed** (the unit needs a USB replug). BLE offload not written yet. Secure OTA written, install unexercised |
+| Ingest server | **Deployed v3** on the Cairn VM: a legacy mutual-TLS device listener (no dongle uses it now; retired in Phase 26), a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
 | Decode pipeline | **Complete and per vehicle.** Idempotent and reproducible; PostgreSQL/PostGIS and DuckDB layers both carry `vehicle_id`; non-destructive migration 005 |
 | Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
 | Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
 | Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), with a vehicle selector; analysis pages are single-vehicle and never blend two cars. Deployed |
-| iOS companion | Not yet adopted. Issues #1–#13 filed against the finished protocol; the server side is ready |
-| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT, with radio handoff between BLE and Wi-Fi |
+| iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; **the BLE bundle offload (#14) is now the critical path**, because the phone is the dongle's only uplink |
+| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([docs/ble-offload.md](docs/ble-offload.md)), not implemented |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
 
 ### The v3 target
@@ -31,7 +31,7 @@ Last reviewed 2026-10-05.
 | Layer | Target |
 |---|---|
 | Storage | Every SD frame AEAD-encrypted (XChaCha20-Poly1305, per-frame random nonce, HKDF per-segment keys); the card is a cache of ciphertext, never the security boundary |
-| Identity | Devices: mTLS + Ed25519 manifests + revocation. Apps: P-256 Secure-Enclave keys, signed requests, one-time invitations, revocation |
+| Identity | Devices: Ed25519 manifests + revocation (no device certificates any more). Apps: P-256 Secure-Enclave keys, signed requests, one-time invitations, revocation |
 | Reach | LAN, plus Tailscale via `tailscale serve` on the host. Tailscale is reachability, not authorization; Funnel is never used |
 | Scope | Vehicles and device assignments are first-class; every bundle is bound to a vehicle, an assignment and a monotonic device counter |
 | Hardware | Flash encryption and secure boot on the dongle, gated behind a proven OTA path and a sacrificial unit |
@@ -422,7 +422,7 @@ verified).
       finer wherever there is headroom, and that at least one axis has some
       (mutation-checked both ways). Plain `make` runs through to the BLE and
       mtprobe suites again
-- [ ] Hardware round trip: capture → seal → upload → decode with encryption on —
+- [ ] Hardware round trip: capture → seal → offload → relay → decode with encryption on (stage A passes; stage B is Phase 26) —
       **blocked: the dongle has no SD card in it** (`GO_IDLE_STATE failed` on every
       mount attempt). Runbook: [docs/hardware-roundtrip.md](docs/hardware-roundtrip.md)
 - [x] The firmware host Makefile now tracks every header as a dependency, so a
@@ -447,12 +447,12 @@ verified).
       over the console and applied as "raise only, never lower"
 - [x] Assignment installed over the console; segments carry the assigned
       `vehicle_id` / `assignment_id`
-- [x] **mTLS client key moved off the SD card into NVS.** A private key found on
-      the card is reported and ignored
-- [x] Wi-Fi credentials provisioned into NVS instead of compiled in (a
-      development fallback remains behind `CAIRN_COMPILED_WIFI_FALLBACK`, off
-      everywhere else). NVS is plain until Phase 24 turns on flash and NVS
-      encryption together
+- [x] ~~mTLS client key moved off the SD card into NVS~~ — **superseded by Phase 26: the
+      dongle has no client key at all.** Earlier firmware's copy is erased from NVS at boot;
+      a private key found on the card is still reported and ignored
+- [x] ~~Wi-Fi credentials provisioned into NVS~~ — **superseded by Phase 26: the dongle
+      has no Wi-Fi.** The fields are refused by the console and erased at boot. NVS is plain
+      until Phase 24 turns on flash and NVS encryption together
 - [x] Serial provisioning protocol and `cairn-provision`: never during a trip, a
       60 s window after boot once provisioned, idle timeout, atomic two-slot
       credential commit, no secret echoed or logged (canary-tested), 8 KiB UART
@@ -531,6 +531,44 @@ authentication item (#9) is blocked on Phase 22.
 - [ ] Encrypted local store, durable outbox, `SyncEngine`
 - [ ] Local-first / Tailnet-fallback endpoint selection
 - [ ] BLE session authentication against the new firmware
+
+## Phase 26 — No Wi-Fi: the phone is the uplink — **in progress**
+
+**Decision, 2026-10-05:** the dongle has no Wi-Fi, no TLS client and no network
+credentials. Every byte that reaches the server goes through the enrolled iOS app:
+the phone pulls sealed bundles over BLE, uploads them, and hands the server's signed
+receipt back. Why it is safe: the phone carries ciphertext only and can fail to
+upload but cannot read a trip, forge a receipt or make the dongle delete anything
+([docs/ble-offload.md](docs/ble-offload.md) §1, [trust-model-v3](docs/trust-model-v3.md) §0.1).
+What it costs: trips reach the server only when the phone offloads them, so the dongle
+must be awake and in range after a drive.
+
+Firmware ([Cairn #6](https://github.com/ParkWardRR/Cairn/issues/6)):
+
+- [x] Wi-Fi, HTTP upload, TLS client and HTTP OTA fetch removed; flash image about 1.1 MB → 0.45 MB.
+      Receipt verification and receipt-gated pruning are untouched (`cairn_prune.c`)
+- [x] Provisioning shrinks to the assignment and counter floor; `SET wifi_*` / `client_*` are refused;
+      legacy Wi-Fi and key slots are erased from NVS at boot (host-tested, mutation-checked)
+- [x] `secrets.h` holds trust anchors only (enrolment key, receipt key, BLE passkey)
+- [x] Host suite green: storage matrix 41/41, format vectors 33/33, provisioning 12/12
+- [ ] Flash the new build on the real dongle (needs a USB replug) and confirm the legacy slots are erased
+- [ ] BLE offload service: `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone is connected
+- [ ] Golden vectors `fixtures/ble-offload-v1/`, shared with the iOS repo
+- [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
+
+Server ([Cairn #5](https://github.com/ParkWardRR/Cairn/issues/5), [#7](https://github.com/ParkWardRR/Cairn/issues/7)):
+
+- [x] Relay contract specified ([app-sync-protocol](docs/app-sync-protocol.md) §13)
+- [ ] `/v1/relay/bundles/*` on the app API: offer returns offset/length per missing chunk; signed or bearer; scoped by the manifest's vehicle; reuses the intake core
+- [ ] Emulator matrix drives the relay path
+- [ ] Retire the `:8443` device listener, device certificates and `/api/v2/firmware/*` once the relay is proven on hardware
+
+iOS ([#14](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/issues/14)):
+
+- [ ] BLE offload client, durable per-bundle state machine, background operation (CoreBluetooth state restoration, background `URLSession`)
+
+Then the **hardware round trip** ([docs/hardware-roundtrip.md](docs/hardware-roundtrip.md) stage B):
+capture → seal → BLE offload → relay → receipt → prune on the real dongle.
 
 ## Deferred deliberately
 
@@ -1004,7 +1042,7 @@ to a workstation to receive its client certificate:
 
 ```
 mTLS ready: CA pinned in firmware, client credentials from the card
-protocol: https, host: cairn.alpina.casa port: 8443 url: /api/v2/bundles/offer
+protocol: https, host: cairn.example.lan port: 8443 url: /api/v2/bundles/offer
 offer 0000000000Y7VB098FJR5E1YQ6: 1 of 1 chunks missing
 chunk 1/1 sent (2452 bytes, 5267e4d2..)
 pruned 0000000000Y7VB098FJR5E1YQ6 (receipt verified against the pinned key)

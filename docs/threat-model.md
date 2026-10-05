@@ -18,11 +18,11 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 |-------|------------|---------------------|
 | Trip location data | High | Reveals daily routines, home/work locations, habits |
 | Device private key | High | Allows impersonation, forged trip uploads |
-| Home Wi-Fi credentials | Medium | Stored on device; enables network access if extracted |
+| ~~Home Wi-Fi credentials~~ | n/a | **Removed 2026-10-05.** The dongle has no Wi-Fi and holds no network credentials |
 | Storage root key (`K_root`) | High | **v3.** Decrypts every bundle a device ever recorded; escrowed on the server in the keystore |
 | App client identity | High | **v3.** A P-256 key in the phone's Secure Enclave; lets the holder read and write the vehicle's history |
 | Keystore master key | High | **v3.** Unwraps every escrowed root; must be kept apart from the backed-up data directory |
-| Server CA / certificates | Medium | Compromise allows MITM of device-server communication |
+| Server CA / certificates | Medium | The phone pins the server's TLS leaf; compromise allows MITM of phone–server traffic. (The legacy device listener's CA is retired with it.) |
 | Raw trip bundles | Medium | Historical driving record |
 | Derived/aggregated data | Low-Medium | Summaries, places, statistics |
 
@@ -32,12 +32,13 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 ┌─────────────────────────────┐
 │ Device (trusted)            │
 │  - Ed25519 private key      │
-│  - Wi-Fi credentials        │
-│  - Raw trip data            │
-│  - Pinned server CA         │
+│  - Raw trip data (encrypted)│
+│  - Pinned receipt key       │
+│  - No network credentials   │
 └──────────┬──────────────────┘
-           │ mTLS over home LAN
-           │ (trusted network segment)
+           │ BLE, bonded (ciphertext only)
+           │ to the enrolled phone, which
+           │ relays over signed requests
 ┌──────────┴──────────────────┐
 │ Server (trusted)            │
 │  - Server private key       │
@@ -52,8 +53,8 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 | Boundary | Why |
 |----------|-----|
 | Public internet | Never contacted by design |
-| Non-home Wi-Fi networks | Device only syncs on trusted BSSID/SSID |
-| Identically-named SSIDs | BSSID validation prevents evil-twin attacks |
+| Any Wi-Fi network | The dongle never joins one: it has no Wi-Fi |
+| The phone, for integrity | It carries ciphertext and cannot forge a receipt; it is trusted for availability only |
 | OBD-II bus | Not read; no diagnostic polling in v1 |
 | Server-side plugins | None exist: the MoonBit WASM plugin system was retired 2026-10-05 |
 
@@ -64,24 +65,28 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 | Aspect | Detail |
 |--------|--------|
 | **Threat** | Attacker obtains physical access to the Freematics device |
-| **Data at risk** | Trip bundles on microSD, Wi-Fi credentials, device private key |
-| **Mitigation** | **v3:** every frame on the card is AEAD-encrypted (XChaCha20-Poly1305) under keys derived from a per-device root held in NVS; the card holds no key. Flash encryption + NVS encryption (Phase 24) protect the root, signing seed, mTLS key and Wi-Fi credentials in the chip. The mTLS client key must move off the card (Phase 22) — today it is on it. A stolen *running* device is handled by revocation, not cryptography |
+| **Data at risk** | Trip bundles on microSD, the storage root and signing seed in NVS (no network credential: there is none) |
+| **Mitigation** | **v3:** every frame on the card is AEAD-encrypted (XChaCha20-Poly1305) under keys derived from a per-device root held in NVS; the card holds no key. Flash encryption + NVS encryption (Phase 24) protect the root and signing seed in the chip. The mTLS client key and Wi-Fi credentials that used to be there are gone: the dongle has neither. A stolen *running* device is handled by revocation, not cryptography |
 | **Residual risk** | Determined attacker with ESP32 expertise may extract keys from flash |
 
-### T2: Evil-twin Wi-Fi network
+### T2: Hostile or compromised phone, or a hostile relay
 
 | Aspect | Detail |
 |--------|--------|
-| **Threat** | Attacker creates Wi-Fi network with same SSID as home network |
-| **Mitigation** | Validate BSSID (MAC address) in addition to SSID. Require mTLS — device will reject any server without the pinned CA. |
-| **Residual risk** | MAC spoofing is possible but attacker still cannot complete mTLS handshake |
+| **Threat** | The phone (or something between it and the server) is the dongle's only route to the server, so it can drop, delay, reorder or alter what it carries, or try to make the dongle delete data |
+| **Mitigation** | The phone carries **ciphertext only** and never sees a key. Chunks are checked against SHA-256 digests in a device-signed manifest; the manifest is verified against the enrolled device key. The dongle deletes only on a server-signed **receipt** verified against a key pinned in firmware **and** naming that bundle's content root, so a phone cannot forge one, replay one for another bundle, or induce a deletion. The BLE bond gates who may pull; an unbonded phone cannot read or write. A revoked phone's relay is refused |
+| **Residual risk** | Availability: a hostile phone can refuse to upload, so trips stay on the card until another phone offloads (data is never lost). It can read the manifest's metadata (sizes, counts, times) over a valid bond. A static BLE passkey is the weakest link in that bond; an enrolled-app challenge–response (Phase 22) is planned |
+
+### T2b: Evil-twin Wi-Fi network
+
+**Not applicable since 2026-10-05.** The dongle has no Wi-Fi, so there is no network for an impostor to imitate. The phone's own Wi-Fi is protected by TLS pinning to the server's leaf and signed requests.
 
 ### T3: Forged trip upload
 
 | Aspect | Detail |
 |--------|--------|
 | **Threat** | Attacker sends fabricated trip data to the server |
-| **Mitigation** | mTLS requires valid device certificate. Bundles must be signed with registered device Ed25519 key. Server validates signature before accepting. |
+| **Mitigation** | Bundles must be signed with the registered device Ed25519 key, and the relaying phone must be an enrolled, unrevoked client scoped to the bundle's vehicle. Server validates both before accepting. |
 | **Residual risk** | None unless device key is compromised (see T1) |
 
 ### T4: Replay attack
@@ -92,13 +97,13 @@ Cairn is a personal system, LAN-first, with private remote access over a Tailnet
 | **Mitigation** | Server tracks content hashes; duplicates return the original receipt. **v3:** each bundle carries a monotonic device counter held in NVS and signed into the manifest; the server binds counter to content, so the same counter with different content is quarantined as a forgery or a rolled-back device |
 | **Residual risk** | None |
 
-### T5: Man-in-the-middle on LAN
+### T5: Man-in-the-middle
 
 | Aspect | Detail |
 |--------|--------|
-| **Threat** | Attacker on home network intercepts device-server communication |
-| **Mitigation** | mTLS with pinned local CA. Device rejects any certificate not signed by pinned CA. Server rejects any client without valid device certificate. |
-| **Residual risk** | Requires compromise of the local CA private key |
+| **Threat** | Attacker on the LAN, or near the car, intercepts the phone's traffic |
+| **Mitigation** | Phone ↔ server: TLS with the server's leaf pinned at enrolment, plus per-request signatures (a captured request cannot be replayed: single-use nonces inside a ±120 s window). Dongle ↔ phone: BLE bonding with encryption, and the payload is ciphertext in any case |
+| **Residual risk** | A MITM on BLE during pairing with a known static passkey; limited to metadata and availability (see T2) |
 
 ### T6: microSD data recovery after pruning
 
@@ -175,24 +180,10 @@ database access, host-validated outputs, and no ability to alter raw data.
 
 ### Transport Security
 
-- HTTPS with mutual TLS (mTLS)
-- Device pins a local CA certificate (not public Web PKI)
-- Device pins the server hostname / public key
-- Server validates client certificate against enrolled device list
-- No shared device secrets — each device has unique credentials
-
-### Certificate Strategy
-
-```
-Local CA (self-signed, kept offline after initial setup)
-  ├── Server certificate (cairn.local)
-  └── Device certificates (one per enrolled device)
-```
-
-- CA private key stored offline or in a hardware security module
-- Server certificate includes mDNS name and static IP as SANs
-- Device certificates include device ID as the common name
-- Certificate rotation planned but not required for v1
+- **Dongle ↔ phone:** BLE with bonding and encryption. Bulk data is already AEAD ciphertext.
+- **Phone ↔ server:** HTTPS to the server's app listener (LAN) or `tailscale serve` (Tailnet), with the server's leaf pinned on the LAN path, and a **per-request P-256 signature** on every call. See [app-sync-protocol.md](app-sync-protocol.md).
+- **The dongle has no network credential and no network stack.** Nothing to rotate, nothing to extract.
+- **Legacy:** the `:8443` mTLS device listener and its private CA remain deployed only until the relay is proven on hardware; they are then removed (Cairn #7).
 
 ## Privacy Controls
 
@@ -212,4 +203,4 @@ Local CA (self-signed, kept offline after initial setup)
 3. Monitor server access logs for unexpected authentication attempts
 4. Back up trip data to a separate system on a different failure domain
 5. Consider full-disk encryption on the homelab server
-6. Review and rotate device certificates on a reasonable schedule
+6. Review enrolled app clients (`cairn-admin client list`) and revoke any you no longer use

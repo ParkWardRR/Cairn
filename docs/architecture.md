@@ -18,7 +18,7 @@ flowchart LR
   P["iPhone<br/>Cairn Companion"]
   subgraph Host["Homelab host"]
     TS["tailscaled<br/>(+ tailscale serve)"]
-    I["cairn-server<br/>:8443 device ingest (mTLS)"]
+    I["cairn-server<br/>:8443 legacy device ingest<br/>(to be retired)"]
     A["cairn-server<br/>:8444 app API · 127.0.0.1:8445"]
     CAS[("CAS · ciphertext bundles")]
     KS[("keystore · wrapped roots")]
@@ -26,11 +26,11 @@ flowchart LR
     TSDB["cairn-tsdb<br/>in-memory DuckDB"]
     UI["Nuxt UI"]
   end
-  D -- "BLE: GPS assist, diagnostics" --- P
-  D -- "home Wi-Fi · mTLS" --> I
-  P -- "LAN · signed requests" --> A
+  D -- "BLE: GPS assist, diagnostics,<br/>bundle offload (ciphertext)" --- P
+  P -- "LAN · signed requests<br/>(sync + bundle relay)" --> A
   P -- "Tailnet" --> TS --> A
-  I --> CAS
+  A -- "relay → intake" --> CAS
+  I -.-> CAS
   I -. escrowed roots .-> KS
   CAS --> W --> PG[("PostgreSQL / PostGIS")]
   CAS --> TSDB --> UI
@@ -57,9 +57,11 @@ flowchart LR
 
 Classic ESP32 WROVER. Captures GNSS, IMU and OBD into append-only,
 CRC-chained, **AEAD-encrypted** segments; seals them into Ed25519-signed
-bundles; syncs over mTLS on home Wi-Fi; prunes a bundle only after verifying a
-signed server receipt. A BLE companion service accepts phone GNSS fixes. No
-LTE. Tailscale does not run here.
+bundles; **has no Wi-Fi and no network credentials**: the enrolled phone pulls
+sealed bundles over BLE and uploads them for it ([ble-offload.md](ble-offload.md)).
+It prunes a bundle only after verifying a signed server receipt (handed back by the
+phone) against a key pinned in firmware. The BLE service also accepts phone GNSS
+fixes. No LTE. Tailscale does not run here.
 
 ### Server (`server/`, Go)
 
@@ -100,7 +102,8 @@ ROADMAP.md "Decisions".
 
 ```text
 capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, key version)
-   → offer (mTLS) → chunks by hash → commit → signed receipt → verified prune
+   → BLE offload to the phone → relay offer → chunks by hash → commit → signed receipt
+   → receipt handed back over BLE → verified prune
         ↓
    CAS (ciphertext) → decode with escrowed key → PostgreSQL / DuckDB → UI, app sync
 ```
@@ -109,7 +112,7 @@ capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, 
 
 | Listener | Auth | Audience |
 |---|---|---|
-| `:8443` device ingest | mTLS required at handshake | dongles |
+| `:8443` device ingest | mTLS required at handshake | **legacy**: no dongle uses it now; retired once the relay is proven (Cairn #7) |
 | `:8444` app API | server TLS; signed requests | iOS app on LAN |
 | `127.0.0.1:8445` app API | loopback HTTP; signed requests; Tailscale Serve headers trusted only from loopback | iOS app over the Tailnet |
 | `127.0.0.1:8480` cairn-tsdb | loopback | UI server |
