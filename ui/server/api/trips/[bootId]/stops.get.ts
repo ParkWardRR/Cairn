@@ -10,5 +10,14 @@ export default defineEventHandler(async (event) => {
     ORDER BY mono_ms ASC
   `)
 
-  return { stops: detectStops(fixes as StopFix[]) }
+  const stops = detectStops(fixes as StopFix[])
+  const { results, pending } = lookupPlaces(
+    stops.map(s => ({ lat: s.lat, lon: s.lon, ctx: { dwell_s: s.duration_s, endpoint: false } })),
+  )
+
+  return {
+    stops: stops.map((s, i) => ({ ...s, place: placeForApi(results[i]) })),
+    pending,
+    attribution: attributionForResults(results),
+  }
 })

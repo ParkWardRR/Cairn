@@ -40,6 +40,13 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     tsdbUrl: 'http://127.0.0.1:8480',
+    // Place naming. Coordinates are sent to Overpass (and Geoapify, if a key is
+    // set) to find names; results are cached on disk and never re-fetched.
+    // Set NUXT_PLACES_EXTERNAL=false to keep all coordinates local.
+    placesExternal: 'true',
+    placesDataDir: '.data/places',
+    overpassUrl: 'https://overpass-api.de/api/interpreter,https://overpass.private.coffee/api/interpreter',
+    geoapifyKey: '',
     public: {
       cartoKey: '',
     },

@@ -16,8 +16,10 @@ interface TripSummary {
   obd_samples: number
   gnss_samples: number
   gap_count: number
-  start: { observed_at: string; lat: number; lon: number } | null
-  end: { observed_at: string; lat: number; lon: number } | null
+  start: { observed_at: string; lat: number; lon: number; place?: StopPlace | null } | null
+  end: { observed_at: string; lat: number; lon: number; place?: StopPlace | null } | null
+  places_pending?: boolean
+  attribution?: string[]
   harsh_event_count: number
   first_obd_ms: number | null
   last_obd_ms: number | null
@@ -37,12 +39,20 @@ interface Insight {
 const route = useRoute()
 const bootId = computed(() => route.params.bootId as string)
 
-const { data: trip, status: tripStatus } = useFetch<TripSummary>(
+const { data: trip, status: tripStatus, refresh: refreshTrip } = useFetch<TripSummary>(
   () => `/api/trips/${bootId.value}`,
 )
 const { data: routeData } = useFetch<RouteData>(
   () => `/api/trips/${bootId.value}/route`,
 )
+interface StopPlace {
+  name: string | null
+  category: string | null
+  address: string | null
+  sources: string[]
+  status: 'resolved' | 'pending' | 'none'
+}
+
 interface TripStop {
   start_at: string | null
   start_offset_s: number
@@ -51,12 +61,40 @@ interface TripStop {
   lon: number
   category: 'quick' | 'medium' | 'long'
   inferred: boolean
+  place: StopPlace | null
 }
 
-const { data: stopsData } = useFetch<{ stops: TripStop[] }>(
+const { data: stopsData, refresh: refreshStops } = useFetch<{ stops: TripStop[]; pending: boolean; attribution: string[] }>(
   () => `/api/trips/${bootId.value}/stops`,
 )
+
+// Place names are looked up in the background the first time a trip is opened;
+// ask again until they arrive.
+let polls = 0
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+watch(() => [stopsData.value?.pending, trip.value?.places_pending], ([a, b]) => {
+  if ((a || b) && polls < 24) {
+    pollTimer = setTimeout(() => { polls++; refreshStops(); refreshTrip() }, 5000)
+  }
+}, { immediate: true })
+onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer) })
+
+const attribution = computed(() => [...new Set([...(stopsData.value?.attribution ?? []), ...(trip.value?.attribution ?? [])])])
 const stops = computed(() => stopsData.value?.stops ?? [])
+
+const selectedStop = ref<number | null>(null)
+
+// First click shows the stop on the map; clicking the same stop again opens it
+// on the Places page.
+function onStopClick(i: number) {
+  const s = stops.value[i]
+  if (!s) return
+  if (selectedStop.value === i) {
+    navigateTo({ path: '/places', query: { lat: s.lat.toFixed(5), lon: s.lon.toFixed(5) } })
+    return
+  }
+  selectedStop.value = i
+}
 
 interface FuelSample { speed_kph: number; maf_cgps: number; lambda_ratio: number }
 const { data: fuelData } = useFetch<{ samples: FuelSample[]; distance_m: number; duration_s: number | null }>(
@@ -95,8 +133,6 @@ const fuel = computed(() => {
   }
 })
 
-const STOP_LABEL = { quick: 'Quick', medium: 'Medium', long: 'Long' } as const
-const STOP_COLOR = { quick: '#94a3b8', medium: '#f59e0b', long: '#ef4444' } as const
 
 function fmtStop(s: number): string {
   if (s < 60) return `${s}s`
@@ -285,8 +321,16 @@ function insightIcon(icon: string | undefined): string {
         </p>
       </div>
 
-      <!-- Map -->
-      <div class="rounded-xl overflow-hidden mb-4" :style="{ border: '1px solid var(--color-border)' }">
+      <!-- Where -->
+      <p v-if="trip.start?.place?.name || trip.end?.place?.name" class="text-[12px] px-1 mb-3 flex flex-wrap items-center gap-x-2" style="color: var(--color-text-secondary)">
+        <span class="font-semibold">{{ trip.start?.place?.name ?? 'Unknown start' }}</span>
+        <span>→</span>
+        <span class="font-semibold">{{ trip.end?.place?.name ?? 'Unknown end' }}</span>
+      </p>
+
+      <!-- Map + stops -->
+      <div class="grid gap-4 mb-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div class="rounded-xl overflow-hidden self-start" :style="{ border: '1px solid var(--color-border)' }">
         <ClientOnly>
           <div v-if="hasValidRoute" style="height: 420px">
             <MapsTripMap
@@ -300,6 +344,8 @@ function insightIcon(icon: string | undefined): string {
               :prev-end="trip?.prev_end"
               :highlight-pos="timelineHighlight"
               :stops="stops"
+              :selected-stop="selectedStop"
+              @select-stop="onStopClick"
             />
           </div>
           <template #fallback>
@@ -318,21 +364,50 @@ function insightIcon(icon: string | undefined): string {
         </div>
       </div>
 
-      <!-- Stops -->
-      <div v-if="stops.length" class="rounded-xl p-4 mb-4" :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }">
-        <div class="flex items-center gap-4 mb-3">
-          <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Stops</span>
-          <span class="text-[10px]" style="color: var(--color-text-secondary)">quick &lt; 2 min · medium 2–10 min · long 10+ min</span>
-        </div>
-        <div class="space-y-1.5">
-          <NuxtLink v-for="(s, i) in stops" :key="i" :to="{ path: '/places', query: { lat: s.lat.toFixed(5), lon: s.lon.toFixed(5) } }" class="flex items-center gap-3 text-[12px] rounded-md px-1 -mx-1 hover:bg-[var(--color-surface-elevated)]" title="Show on Places">
-            <span class="w-2.5 h-2.5 rounded-full shrink-0" :style="{ background: STOP_COLOR[s.category], opacity: s.inferred ? 0.6 : 1 }" />
-            <span class="font-mono" style="color: var(--color-text-secondary)">{{ fmtClock(s) }}</span>
-            <span class="font-semibold">{{ STOP_LABEL[s.category] }}</span>
-            <span class="font-mono">{{ fmtStop(s.duration_s) }}</span>
-            <span v-if="s.inferred" class="text-[10px]" style="color: var(--color-text-secondary)">no GPS fixes while stopped</span>
-          </NuxtLink>
-        </div>
+        <!-- Stops sidebar -->
+        <aside
+          v-if="stops.length"
+          class="rounded-xl flex flex-col max-h-72 lg:max-h-none lg:h-[420px] overflow-hidden"
+          :style="{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)' }"
+        >
+          <div class="px-3.5 pt-3 pb-2" style="border-bottom: 1px solid var(--color-border)">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--color-text-secondary)">Stops</span>
+              <span class="text-[11px] font-mono" style="color: var(--color-text-secondary)">{{ stops.length }}</span>
+            </div>
+            <p class="text-[10px] mt-1" style="color: var(--color-text-secondary)">
+              quick &lt; 2 min · medium 2–10 · long 10+. Click to show on the map, click again to open in Places.
+            </p>
+          </div>
+          <div class="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+            <button
+              v-for="(s, i) in stops"
+              :key="i"
+              type="button"
+              class="w-full text-left rounded-lg px-2 py-1.5 flex items-start gap-2.5 transition-colors hover:bg-[var(--color-surface-elevated)]"
+              :style="selectedStop === i ? { backgroundColor: 'var(--color-surface-elevated)', boxShadow: `inset 0 0 0 1px ${STOP_COLOR[s.category]}` } : {}"
+              @click="onStopClick(i)"
+            >
+              <span
+                class="mt-0.5 w-4 h-4 rounded-[4px] shrink-0 flex items-center justify-center gap-[2px]"
+                :style="{ background: STOP_COLOR[s.category], opacity: s.inferred ? 0.75 : 1 }"
+              >
+                <span class="w-[2px] h-[7px] rounded-[1px]" style="background: #0f1117" />
+                <span class="w-[2px] h-[7px] rounded-[1px]" style="background: #0f1117" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-2 text-[12px]">
+                  <span class="font-semibold">{{ STOP_LABEL[s.category] }}</span>
+                  <span class="font-mono">{{ fmtStop(s.duration_s) }}</span>
+                  <span class="font-mono text-[10.5px] ml-auto" style="color: var(--color-text-secondary)">{{ fmtClock(s) }}</span>
+                </span>
+                <span v-if="s.place?.name" class="block text-[11.5px] truncate" :title="s.place.name">{{ s.place.name }}</span>
+                <span v-else-if="s.place?.status === 'pending'" class="block text-[11px]" style="color: var(--color-text-secondary)">identifying…</span>
+                <span v-if="s.inferred" class="block text-[10px]" style="color: var(--color-text-secondary)">no GPS fixes while stopped</span>
+              </span>
+            </button>
+          </div>
+        </aside>
       </div>
 
       <!-- GPS acquisition summary -->
@@ -435,6 +510,10 @@ function insightIcon(icon: string | undefined): string {
           <span v-if="trip.end?.observed_at"><span class="font-semibold">Ended:</span> {{ formatDate(trip.end.observed_at) }}</span>
         </div>
       </div>
+
+      <p v-if="attribution.length" class="text-[10px] mt-3 px-1" style="color: var(--color-text-secondary)">
+        Place names: {{ attribution.join(' · ') }}
+      </p>
     </template>
   </div>
 </template>

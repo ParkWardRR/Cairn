@@ -10,8 +10,20 @@ const props = defineProps<{
   firstFixMs?: number | null
   prevEnd?: { lat: number; lon: number } | null
   highlightPos?: { lat: number; lon: number } | null
-  stops?: Array<{ lat: number; lon: number; start_at: string | null; start_offset_s: number; duration_s: number; category: 'quick' | 'medium' | 'long'; inferred: boolean }>
+  stops?: Array<{
+    lat: number
+    lon: number
+    start_at: string | null
+    start_offset_s: number
+    duration_s: number
+    category: StopCategory
+    inferred: boolean
+    place?: { name: string | null } | null
+  }>
+  selectedStop?: number | null
 }>()
+
+const emit = defineEmits<{ (e: 'select-stop', index: number): void }>()
 
 const mapEl = ref<HTMLDivElement>()
 const ready = ref(false)
@@ -21,6 +33,7 @@ const hasEstStart = ref(false)
 let map: any = null
 let highlightMarker: any = null
 let estStartLayers: any[] = []
+let stopMarkers: any[] = []
 
 function setEstStartVisible(visible: boolean) {
   if (!map) return
@@ -71,12 +84,6 @@ function speedToColor(mph: number): string {
   return '#ef4444'
 }
 
-const STOP_STYLE = {
-  quick: { color: '#94a3b8', size: 12, label: 'Quick stop' },
-  medium: { color: '#f59e0b', size: 16, label: 'Medium stop' },
-  long: { color: '#ef4444', size: 20, label: 'Long stop' },
-} as const
-
 function fmtStopDuration(s: number): string {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
@@ -84,26 +91,59 @@ function fmtStopDuration(s: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
+function stopIcon(L: any, stop: NonNullable<typeof props.stops>[number], selected: boolean) {
+  const size = STOP_SIZE[stop.category]
+  return L.divIcon({
+    className: '',
+    html: stopBadgeHtml(stop.category, { selected, inferred: stop.inferred }),
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  })
+}
+
+function stopTooltip(stop: NonNullable<typeof props.stops>[number]): string {
+  const when = stop.start_at
+    ? `at ${new Date(stop.start_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+    : `${Math.round(stop.start_offset_s / 60)} min into the trip`
+  const where = stop.place?.name ? `<div style="font-weight:600;margin-bottom:2px">${escapeHtml(stop.place.name)}</div>` : ''
+  const note = stop.inferred ? `<div style="opacity:.7">no GPS fixes while stopped</div>` : ''
+  return `<div style="font-size:12px;line-height:1.5">${where}<div style="font-weight:600">${STOP_LABEL[stop.category]} stop · ${fmtStopDuration(stop.duration_s)}</div><div style="opacity:.8">${when}</div>${note}</div>`
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+}
+
 function addStopMarkers(L: any) {
-  for (const stop of props.stops ?? []) {
-    const st = STOP_STYLE[stop.category]
-    const border = stop.inferred ? '2px dashed' : '2px solid'
-    const icon = L.divIcon({
-      className: '',
-      html: `<div style="width:${st.size}px;height:${st.size}px;border-radius:50%;background:${st.color}cc;border:${border} #0f1117;box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
-      iconSize: [st.size, st.size],
-      iconAnchor: [st.size / 2, st.size / 2],
+  stopMarkers = []
+  const list = props.stops ?? []
+  list.forEach((stop, i) => {
+    const marker = L.marker([stop.lat, stop.lon], {
+      icon: stopIcon(L, stop, props.selectedStop === i),
+      zIndexOffset: props.selectedStop === i ? 1000 : 0,
     })
-    const when = stop.start_at
-      ? `at ${new Date(stop.start_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-      : `${Math.round(stop.start_offset_s / 60)} min into the trip`
-    const note = stop.inferred ? `<div style="opacity:.7">no GPS fixes while stopped</div>` : ''
-    L.marker([stop.lat, stop.lon], { icon })
-      .bindTooltip(
-        `<div style="font-size:12px;line-height:1.5"><div style="font-weight:600">${st.label} · ${fmtStopDuration(stop.duration_s)}</div><div style="opacity:.8">${when}</div>${note}</div>`,
-        { direction: 'top', offset: [0, -8], className: 'trip-tooltip' },
-      )
+      .bindTooltip(stopTooltip(stop), { direction: 'top', offset: [0, -10], className: 'trip-tooltip' })
+      .on('click', () => emit('select-stop', i))
       .addTo(map)
+    stopMarkers.push(marker)
+  })
+}
+
+// Highlights the selected stop and brings it into view without rebuilding the route.
+async function applyStopSelection() {
+  if (!map || !ready.value) return
+  const L = await import('leaflet')
+  const list = props.stops ?? []
+  stopMarkers.forEach((m, i) => {
+    const selected = props.selectedStop === i
+    m.setIcon(stopIcon(L, list[i], selected))
+    m.setZIndexOffset(selected ? 1000 : 0)
+    if (!selected) m.closeTooltip()
+  })
+  const i = props.selectedStop
+  if (i != null && list[i] && stopMarkers[i]) {
+    map.flyTo([list[i].lat, list[i].lon], Math.max(map.getZoom(), 16), { duration: 0.6 })
+    stopMarkers[i].openTooltip()
   }
 }
 
@@ -249,6 +289,8 @@ watch(() => [props.coordinates, props.speeds, props.stops], async () => {
   buildRoute(L)
 }, { deep: true })
 
+watch(() => props.selectedStop, () => { applyStopSelection() })
+
 onUnmounted(() => {
   if (map) {
     map.remove()
@@ -283,9 +325,9 @@ onUnmounted(() => {
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #f59e0b" /> Fast</span>
       <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #ef4444" /> WOT</span>
       <span v-if="stops?.length" class="flex items-center gap-1 pl-2" style="border-left: 1px solid var(--color-border)">Stops</span>
-      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2 h-2 rounded-full" style="background: #94a3b8" /> Quick</span>
-      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background: #f59e0b" /> Medium</span>
-      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-3 h-3 rounded-full" style="background: #ef4444" /> Long</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm" style="background: #38bdf8" /> Quick</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-sm" style="background: #2dd4bf" /> Medium</span>
+      <span v-if="stops?.length" class="flex items-center gap-1"><span class="w-3 h-3 rounded-sm" style="background: #a78bfa" /> Long</span>
     </div>
 
     <button

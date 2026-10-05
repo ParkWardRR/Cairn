@@ -48,5 +48,19 @@ export default defineEventHandler(async () => {
     visits.push({ boot_id: bootId, kind: 'arrival', lat: last.lat, lon: last.lon, at: at(last) })
   }
 
-  return { trips, places: clusterPlaces(visits) }
+  const places = clusterPlaces(visits)
+  const { results, pending } = lookupPlaces(
+    places.map(p => ({
+      lat: p.lat,
+      lon: p.lon,
+      ctx: { dwell_s: p.longest_s, endpoint: p.arrivals + p.departures > 0 },
+    })),
+  )
+
+  return {
+    trips,
+    places: places.map((p, i) => ({ ...p, label: placeForApi(results[i]) })),
+    pending,
+    attribution: attributionForResults(results),
+  }
 })

@@ -12,10 +12,18 @@ interface PlaceTrip {
   end_lon: number | null
 }
 
-type StopCategory = 'quick' | 'medium' | 'long'
+interface PlaceLabel {
+  status: 'resolved' | 'pending' | 'none'
+  name: string | null
+  category: string | null
+  address: string | null
+  confidence: number
+  sources: string[]
+}
 
 interface PlaceItem {
   id: number
+  label: PlaceLabel | null
   lat: number
   lon: number
   stops: number
@@ -31,7 +39,17 @@ interface PlaceItem {
   last_at: string | null
 }
 
-const { data, status } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[] }>('/api/places')
+const { data, status, refresh } = useFetch<{ trips: PlaceTrip[]; places: PlaceItem[]; pending: boolean; attribution: string[] }>('/api/places')
+
+// Names are looked up in the background the first time; ask again until done.
+let polls = 0
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+watch(() => data.value?.pending, (pending) => {
+  if (pending && polls < 24) {
+    pollTimer = setTimeout(() => { polls++; refresh() }, 5000)
+  }
+}, { immediate: true })
+onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer) })
 const trips = computed(() => data.value?.trips ?? [])
 const places = computed(() => data.value?.places ?? [])
 
@@ -44,10 +62,6 @@ let map: any = null
 let leaflet: any = null
 let markers = new Map<number, any>()
 
-const STOP_COLOR: Record<StopCategory, string> = { quick: '#94a3b8', medium: '#f59e0b', long: '#ef4444' }
-const STOP_LABEL: Record<StopCategory, string> = { quick: 'Quick', medium: 'Medium', long: 'Long' }
-const ENDPOINT_COLOR = '#3b82f6'
-
 const tripsWithGps = computed(() =>
   trips.value.filter(t => (t.start_lat && t.start_lon) || (t.end_lat && t.end_lon))
 )
@@ -56,11 +70,6 @@ const stopCount = computed(() => places.value.reduce((n, p) => n + p.stops, 0))
 
 function placeColor(p: PlaceItem): string {
   return p.longest_category ? STOP_COLOR[p.longest_category] : ENDPOINT_COLOR
-}
-
-function placeSize(p: PlaceItem): number {
-  // Grows slowly with total dwell so one long stay doesn't swamp the map.
-  return Math.round(Math.min(26, 12 + Math.sqrt(p.stop_seconds / 60) * 2.2))
 }
 
 function formatDate(iso: string | null): string {
@@ -87,8 +96,16 @@ function formatDwell(seconds: number): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`
 }
 
-function placeTitle(p: PlaceItem): string {
+function placeSummary(p: PlaceItem): string {
   return p.stops > 0 ? `${p.stops} stop${p.stops === 1 ? '' : 's'} · ${formatDwell(p.stop_seconds)} total` : 'Trip start / end'
+}
+
+function placeTitle(p: PlaceItem): string {
+  return p.label?.name ?? placeSummary(p)
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
 }
 
 function select(id: number | null, fly = true) {
@@ -145,13 +162,15 @@ function renderMarkers(fit = false) {
 
   const allPts: [number, number][] = []
   for (const p of places.value) {
-    const size = placeSize(p)
-    const color = placeColor(p)
     const selected = p.id === selectedId.value
+    const size = p.longest_category ? STOP_SIZE[p.longest_category] : 14
+    const color = placeColor(p)
     const ring = selected ? '3px solid #fff' : '2px solid #0f1117'
     const icon = L.divIcon({
       className: '',
-      html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color}d9;border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
+      html: p.longest_category
+        ? stopBadgeHtml(p.longest_category, { selected })
+        : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:${ring};box-shadow:0 2px 6px rgba(0,0,0,.5)"></div>`,
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     })
@@ -161,7 +180,9 @@ function renderMarkers(fit = false) {
     if (p.medium) parts.push(`${p.medium} medium`)
     if (p.quick) parts.push(`${p.quick} quick`)
     const html = `<div style="font-size:12px;line-height:1.5;font-family:Inter,sans-serif">
-      <div style="font-weight:600;margin-bottom:2px">${placeTitle(p)}</div>
+      <div style="font-weight:600;margin-bottom:2px">${escapeHtml(placeTitle(p))}</div>
+      ${p.label?.name ? `<div style="opacity:.8">${placeSummary(p)}</div>` : ''}
+      ${p.label?.category && p.label.category !== 'address' && p.label.category !== 'street' ? `<div style="opacity:.6;font-size:11px">${escapeHtml(p.label.category)}</div>` : ''}
       ${parts.length ? `<div style="opacity:.8">${parts.join(' · ')}</div>` : ''}
       <div style="opacity:.6;font-size:11px">${p.arrivals} arrival${p.arrivals === 1 ? '' : 's'} · ${p.departures} departure${p.departures === 1 ? '' : 's'}</div>
     </div>`
@@ -179,10 +200,13 @@ function renderMarkers(fit = false) {
   }
 }
 
+let fitted = false
 watch(places, () => {
   if (!mapReady.value) return
-  renderMarkers(true)
-  selectFromQuery()
+  // Refit only the first time, so a background refresh does not reset the view.
+  renderMarkers(!fitted)
+  if (places.value.length) fitted = true
+  if (!fitted || !selectedId.value) selectFromQuery()
 }, { deep: true })
 
 onUnmounted(() => {
@@ -213,11 +237,11 @@ onUnmounted(() => {
         class="absolute top-3 left-3 z-[1000] flex items-center gap-4 px-3 py-1.5 rounded-lg text-[10px] font-semibold"
         style="background: rgba(15, 17, 23, 0.85); backdrop-filter: blur(8px); color: var(--color-text-secondary)"
       >
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #94a3b8" /> Quick</span>
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #f59e0b" /> Medium</span>
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #ef4444" /> Long</span>
-        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #3b82f6" /> Trip start / end</span>
-        <span style="opacity: .6">colour = longest stop · size = time spent</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #38bdf8" /> Quick</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #2dd4bf" /> Medium</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-[3px]" style="background: #a78bfa" /> Long</span>
+        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: #64748b" /> Trip start / end</span>
+        <span style="opacity: .6">colour = longest stop</span>
       </div>
     </div>
 
@@ -245,18 +269,24 @@ onUnmounted(() => {
           @click="select(p.id)"
         >
           <div class="flex items-center gap-3">
-            <span class="w-3 h-3 rounded-full shrink-0" :style="{ background: placeColor(p) }" />
+            <span class="w-3 h-3 shrink-0" :class="p.longest_category ? 'rounded-[3px]' : 'rounded-full'" :style="{ background: placeColor(p) }" />
             <div class="flex-1 min-w-0">
-              <p class="text-[13px] font-medium">{{ placeTitle(p) }}</p>
+              <p class="text-[13px] font-medium truncate">
+                {{ placeTitle(p) }}
+                <span v-if="p.label?.status === 'pending'" class="text-[11px] font-normal" style="color: var(--color-text-secondary)">identifying…</span>
+              </p>
+              <p v-if="p.label?.name" class="text-[12px] mt-0.5" style="color: var(--color-text-secondary)">
+                {{ placeSummary(p) }}<template v-if="p.label.category && p.label.category !== 'address' && p.label.category !== 'street'"> · {{ p.label.category }}</template>
+              </p>
               <p class="text-[11px] font-mono mt-0.5" style="color: var(--color-text-secondary)">
                 {{ p.lat.toFixed(4) }}, {{ p.lon.toFixed(4) }}
                 <template v-if="p.last_at"> · last {{ formatDate(p.last_at) }}</template>
               </p>
             </div>
             <div class="flex items-center gap-1.5 text-[10px] font-semibold shrink-0">
-              <span v-if="p.long" class="px-1.5 py-0.5 rounded" style="background: rgba(239,68,68,.15); color: #ef4444">{{ p.long }} long</span>
-              <span v-if="p.medium" class="px-1.5 py-0.5 rounded" style="background: rgba(245,158,11,.15); color: #f59e0b">{{ p.medium }} medium</span>
-              <span v-if="p.quick" class="px-1.5 py-0.5 rounded" style="background: rgba(148,163,184,.15); color: #94a3b8">{{ p.quick }} quick</span>
+              <span v-if="p.long" class="px-1.5 py-0.5 rounded" style="background: rgba(167,139,250,.15); color: #a78bfa">{{ p.long }} long</span>
+              <span v-if="p.medium" class="px-1.5 py-0.5 rounded" style="background: rgba(45,212,191,.15); color: #2dd4bf">{{ p.medium }} medium</span>
+              <span v-if="p.quick" class="px-1.5 py-0.5 rounded" style="background: rgba(56,189,248,.15); color: #38bdf8">{{ p.quick }} quick</span>
             </div>
           </div>
 
@@ -312,6 +342,10 @@ onUnmounted(() => {
         </div>
       </template>
     </template>
+
+    <p v-if="data?.attribution?.length" class="text-[10px] mt-6 px-1" style="color: var(--color-text-secondary)">
+      Place names: {{ data.attribution.join(' · ') }}
+    </p>
   </div>
 </template>
 

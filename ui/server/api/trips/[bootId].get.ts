@@ -53,11 +53,20 @@ export default defineEventHandler(async (event) => {
     `),
   ])
 
+  const endpoints = [firstPos[0], lastPos[0]].filter(Boolean) as Array<{ lat: number; lon: number }>
+  const { results: endpointPlaces, pending } = lookupPlaces(
+    endpoints.map(p => ({ lat: p.lat, lon: p.lon, ctx: { dwell_s: 0, endpoint: true } })),
+  )
+  const startPlace = firstPos[0] ? placeForApi(endpointPlaces[0]) : null
+  const endPlace = lastPos[0] ? placeForApi(endpointPlaces[endpoints.length - 1]) : null
+
   const fd = fixDelay[0] ?? {}
   return {
     ...summary[0],
-    start: firstPos[0] ?? null,
-    end: lastPos[0] ?? null,
+    start: firstPos[0] ? { ...firstPos[0], place: startPlace } : null,
+    end: lastPos[0] ? { ...lastPos[0], place: endPlace } : null,
+    places_pending: pending,
+    attribution: attributionForResults(endpointPlaces),
     harsh_event_count: events[0]?.harsh_event_count ?? 0,
     first_obd_ms: fd.first_obd_ms ?? null,
     last_obd_ms: fd.last_obd_ms ?? null,
