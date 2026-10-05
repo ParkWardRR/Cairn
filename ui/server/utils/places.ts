@@ -25,7 +25,7 @@ export interface Place {
   lon: number
   stops: number
   stop_seconds: number
-  quick: number
+  short: number
   medium: number
   long: number
   longest_s: number
@@ -73,7 +73,7 @@ export function clusterPlaces(visits: PlaceVisit[]): Place[] {
     if (!best) {
       best = {
         id: accs.length, lat: v.lat, lon: v.lon, stops: 0, stop_seconds: 0,
-        quick: 0, medium: 0, long: 0, longest_s: 0, longest_category: null,
+        short: 0, medium: 0, long: 0, longest_s: 0, longest_category: null,
         arrivals: 0, departures: 0, trips: [], last_at: null,
         n: 0, latSum: 0, lonSum: 0,
       }

@@ -3,19 +3,19 @@
 export type StopCategory = 'short' | 'medium' | 'long'
 
 export const STOP_COLOR: Record<StopCategory, string> = {
-  quick: '#38bdf8',
+  short: '#38bdf8',
   medium: '#2dd4bf',
   long: '#a78bfa',
 }
 
 export const STOP_LABEL: Record<StopCategory, string> = {
-  quick: 'Short',
+  short: 'Short',
   medium: 'Medium',
   long: 'Long',
 }
 
 export const STOP_SIZE: Record<StopCategory, number> = {
-  quick: 20,
+  short: 20,
   medium: 24,
   long: 28,
 }
