@@ -18,7 +18,7 @@ any diff — so "the vectors are deterministic" is enforced rather than asserted
 | Suite | Command | Count |
 |---|---|---|
 | Format conformance (Go) | `go test ./format/` | 25 vectors |
-| Format conformance (Rust) | `cargo run -- conformance --vectors ../fixtures/format-v2` | 22 vectors, 3 skipped |
+| Format conformance (Rust) | `cargo run -- conformance --vectors ../fixtures/format-v3` | 33 vectors, none skipped |
 | Format conformance (C) | `make -C firmware/cairn-v2/test/host conformance` | 25 vectors |
 | Firmware storage matrix (C) | `make -C firmware/cairn-v2/test/host faults` | 28 rows |
 | Fault-injection matrix (Rust) | `cargo run -- matrix` | 9 rows |
@@ -161,3 +161,59 @@ lives:
 - `previous_bundle_root` is populated but not enforced. Detecting deleted
   *historical* bundles is a different threat model from detecting corruption
   within one bundle.
+
+---
+
+# v3 additions (2026-10-05)
+
+The v3 trust model ([trust-model-v3.md](trust-model-v3.md)) adds guarantees. Each
+is mapped to the row that verifies it; the same rule applies — a claim with no
+row is aspirational.
+
+| Guarantee | Verified by | Mutation-checked |
+|---|---|---|
+| Torn tails, CRCs, the chain and the Merkle root verify **without a key** | `fixtures/format-v3` structural verdicts (Go, Rust, C); emulator `torn-tail-under-encryption`; C matrix "encrypted torn tail recovers with no key" | yes |
+| A flipped ciphertext bit with a repaired CRC is rejected | vector `auth-tag-tampered`; C matrix "a repaired CRC is AUTH_FAILED, never truncated" | yes (drop AAD) |
+| A frame cannot be moved between segments, vehicles or devices | vectors `frame-moved-between-segments`, `wrong-vehicle-key`; Rust write-side transplant test | yes |
+| Wrong key version is reported as such, not as tampering | vector `wrong-key-version` | yes |
+| A nonce never repeats, including across a torn-tail rewrite of one `seq` | C matrix "no nonce repeats across torn-tail rewrites" (with a forced-repeat self-check); Rust nonce test | yes (seq-derived nonce, replayed RNG) |
+| A card from another device cannot be decrypted or extended | emulator `wrong-key-card`; C matrix "wrong-key card" | yes |
+| The device counter never repeats across a power cut | emulator `counter-across-power-cut-mid-seal`; C matrix "device counter survives a power cut mid-seal" | yes |
+| A restored old card is an idempotent duplicate | emulator `card-restored-to-older-image`; `intake` `TestRestoredCardIsAnIdempotentDuplicate` | yes |
+| Same counter, different content is quarantined, not ingested | `intake` `TestCounterConflictIsQuarantinedNotIngested` | yes |
+| An abandoned offer does not spend a counter | `intake` `TestAbandonedOfferDoesNotSpendTheCounter` | no |
+| Counter gaps are reported, not refused | `intake` `TestCounterGapIsReportedNotRefused`; `counters` tests | no |
+| Unknown / mismatched / superseded assignment is refused; a pre-switch late upload is not | `intake` `TestUnknownAssignmentRefused`, `…ForAnotherVehicleRefused`, `TestDeviceMovedBetweenCars`; `vehicles` `TestSupersededAssignment` | yes |
+| The server never accepts a bundle it cannot decode | `intake` `TestBundleWithNoEscrowedKeyRefused` | no |
+| Escrowed roots are never stored in the clear, cannot move between records, versions are write-once, `Destroy` removes the bytes | `keystore` tests | no |
+| The VIN is never stored in the clear and never sent to the app | `vehicles` `TestVINIsNeverStoredInTheClear`; `syncapi` `TestPullDeliversVehiclesWithoutTheVIN` | no |
+| App requests are authenticated per request; replay, stale timestamps, body tampering, retargeting and foreign keys are refused | `syncapi` replay / timestamp / tamper / foreign-key tests | yes (nonce cache, signature check, timestamp window) |
+| The signing string and canonical-JSON hash match the published vectors | `syncapi` `TestPublishedVectorStillHolds`, `TestCanonicalPayloadVector` | n/a |
+| Revocation is effective on the next request, including from another process; bearer tokens die with the client | `syncapi` revocation and token tests | yes (revoked-client check) |
+| Non-admins cannot revoke; bearer tokens cannot reach admin routes | `syncapi` `TestAdminCanRevokeADeviceAndAUserCannot`, token test | yes |
+| Funnel-marked requests are refused; Tailscale identity headers are trusted only from loopback | `syncapi` Funnel and header-spoof tests | yes (Funnel) |
+| Out-of-scope vehicles are neither writable nor readable | `syncapi` `TestVehicleScopeEnforced` | yes |
+| Push is idempotent; conflicts apply nothing; cursors are repeatable and a data wipe is detected | `syncapi` push / conflict / pull / cursor-reset tests | no |
+| The audit log and logs never contain payloads, coordinates, tokens, signatures, keys or the VIN | `syncapi` `TestAuditAndLogsNeverContainSecrets` | no |
+| The analytical snapshot is reachable only by an authenticated all-vehicles client | `syncapi` `TestSnapshotIsAuthenticatedProxiedAndNeedsFullScope` | no |
+
+**Not covered, v3.**
+
+- **No on-device verification of anything above.** The C port builds for the
+  target and passes the host suites; it has not run on the dongle. The hardware
+  round trip (capture → seal → upload → decode with encryption on) is open.
+- **The device cannot yet be enrolled over the wire.** The firmware generates its
+  storage root on first boot, but nothing sends it to the server (the sealed
+  enrolment blob, trust-model §4.1). Until then the server cannot decrypt what a
+  real device writes.
+- **ESP32 flash encryption and secure boot are not enabled**, so the root, the
+  signing seed and the mTLS key are readable from an extracted chip, and the mTLS
+  client key is still on the SD card.
+- **Nonce-cache replay window after a server restart** (bounded by the ±120 s
+  timestamp window; documented in `syncapi`).
+- **The decode worker does not yet publish `trip_summary` entities**, and the
+  derived layers carry no `vehicle_id`, so snapshots are not vehicle-filtered.
+- Adaptive sampling is **inert on GNSS and the IMU window**: their nominals sit
+  at the hardware floors (200 / 100 ms), so only OBD actually speeds up on an
+  event. That is deliberate and now asserted, but it means "event-adaptive
+  sampling" currently buys detail on one axis only.

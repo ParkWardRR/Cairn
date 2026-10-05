@@ -1,13 +1,20 @@
-# Cairn Bundle Format v2 — Normative Specification
+# Cairn Bundle Format v3 — Normative Specification
 
 **Status:** normative. Three independent implementations must agree byte-for-byte:
 firmware (C, ESP-IDF), server (Go), emulator (Rust). Where this document and an
 implementation disagree, this document is correct and the implementation is a
 bug.
 
-**Supersedes:** bundle format v1 (`docs/trip-file-format.md`). There is no v1
-read path, no migration and no compatibility requirement. v1 bundles are not
-readable by v2 tooling.
+**Supersedes:** bundle format v2 (and v1 before it). There is no v2 read path,
+no migration and no compatibility requirement: v2 recordings were test data and
+v3 tooling does not read them. What changed and why is in §3.6 and
+[trust-model-v3.md](trust-model-v3.md); the short version is that **every frame
+is now AEAD-encrypted** and every segment and manifest is **bound to a vehicle,
+an assignment and a monotonic device counter**.
+
+Sections that did not change from v2 (the payload schemas in §4, the transfer
+protocol in §6, the Merkle construction in §1.3) are unchanged on purpose: the
+wire protocol keeps its `/api/v2/` path prefix because it did not change.
 
 ---
 
@@ -23,6 +30,13 @@ one of them.
    only as an estimate carrying its own uncertainty.
 4. **Honest incompleteness beats fabricated continuity.** Absent data is
    recorded explicitly (`GNSS_GAP`), never interpolated.
+5. **The SD card is never the security boundary.** It holds ciphertext; the keys
+   live elsewhere (§3.6). Everything structural — torn tails, CRCs, the chain,
+   the Merkle root, chunking — works on ciphertext, so integrity can be checked
+   by anyone holding the bytes and confidentiality needs a key.
+6. **A bundle names its vehicle and the assignment it was captured under**, and
+   carries a counter the device increments in non-volatile storage that is not on
+   the card. A restored old card therefore cannot be mistaken for new data.
 
 ### 1.1 Conventions
 
@@ -35,7 +49,7 @@ one of them.
 
 ### 1.2 Checksum
 
-v2 uses **CRC-32** (reflected, polynomial `0xEDB88320` — the IEEE/zlib variant),
+v3 uses **CRC-32** (reflected, polynomial `0xEDB88320` — the IEEE/zlib variant),
 not CRC32C/Castagnoli.
 
 > **Deviation, recorded deliberately.** The architecture review specified
@@ -129,29 +143,42 @@ bundles they acknowledge.
 
 An append-only sequence of framed records behind a fixed header.
 
-### 3.1 Segment header — 64 bytes
+### 3.1 Segment header — 128 bytes
 
 | Offset | Size | Field | Notes |
 |---:|---:|---|---|
-| 0 | 4 | `magic` | ASCII `CRN2` = `43 52 4E 32` |
-| 4 | 2 | `format_version` | u16, = `2` |
-| 6 | 2 | `header_len` | u16, = `64` |
+| 0 | 4 | `magic` | ASCII `CRN3` = `43 52 4E 33` |
+| 4 | 2 | `format_version` | u16, = `3` |
+| 6 | 2 | `header_len` | u16, = `128` |
 | 8 | 16 | `device_id` | 16 raw bytes (§5.2) |
 | 24 | 16 | `boot_id` | 16 raw bytes, regenerated every power cycle |
-| 40 | 4 | `segment_index` | u32, 0-based within the bundle |
-| 44 | 4 | `first_seq` | u32, `seq` of the first frame in this segment |
-| 48 | 8 | `opened_monotonic_us` | u64, device monotonic microseconds at open |
-| 56 | 4 | `reserved` | zero |
-| 60 | 4 | `header_crc32` | CRC-32 over bytes `[0, 60)` |
+| 40 | 16 | `vehicle_id` | 16 raw bytes, the vehicle the device was assigned to |
+| 56 | 16 | `assignment_id` | 16 raw bytes, the specific device→vehicle assignment (a device moved between cars gets a new one) |
+| 72 | 4 | `segment_index` | u32, 0-based within the bundle; `0xFFFFFFFF` is reserved for `journal.seg` |
+| 76 | 4 | `first_seq` | u32, `seq` of the first frame in this segment |
+| 80 | 8 | `opened_monotonic_us` | u64, device monotonic microseconds at open |
+| 88 | 4 | `storage_key_version` | u32, selects which escrowed root `K_root` the segment key derives from |
+| 92 | 8 | `device_counter` | u64, the device's monotonic bundle counter for the bundle this segment belongs to; identical in every segment of a bundle, journal included |
+| 100 | 24 | `reserved` | zero |
+| 124 | 4 | `header_crc32` | CRC-32 over bytes `[0, 124)` |
+
+Bytes `[0, header_len-4)` — everything except the CRC — are authenticated as
+associated data on every frame of the segment (§3.6). In v3 `header_len` is
+exactly `128`, so that is `[0, 124)`; a reader must treat any other value as an
+unsupported format rather than guess how a longer header would be authenticated, so the identity fields are not merely labels: altering any
+of them without the key makes every frame fail its tag. The identity fields are
+**readable without any key**, which is deliberate — intake must be able to
+authorise a bundle (does this assignment exist, is this counter spent?) before
+it ever decrypts anything.
 
 `header_len` permits a reader to skip a longer header from a future version
 without misparsing frames. It does not make a future format readable.
 
-### 3.2 Frame — 24 bytes of envelope plus payload
+### 3.2 Frame — 24 bytes of envelope plus a sealed payload
 
 | Offset | Size | Field | Notes |
 |---:|---:|---|---|
-| 0 | 2 | `frame_len` | u16, **total** frame bytes including this field and the trailing CRC |
+| 0 | 2 | `frame_len` | u16, **total** frame bytes including this field, the nonce, the tag and the trailing CRC |
 | 2 | 1 | `record_type` | §3.4 |
 | 3 | 1 | `schema_version` | payload schema version, independent of `format_version` |
 | 4 | 2 | `flags` | §3.5 |
@@ -160,11 +187,19 @@ without misparsing frames. It does not make a future format readable.
 | 12 | 4 | `monotonic_ms` | u32, milliseconds since the segment header's `opened_monotonic_us` |
 | 16 | 4 | `prev_crc32` | u32, the `crc32` field of the preceding frame; `0` for the bundle's first frame |
 | 20 | 4 | `reserved2` | zero — aligns the payload to a 4-byte boundary |
-| 24 | N | `payload` | §4 |
-| 24+N | 4 | `crc32` | CRC-32 over bytes `[0, 24+N)` |
+| 24 | 24 | `nonce` | 24 random bytes (§3.6) |
+| 48 | N | `ciphertext` | the §4 payload, encrypted; same length as the plaintext |
+| 48+N | 16 | `tag` | Poly1305 authentication tag |
+| 64+N | 4 | `crc32` | CRC-32 over bytes `[0, 64+N)` — **over the ciphertext frame** |
 
-So `frame_len = 28 + N`. Minimum valid `frame_len` is `28` (empty payload);
-maximum is `4096`.
+So `frame_len = 68 + N`, where `N` is the plaintext payload length. Minimum valid
+`frame_len` is `68` (empty payload); maximum is `4096`, so the largest
+plaintext payload is `4028` bytes (v2: 4068).
+
+Because the CRC and the `prev_crc32` chain are computed over the sealed bytes,
+**a scanner needs no key to find a torn tail, a corrupt frame, a spliced chain or
+a sequence gap.** The key adds one thing — authentication of every frame — and
+nothing structural depends on it.
 
 `monotonic_ms` as a 32-bit delta from the segment's open covers 49 days, far
 beyond any segment lifetime, and costs 4 bytes instead of 8.
@@ -209,19 +244,29 @@ expected_prev = 0 for segment_index 0, else last valid crc32 of the prior segmen
 offset        = header.header_len
 
 loop:
-  if remaining < 28                      → TORN_TAIL, stop
+  if remaining < 68                      → TORN_TAIL, stop
   read frame_len
-  if frame_len < 28 or frame_len > 4096  → TORN_TAIL, stop
+  if frame_len < 68 or frame_len > 4096  → TORN_TAIL, stop
   if offset + frame_len > file_size      → TORN_TAIL, stop
   compute CRC-32 over [offset, offset+frame_len-4)
   if mismatch with trailing crc32        → CORRUPT_FRAME, stop
   if prev_crc32 != expected_prev         → CHAIN_BREAK, stop
   if seq != expected_seq                 → SEQ_GAP, stop
+  if a key is available:
+    derive K_seg (§3.6); open the frame with its AAD
+    if the tag fails                     → AUTH_FAILED, stop
   accept frame
   expected_seq  += 1
   expected_prev  = this frame's crc32
   offset        += frame_len
 ```
+
+A scan **without a key** runs every step except the authentication step. That is
+the *structural* verdict; a scan with the device's root adds the *keyed* one.
+`AUTH_FAILED` is distinct from `CORRUPT_FRAME` on purpose: the frame is
+structurally perfect (CRC, chain, sequence all hold) and cryptographically
+wrong, which is the signature of tampering with a repaired CRC, a frame moved
+from another segment, or the wrong key — never of a power cut.
 
 **Default behaviour is stop-at-first-invalid.** Every frame before the failure
 point is valid and retained; everything from the failure point to EOF is
@@ -263,6 +308,69 @@ applies, so a skipped record is still integrity-checked.
 | 2 | `ESTIMATED_UTC` | The UTC basis was an estimate with no valid GNSS fix at write time |
 | 3 | `POST_RECOVERY` | Written after a boot recovery, i.e. first record of a resumed capture |
 | 4–15 | reserved | zero |
+
+### 3.6 Encryption
+
+Every frame is sealed with **XChaCha20-Poly1305**. The suite is named in the
+signed manifest (`encryption_suite`, §5.1) as `xchacha20poly1305+hkdf-sha256/v1`,
+so a future suite is an explicit, detectable change.
+
+#### Key hierarchy
+
+```text
+K_root  32 random bytes, generated on the device with the hardware RNG, held in
+        flash-encrypted NVS, escrowed to the server at enrolment, versioned by
+        storage_key_version
+  └─ K_seg = HKDF-SHA256( ikm  = K_root,
+                          salt = vehicle_id,
+                          info = "cairn/segment/v3" ‖ device_id ‖ assignment_id
+                                 ‖ boot_id ‖ segment_index_u32le,
+                          L    = 32 )
+```
+
+The vehicle id is the salt rather than part of `info` because it is the
+identifier that must never be shared between keys: a thief who obtains one
+vehicle's derived keys learns nothing about another's, even under one device
+root. `storage_key_version` selects the root and `device_counter` is bound
+through the AAD; neither is a KDF input, so advancing a counter never changes a
+key.
+
+#### Per-frame sealing
+
+| Input | Value |
+|---|---|
+| key | `K_seg` |
+| nonce | **24 random bytes per frame**, carried in the frame |
+| plaintext | the §4 payload |
+| AAD | the 24-byte frame header exactly as written (including `frame_len`, `seq`, `prev_crc32`) ‖ the segment header bytes `[0, header_len-4)` |
+
+**The nonce is random, never derived from `seq`.** After a torn-tail truncation
+the same `seq` is legitimately written again with *different* plaintext; a
+seq-derived nonce would then encrypt two plaintexts under one `(key, nonce)`
+pair, which leaks their XOR and, with Poly1305, the authenticator key. A 192-bit
+random nonce makes a collision negligible without any state that a power cut
+could lose. Generators in test mode draw nonces from a fixed stream so vectors
+are reproducible; real writers use the hardware RNG.
+
+#### What the AAD buys
+
+| Attack | Result |
+|---|---|
+| Flip a ciphertext bit, repair the CRC | Tag fails → `AUTH_FAILED` |
+| Move a valid frame to another segment, bundle, vehicle or device | AAD differs → `AUTH_FAILED` |
+| Reorder or splice frames | `prev_crc32` chain breaks; the header is in the AAD |
+| Edit any identity field in the segment header | Every frame of the segment fails |
+| Decrypt with another vehicle's key | Wrong salt → wrong key → `AUTH_FAILED` |
+| Decrypt with the wrong key version | Refused up front (`KEY_VERSION_MISMATCH`) rather than reported as tampering |
+
+#### Where keys live
+
+The device holds `K_root` and derives `K_seg` itself. The server holds the
+escrowed root and derives the same keys from the segment header alone — the
+header, not the caller, says which key applies. A copied card has ciphertext and
+no root. Details, threat table and the ESP32 specifics (the eFuse flash key is
+not usable as an HKDF input on a classic ESP32) are in
+[trust-model-v3.md](trust-model-v3.md) §3 and [esp32-hardening.md](esp32-hardening.md).
 
 ---
 
@@ -536,7 +644,8 @@ instead of one record half full of sentinels.
 | 12 | 4 | `pids_requested` | u32 bitmap |
 | 16 | 4 | `pids_answered` | u32 bitmap |
 | 20 | 2 | `poll_cadence_ms` | u16, actual measured cadence |
-| 22 | 2 | `reserved` | zero |
+| 22 | 1 | `fuel_level_pct` | u8, PID `0x2F`, `0xFF` = unavailable |
+| 23 | 1 | `reserved` | zero |
 
 **Pressures are absolute, as the ECU reports them.** Gauge pressure — what a
 boost gauge shows — is `map_kpa − baro_kpa`, and PSI is that times 0.1450377. It
@@ -649,7 +758,7 @@ signatures.
 
 | Key | Name | Type |
 |---:|---|---|
-| 1 | `manifest_version` | u8, = 2 |
+| 1 | `manifest_version` | u8, = 3 |
 | 2 | `bundle_id` | 16 bytes, ULID |
 | 3 | `device_id` | 16 bytes |
 | 4 | `device_key_id` | 8 bytes, truncated SHA-256 of the device public key |
@@ -671,18 +780,27 @@ signatures.
 | 20 | `recovery_state` | u8 — 0 clean, 1 recovered tail, 2 salvaged |
 | 21 | `discarded_tail_bytes` | u32 |
 | 22 | `signature_algorithm` | text, `"ed25519"` |
+| 23 | `trip_seq` | u32, optional — ties the capture to the sequence of drives, not just the boot |
+| 24 | `vehicle_id` | 16 bytes — must equal every segment header's |
+| 25 | `assignment_id` | 16 bytes — must equal every segment header's |
+| 26 | `device_counter` | u64 — must equal every segment header's; starts at 1 |
+| 27 | `storage_key_version` | u32 — must equal every segment header's |
+| 28 | `encryption_suite` | text, `"xchacha20poly1305+hkdf-sha256/v1"` |
 
-The signature covers the deterministic CBOR encoding of keys 1–22. It is stored
+Keys 24–28 are **mandatory**. Key 23 is optional and, when present, sorts before
+24, so a manifest has 27 or 28 fields.
+
+The signature covers the deterministic CBOR encoding of every present key. It is stored
 separately in `manifest.sig`, so the signed bytes are exactly the file bytes with
 nothing to strip or re-encode.
 
-`previous_bundle_root` is **populated but not enforced** in v2. It enables
+`previous_bundle_root` is **populated but not enforced** in v3. It enables
 detecting deleted historical bundles later, which is a different threat model
 from detecting corruption within one bundle.
 
 ### 5.2 Identities, and why there are three
 
-The review is right that a content hash makes a poor operational handle. v2
+The review is right that a content hash makes a poor operational handle. v3
 keeps three distinct identifiers with non-overlapping jobs:
 
 | Identifier | Job | Stability |
@@ -712,6 +830,30 @@ Defining identity over members rather than over an archive's bytes keeps it
 independent of archive framing. Hashing a tar stream would make identity depend
 on mtime, uid and padding, so re-packing identical data would produce a
 different identity.
+
+### 5.4 Binding rules
+
+A verifier that has both the manifest and its members must reject the bundle
+unless, for **every** segment header (journal included):
+
+- `device_id`, `boot_id`, `vehicle_id`, `assignment_id`, `device_counter` and
+  `storage_key_version` equal the manifest's. This includes `journal.seg`: a
+  bundle resumed after a reboot keeps the boot, vehicle, assignment and counter
+  it was opened under, in every segment, because the manifest can state only one;
+- for a capture segment, `segment_index` equals the index in its member name
+  (`seg-%08d.seg`), and the capture segments are named contiguously from 0; for
+  `journal.seg`, `segment_index` is the reserved `0xFFFFFFFF`. Without this a
+  segment could be renamed into another position while keeping the inputs to its
+  own key derivation.
+
+The server additionally applies rules that need state (see
+[trust-model-v3.md](trust-model-v3.md) §2): the assignment must be one it issued
+for that device and vehicle and must not have been superseded by a newer
+assignment seen at a lower counter; the counter must not already be bound to
+different content (the same pair is an idempotent duplicate, a different content
+root under a spent counter is **quarantined**); and an escrowed root must exist
+for `storage_key_version`, so the server never accepts what it cannot decode.
+Assignment validity is judged by counter order, **not** the clock (invariant 3).
 
 ---
 
@@ -823,7 +965,9 @@ this one.
 ## 7. Conformance
 
 An implementation is conformant when it passes every vector in
-`fixtures/format-v2/`. The vectors are the executable form of this document.
+`fixtures/format-v3/` (see its README for the **public test keys**). The vectors
+are the executable form of this document. Every segment vector states two
+verdicts: *structural* (no key) and *keyed* (with the vector's root).
 
 | Vector | Asserts |
 |---|---|
@@ -840,8 +984,21 @@ An implementation is conformant when it passes every vector in
 | `gnss-gap` | A gap record is preserved and never interpolated across |
 | `empty-segment` | Header only, zero frames → valid, empty |
 | `max-frame` | `frame_len = 4096` accepted; 4097 rejected |
-| `manifest-determinism` | Same logical manifest encodes to identical bytes across implementations |
+| `manifest-valid` | A valid manifest re-encodes to identical bytes across implementations, and its signature verifies |
 | `manifest-bad-signature` | Flipped signature bit → rejected |
+| `auth-tag-tampered` | Ciphertext bit flipped, CRC repaired → structurally clean, keyed `AUTH_FAILED` |
+| `frame-moved-between-segments` | A valid frame transplanted → structurally clean, keyed `AUTH_FAILED` (AAD binds the segment) |
+| `wrong-vehicle-key` | Key derived for another vehicle → `AUTH_FAILED` |
+| `wrong-key-version` | Provider holds a different version → `KEY_VERSION_MISMATCH`, not tampering |
+| `manifest-segment-header-mismatch` | Manifest and a segment header disagree (§5.4) → rejected |
+| `manifest-members-match` | Manifest and segment headers agree → accepted |
+| `journal-segment` | The journal's reserved `segment_index` and independent chain |
+| `health-bitmap` | The degraded-state bitmap and its unknown bits round-trip |
+| `obd-extended` | `OBD_EXTENDED` fields, sentinels and `fuel_level_pct` decode |
+| `trip-event-types` | Every `TRIP_EVENT` type decodes |
+| `policy-snapshot` | `POLICY_SNAPSHOT` encodes and re-encodes identically |
+| `receipt-valid` | A genuine receipt verifies against the pinned key |
+| `update-descriptor-valid` / `-bad-signature` | A signed update descriptor verifies; a flipped signature is rejected |
 | `merkle-odd-leaves` | Odd leaf count promotes rather than duplicates; root matches the reference |
 | `merkle-empty` | Empty tree root = `SHA256(0x02)` |
 | `content-root-member-order` | Member ordering is by raw name bytes; permuted input yields the same root |

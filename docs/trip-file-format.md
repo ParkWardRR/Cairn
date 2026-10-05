@@ -3,7 +3,7 @@
 > **v1 is dead.** This document describes the v1 trip format and is kept only so
 > the old layout can be recognised. Nothing reads it: there is no v1 read path,
 > no migration and no compatibility requirement, as
-> [Bundle Format v2](bundle-format-v2.md) states. Tools that scan an SD card — including `cairn-tsdb` — ignore the
+> [Bundle Format v2](bundle-format-v3.md) states. Tools that scan an SD card — including `cairn-tsdb` — ignore the
 > card's `trips/` directory and load only sealed v2 bundles from `bundles/`. Do
 > not add a v1 parser.
 

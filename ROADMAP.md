@@ -1,12 +1,16 @@
 # Cairn Roadmap
 
-> **v2 is built, deployed and running on the car's dongle. The work now is
-> turning what it records into answers.** Phases 1–12 (the rebuild) are complete
-> and kept below as the record; Phases 13–18 are what is ahead. The v1 plan is
-> dead and lives in [docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md) —
-> nothing in it is scheduled.
+> **v2 is built, deployed and running on the car's dongle. v3 is the next
+> architecture: encrypted storage, an enrolled iOS client, Tailscale reach and
+> more than one car.** Phases 1–12 (the rebuild) are complete and kept below as
+> the record; Phases 13–18 turn what v2 records into answers; **Phases 19–25 are
+> the v3 trust-and-transport refactor**, designed as one coherent model in
+> [docs/trust-model-v3.md](docs/trust-model-v3.md). The v1 plan is dead and lives
+> in [docs/archive/roadmap-v1.md](docs/archive/roadmap-v1.md) — nothing in it is
+> scheduled. **v2 is now dead too:** v3 breaks the bundle format, the manifest
+> and the one-device-one-car assumption on purpose, with no migration.
 
-Last reviewed 2026-10-03.
+Last reviewed 2026-10-04.
 
 ## Where Cairn is
 
@@ -16,10 +20,21 @@ Last reviewed 2026-10-03.
 | Firmware | **Running on hardware.** Capture → seal → offer → commit → receipt → verified prune; mTLS on 8443; standby with wake-on-motion; secure OTA written, install unexercised |
 | Ingest server | **Deployed** as a hardened systemd unit on the Cairn VM, mutual TLS, receipt-gated |
 | Decode pipeline | **Complete.** Idempotent and reproducible; PostgreSQL/PostGIS derived layer with full boost parity |
-| Engine telemetry | **Recording** boost, MAP, mixture and fuel trims as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
-| Analytical store | **Deployed 2026-10-03.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; 18 bundles load in ~60 ms and every one reproduces (Phase 14) |
-| Web UI | SvelteKit app exists; reads the PostgreSQL layer, not the analytical store (Phase 16) |
+| Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
+| Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
+| Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), reads the analytical store through server-side API proxying to `cairn-tsdb` |
+| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT, with radio handoff between BLE and Wi-Fi |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
+
+### The v3 target
+
+| Layer | Target |
+|---|---|
+| Storage | Every SD frame AEAD-encrypted (XChaCha20-Poly1305, per-frame random nonce, HKDF per-segment keys); the card is a cache of ciphertext, never the security boundary |
+| Identity | Devices: mTLS + Ed25519 manifests + revocation. Apps: P-256 Secure-Enclave keys, signed requests, one-time invitations, revocation |
+| Reach | LAN, plus Tailscale via `tailscale serve` on the host. Tailscale is reachability, not authorization; Funnel is never used |
+| Scope | Vehicles and device assignments are first-class; every bundle is bound to a vehicle, an assignment and a monotonic device counter |
+| Hardware | Flash encryption and secure boot on the dongle, gated behind a proven OTA path and a sacrificial unit |
 
 ## Guiding invariants
 
@@ -43,15 +58,24 @@ Last reviewed 2026-10-03.
 | Firmware | ESP-IDF application with `arduino-esp32` as a component, keeping the vendored FreematicsPlus drivers. Rebuild the application, not the hardware access — this repo already contains one failed custom HAL |
 | Server | Go, in a top-level `server/` directory |
 | Rebuilt | Firmware, ingest server, database schema, bundle format, emulator |
-| Kept | SvelteKit web UI, Odin tools, MoonBit plugins, Gleam orchestrator |
+| Kept | Odin tools, MoonBit plugins, Gleam orchestrator |
+| Replaced | SvelteKit web UI → Nuxt 3 + Vue 3 dashboard (`ui/`) |
 | Stack shape | Core data path is C and Go only; Odin, MoonBit and Gleam remain optional side tooling that must be able to break without affecting a drive |
 | Analytical store | **In-memory DuckDB**, behind a small Go service. Chosen because the data is tiny (hundreds of KB today) and the useful questions are ASOF joins across streams polled at different rates — OBD against boost against GNSS. InfluxDB 3 was rejected as UTC-keyed and, as far as was checked, without ASOF; QuestDB as a JVM that is memory-mapped rather than in-memory, on a 7.3 GB box shared with the runner and ingest stack |
 | Analytical time key | `(boot_id, mono_ms)`, never UTC. UTC rides along as a column |
-| v1 | **Dead.** No reader, no migration, no compatibility. Tools that scan an SD card ignore `trips/` and load only sealed v2 bundles from `bundles/` |
+| v1 | **Dead.** No reader, no migration, no compatibility. Tools that scan an SD card ignore `trips/` and load only sealed bundles from `bundles/` |
+| v2 | **Dead as of 2026-10-04.** Replaced by v3 (format `CRN3`, manifest v3). No v2 reader, no migration; recordings made so far were test data |
+| Storage encryption | Application-layer AEAD per frame, because the ESP32 has no SD encryption hardware. Random nonce per frame (a seq-derived nonce would be reused after a torn-tail rewrite). Server escrows each device's root; the card alone cannot decrypt |
+| App authentication | **Per-request P-256 signatures**, not mTLS: `tailscale serve` terminates TLS, so a client certificate cannot reach Cairn on the Tailnet path. Separate listener from the device's mTLS port |
+| Assignment validity | Judged by the device's monotonic counter, **not** the clock (invariant 3) |
+| Counter reuse | A counter bound to different content is a forgery or a rolled-back device: quarantine, never ingest |
+| Server-side raw data | Stays ciphertext in the CAS; keys live in a wrapped keystore apart from the data directory; destroying a root crypto-shreds every copy including backups |
 
 Target hardware is **classic ESP32** (xtensa LX6, WROVER with PSRAM), not an
-S3. There is no secure element, so flash encryption plus a key in NVS is the
-accepted ceiling for the device signing key.
+S3. There is no secure element, and the eFuse flash-encryption key cannot be
+read or derived from by software, so the root key is a random value in NVS inside
+hardware-encrypted flash — flash encryption protects it by protecting the flash
+it lives in. See [docs/esp32-hardening.md](docs/esp32-hardening.md).
 
 The car: an N20 428i on a BM3 Stage 1 tune, ~E41. For this car fuel trims
 and mixture say more about engine health than boost does, which is why Phase 15
@@ -68,13 +92,27 @@ The recording side. Shipped 2026-10-02/03: boost, mixture and fuel trims as
 ECU actually answers; lambda scale and raw 0x43/0x44 reads corrected; the
 255 kPa MAP ceiling flagged; a fuel-type and ethanol-content probe; GNSS
 reading-freshness reporting; standby windows recorded so parked draw is
-measurable; parked mode silent on the vehicle bus.
+measurable; parked mode silent on the vehicle bus. Since then: fuel level
+(PID 0x2F) added to the capture chain; cold boot cut from ~11 s to ~3 s;
+cross-boot capture continuity via `trip_seq` in the manifest; BLE companion
+for phone GPS reinforcement via NimBLE GATT, with radio handoff between BLE
+and Wi-Fi; GNSS null-island and outlier sanitization at decode.
 
 - [x] Boost, MAP, baro, MAF, lambda, STFT/LTFT recorded and decoded
+- [x] Fuel level (PID 0x2F) recorded and decoded
 - [x] MAP saturation (`MAPSaturated`) surfaced rather than reported as a boost
       reading — a sensor pinned at its ceiling is not a measurement
 - [x] Journal sequence range no longer leaks into the capture's, and the drain
       rate is guarded
+- [x] Cross-boot capture continuity: `trip_seq` in the manifest ties a capture
+      to the sequence of drives, not just the boot
+- [x] Cold boot cut from ~11 s to ~3 s
+- [x] BLE companion — phone GPS reinforcement via NimBLE GATT, passkey-protected,
+      with golden-vector validation, disconnect cleanup, and storage safety;
+      radio handed off between BLE and Wi-Fi (only one 2.4 GHz radio)
+- [x] GNSS sanitization at decode: null-island rows (module reports fix but
+      no coordinates) dropped; outliers filtered from heatmap, places and
+      dashboard
 - [ ] **Establish which PIDs this ECU really answers.** `BOOST_CONTROL` (0x70)
       reports `support=1` yet returns `NO DATA` in the validation-build log, so
       "supported" and "answers" are not the same thing; record the supported set for the
@@ -139,6 +177,13 @@ Nothing is persisted; a restart rebuilds.
       `internal/mtls` package. Loopback stays plain HTTP; non-loopback requires
       `-tls-cert` and `-tls-key` (binary refuses otherwise). Optional `-tls-client-ca`
       for mutual TLS. Systemd unit has a commented mTLS example
+- [x] **Parquet snapshot export.** `GET /snapshot` returns a tar.gz of every table
+      as a Parquet file plus a JSON manifest; also available via
+      `cairn-tsdb -snapshot <path>`. Cached per build; 4 tests covering the
+      handler and the export itself
+- [x] **`cairn-push` CLI** (`server/cmd/cairn-push`) — ingest sealed v2 bundles
+      from an SD card into the server via mTLS, for when the dongle cannot sync
+      on its own
 
 **Persisting the store is deliberately out of scope.** Volatility is the design.
 The trigger to reconsider is a measured one: if a rebuild exceeds ~5 s.
@@ -168,16 +213,25 @@ data whose answer is known in advance.
       MAP-saturation exclusion, pull detection and non-detection, speed ratio,
       no-fix exclusion, drive summary with gaps and warnings
 
-## Phase 16 — Surfacing it — **planned**
+## Phase 16 — Surfacing it — **in progress**
 
-- [ ] SvelteKit reads the store through its own server side, never from the
-      browser, and through **canned endpoints** rather than arbitrary SQL
+The Nuxt 3 + Vue 3 dashboard (`ui/`) replaced the SvelteKit and legacy PWA UIs.
+It reads the analytical store through server-side API routes proxying to
+`cairn-tsdb`, never from the browser directly and never via arbitrary SQL.
+
+- [x] Nuxt 3 app with ECharts, Leaflet, Pinia; talks to `cairn-tsdb` via server
+      API routes
+- [x] Dashboard: trip totals, drive heatmap (CARTO Voyager tiles with dark
+      filter), last trip, device health
+- [x] Trip list with mini route maps; trip detail with speed-coloured route,
+      interactive timeline, GPS health, point inspection, estimated start
+- [x] Boost & Power, Fuel & Tune, Analytics, Behavior, Calibration pages
+- [x] Fuel economy page with MPG estimation and tuning context
+- [x] Places page with GPS acquisition timing
+- [x] Device/system page with health history, decoded bundles, store status
+- [x] GNSS outlier filtering across heatmap, places, dashboard and trip routes
 - [ ] Cards for the Phase 15 views; each shows its sample count and the age
       threshold it applied
-- [ ] Decide which reads move off PostgreSQL. Rule: PostgreSQL keeps what needs
-      PostGIS and durable derived state (trips, geometry); the in-memory store
-      takes aggregate and cross-stream reads. Writes to either remain the
-      decoder's alone
 
 ## Phase 17 — Close out Phase 9 with real traces — **planned**
 
@@ -196,8 +250,232 @@ the analytical store remove the block.
 - [ ] Plugin timeout and storage-full matrix rows (open since Phase 3)
 - [ ] Exercise the OTA install on the device; it has only been verified on the
       host
-- [ ] Decide on flash encryption and secure boot once the hardware is no longer
-      being reflashed weekly — both are irreversible, which is why they are off
+- [x] ~~Decide on flash encryption and secure boot~~ — decided 2026-10-04: **yes,
+      gated.** Moved to Phase 24 with its prerequisites. Both stay off until the
+      OTA path is proven on hardware and a sacrificial unit has been through the
+      whole procedure — they are irreversible
+
+---
+
+# v3 — Trust, transport and vehicle scope (Phases 19–25)
+
+Design: [docs/trust-model-v3.md](docs/trust-model-v3.md). Origin: an external
+architecture review (2026-10-04) of this repository and the iOS companion. It
+asked for one security model across encrypted device storage, authenticated
+multi-transport sync and a vehicle-scoped data model, rather than three
+independent features. Where cross-checking the review against the code found
+something it got wrong, the design says so (classic ESP32 has no software-usable
+eFuse key; `tailscale serve` cannot pass client certificates; the mTLS client key
+currently lives on the SD card, which contradicts the card-is-not-a-boundary
+rule).
+
+Breaking changes are authorised. There is no migration.
+
+## Phase 19 — Vehicles, assignments and the device counter — **server done; derived layers open**
+
+`server/internal/{vehicles,counters,keystore,jsonstore}`, binding in `internal/intake`.
+
+- [x] `vehicles`: vehicle registry (display identity, `engine_code` as a label
+      not an identity, VIN sealed at rest with only the last four readable) and
+      device→vehicle assignments with explicit reassignment; one recorder per
+      vehicle; archived vehicles accept no new work
+- [x] Assignment validity by **counter order, not wall clock**: a bundle under a
+      superseded assignment is refused; a late upload from before the switch is
+      not. Mutation-checked
+- [x] `counters`: per-device monotonic counter bound to `content_root` — same pair
+      is an idempotent duplicate, same counter with different content is a
+      conflict (forgery / cloned or rolled-back device), holes are reported as
+      `Missing` not refused, `Resume` re-bases a re-enrolled device
+- [x] `keystore`: per-device storage-root escrow, wrapped under a master key with
+      device and version bound as AAD, write-once versions, `Destroy` for
+      crypto-shredding; implements the format's `RootKeyResolver`
+- [x] `jsonstore`: one durable, externally-editable JSON document implementation
+      shared by the new registries (atomic write, 0600, change detection so a CLI
+      revocation takes effect without a restart)
+- [x] **Intake binds the manifest** to the registries at offer time — unknown or
+      mismatched assignment → refused (`403`); superseded → refused; no escrowed
+      root for the key version → refused (the server never accepts what it cannot
+      decode); counter reused for different content → **quarantined** (`422`,
+      manifest and signature kept in the CAS for inspection); a gap → accepted
+      with a ledger warning. The counter is bound at **commit**, before the
+      receipt, so an abandoned offer spends nothing and two racing offers cannot
+      both win. Mutation-checked
+- [x] Ledger events `assignment_refused`, `quarantined`, `counter_gap`,
+      `key_missing` (every refusal requires a reason)
+- [x] `cairn-server -enroll` now requires `-enroll-root` and escrows it, returns
+      the counter floor, and `cairn-admin` manages vehicles and assignments
+- [ ] `vehicle_id` through the derived layers: decode → PostgreSQL migration
+      (`vehicle_id` on every normalized and derived row, in every key), tsdb
+      tables and views, Parquet snapshot (so the app can filter by car), and a
+      vehicle selector in the Nuxt UI. Every analysis view is per-vehicle: fuel
+      trims and boost curves from an N20 must never blend with a B58's. Until
+      this lands, the app's snapshot endpoint is limited to all-vehicles clients
+- [ ] Seed the two vehicles on the VM (`cairn-admin vehicle add …`): the N20 428i
+      and `2017 BMW M240i — B58`
+- [ ] Emulator matrix rows for the device side of these properties (counter
+      persistence across power cut, restored card, device moved between cars)
+
+## Phase 20 — App identity and the sync API — **server done; follow-ups open**
+
+`server/internal/{clients,syncapi,audit}`, `server/cmd/{cairn-admin,cairn-server}`,
+[docs/app-sync-protocol.md](docs/app-sync-protocol.md). 27 test functions, with the
+security-critical ones mutation-checked (replay cache, signature check, timestamp
+window, revoked-client check, scope filter, Funnel refusal, bearer-on-admin,
+admin check).
+
+- [x] One-time invitations (hash-at-rest, 10-minute TTL, single use) and app
+      enrolment with proof of possession; a bad proof does not burn the code;
+      P-256 so the key can live in the Secure Enclave
+- [x] Per-request signature authentication (±120 s window, nonce cache, body hash
+      in the signed string, uniform 401) and 1-hour bearer tokens for background
+      `URLSession` uploads, re-checked against the registry on every use so
+      revocation kills them
+- [x] Transport classification (`loopback` / `lan` / `tailnet`); Tailscale Serve
+      identity headers honoured **only** from loopback and only with
+      `-trust-tailscale-serve`; Funnel-marked requests rejected; optional
+      tailnet-identity allow-list
+- [x] `POST /v1/sync/push`, `GET /v1/sync/pull`, `POST /v1/sync/ack`; durable
+      append-only log with torn-tail recovery; server-assigned ordering;
+      idempotency by operation id and key; per-field revisions with conflict
+      results; opaque, repeatable cursor with a reset epoch (`410`)
+- [x] `GET /v1/health` for local-first / Tailnet-fallback probing
+- [x] Admin revocation: `POST /v1/devices/{id}/revoke`, `/v1/clients/{id}/revoke`
+- [x] Append-only audit log; a test greps it for payload markers, coordinates,
+      tokens, signatures, public keys and the VIN
+- [x] Separate app listener (`-app-addr`); plain HTTP only on loopback
+- [x] `GET /v1/snapshot`: authenticated proxy of the loopback `cairn-tsdb`
+      snapshot, all-vehicles clients only
+- [x] Published, test-pinned vectors for the signing string and canonical-JSON
+      content hash, for the iOS client
+- [x] `cairn-admin`: vehicles, assignments, counters, invitations, client
+      revocation
+- [ ] Decode worker publishes `trip_summary` entities into the sync log so the
+      app can pull trips (the publish API exists and is tested)
+- [ ] Deploy on the VM and exercise end to end from a real phone over both the
+      LAN and the Tailnet
+- [ ] `cairn-admin device enrol` with the sealed-root enrolment blob (the device
+      side is Phase 22); today `cairn-server -enroll -enroll-root` is the path
+
+## Phase 21 — Bundle format v3: encrypted segments — **done on the host; hardware round trip open**
+
+[docs/bundle-format-v3.md](docs/bundle-format-v3.md), `server/format`,
+`fixtures/format-v3/` (33 deterministic vectors, regenerate-to-empty-diff
+verified).
+
+- [x] `CRN3` segment header (128 bytes) carrying `vehicle_id`, `assignment_id`,
+      `storage_key_version`, `device_counter`
+- [x] Every frame AEAD-encrypted; CRC chain and Merkle root over **ciphertext**, so
+      structure, torn tails and integrity verify without a key
+- [x] XChaCha20-Poly1305, random 24-byte nonce per frame; AAD binds the frame
+      header and the segment header
+- [x] HKDF-SHA256 per-segment keys, salted with `vehicle_id`
+- [x] Manifest v3: vehicle, assignment, counter, key version, suite
+- [x] Conformance vectors incl. auth-tag tamper, frame transplant, wrong vehicle,
+      wrong key version, manifest/segment-header mismatch; every segment vector
+      states a structural verdict (no key) and a keyed verdict
+- [x] Decode, `cairn-tsdb`, `cairn-worker` and `cairn-verify` read v3 through a
+      `KeyProvider`; golden decode digests re-pinned (inputs changed, row counts
+      did not)
+- [x] Go v2 code and `fixtures/format-v2` removed; CI paths moved to v3
+- [x] **Rust emulator port**: 33/33 vectors (23 structural + 22 keyed
+      verdicts), 36 unit tests, fault matrix 20/20 including the four new rows
+      (torn tail under encryption, card restored to an older image, wrong-key
+      card, counter across a power cut mid-seal) and all 20 against a live v3
+      server. 11 mutations each caught
+- [x] **C firmware port**: new `cf_aead.c` (HChaCha20 / XChaCha20-Poly1305) and
+      `cf_hkdf.c`; 33/33 vectors, 9/9 primitive known answers, the device
+      re-seals every decrypted vector frame to the vector's exact bytes; fault
+      matrix 41/41 with seven new rows; clean under ASan/UBSan; `pio run -e cairn`
+      builds (1,143,904 B, 64.3% of the A slot). 8 mutations each caught
+- [x] Spec reconciled with all three implementations (OBD_EXTENDED byte 22,
+      `boot_id` on the journal, segment-index rules, `header_len`, §7 vector list)
+- [x] CI: vectors path, the protocol rows and the crash-during-commit script
+      enrol a device with its escrowed root, a vehicle and an assignment
+- [x] The "adaptive rates are never slower during a trip" row had been failing
+      since the nominal GNSS period and IMU window were tuned to 200 / 100 ms —
+      exactly the policy's hardware floors, leaving EVENT no headroom over CRUISE
+      on those axes. The row was stale, not the policy: the floors are now
+      exported (`CAIRN_FLOOR_*`) and the row asserts never-below-floor, strictly
+      finer wherever there is headroom, and that at least one axis has some
+      (mutation-checked both ways). Plain `make` runs through to the BLE and
+      mtprobe suites again
+- [ ] Hardware round trip: capture → seal → upload → decode with encryption on
+- [x] The firmware host Makefile now tracks every header as a dependency, so a
+      stale `build/` can no longer mask or fake a result
+
+## Phase 22 — Firmware: keys, counter, assignment, secrets off the card — **in progress (host-tested, not on hardware)**
+
+- [x] `K_root` generated on first boot with the hardware RNG (`esp_fill_random`), stored in NVS — built and host-tested, not run on hardware
+- [ ] Enrolment blob: public key + `K_root` sealed to the server's enrolment key,
+      signed for proof of possession; `cairn-admin device enroll`
+- [x] Device bundle counter in NVS (not on the card). It is **reserved and made
+      durable before the first segment header exists** (the counter is in every
+      header and authenticated into every frame, so it cannot wait until seal) and
+      committed again before the manifest is signed; a bundle that never seals
+      leaves a gap the server reports, never a reused counter. Built and
+      host-tested
+- [ ] Resume above the server's counter floor after re-enrolment (the floor is
+      returned by `cairn-server -enroll`; the device does not read it yet)
+- [ ] Assignment push over the trusted connection; segments carry the assigned
+      `vehicle_id` / `assignment_id`
+- [ ] **mTLS client key moved from the SD card to encrypted NVS**
+- [ ] Wi-Fi credentials provisioned into encrypted NVS instead of compiled in
+- [x] Encrypted append path integrated into capture/seal/prune; recovery scan
+      works key-free and never deletes anything because of an authentication
+      failure. A resumed bundle keeps the boot, vehicle, assignment and counter
+      from its own headers; with no assignment the device logs `UNASSIGNED` and binds
+      to zero ids, which the server refuses (the right failure direction)
+- [ ] BLE: enrolled-app challenge–response at session start, per-session write
+      counter, device fingerprint exposed for the app to verify
+- [x] Host fault matrix rows for encrypted append, torn tail under encryption,
+      wrong-key card, counter persistence across power cut
+- [ ] On-hardware: capture → seal → upload → decode round trip with encryption on
+
+## Phase 23 — Tailscale and deployment hardening — **planned**
+
+[docs/tailscale-deployment.md](docs/tailscale-deployment.md).
+
+- [ ] `tailscaled` on the VM host, tagged `tag:cairn-server`, ACL limited to the
+      owner's phone and the app port, Funnel off, no subnet router, device
+      approval on
+- [ ] `tailscale serve` fronting the loopback app listener; verified unreachable
+      from outside the Tailnet and unauthenticated calls refused
+- [ ] Keystore master key moved out of the backed-up data directory
+      (systemd credential or separate mount); backup restore tested
+- [ ] systemd unit hardening for the app listener; rootless Podman and
+      read-only rootfs where the Compose stack allows
+- [ ] MQTT scoped by device and vehicle; no database port published
+
+## Phase 24 — ESP32 chip hardening — **planned, gated**
+
+[docs/esp32-hardening.md](docs/esp32-hardening.md). Irreversible steps; do not
+start until each prerequisite below is checked.
+
+- [ ] Prerequisite: OTA install, rollback and power-loss-during-update exercised on
+      hardware
+- [ ] Prerequisite: build migrated to `framework = arduino, espidf` with a
+      checked-in `sdkconfig.defaults`
+- [ ] Prerequisite: chip revision read off the real units (secure boot V1 vs V2)
+- [ ] Sacrificial ONE+: secure boot + flash encryption in development mode, full
+      verification checklist
+- [ ] Release mode on the spare, then the car's unit; JTAG and UART ROM download
+      disabled; signing key backed up offline
+- [ ] Signed-OTA-only update path confirmed in the field
+
+## Phase 25 — iOS companion adoption — **issues filed 2026-10-05**
+
+Tracked in the companion repository
+([ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble)):
+tracking issue [#13](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/issues/13)
+and work items #1–#12, each filed against the contracts in this repo
+([app-sync-protocol](docs/app-sync-protocol.md) carries the published test vectors). The BLE
+authentication item (#9) is blocked on Phase 22.
+
+- [ ] Replace the unauthenticated snapshot URL with an enrolled client
+- [ ] Vehicle model and selected-vehicle state
+- [ ] Encrypted local store, durable outbox, `SyncEngine`
+- [ ] Local-first / Tailnet-fallback endpoint selection
+- [ ] BLE session authentication against the new firmware
 
 ## Deferred deliberately
 
@@ -242,7 +520,7 @@ against the fault matrix.
 
 ### Phase 1 — Bundle format v2 — **complete**
 
-- [x] `docs/bundle-format-v2.md` as a normative spec with byte layouts
+- [x] `docs/bundle-format-v2.md` (since superseded by [bundle-format-v3.md](docs/bundle-format-v3.md)) as a normative spec with byte layouts
 - [x] Go reference implementation (`server/format/`): encode, decode, verify, recover
 - [x] Framed records: `boot_id`, monotonic `seq`, CRC-32, `prev_crc32` chain
 - [x] Deterministic-CBOR manifest, Ed25519-signed over a specified encoding

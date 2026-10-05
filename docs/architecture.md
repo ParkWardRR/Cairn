@@ -1,145 +1,121 @@
 # Architecture
 
-## Overview
+Cairn is an offline-first car journal: an **in-vehicle recorder** that works with
+no network, a **homelab server** that receives, verifies and stores what it
+records, and an **iOS companion** that is both the dongle's GPS assist and a
+first-class client of the server. No cloud account is involved at any point.
 
-Cairn is a two-part system: an **in-vehicle device** that records driving data offline, and a **homelab server** that receives, validates, stores, and presents that data. The two halves communicate exclusively over the home LAN — no cloud, no cellular, no internet required.
+The trust model that ties these together is in
+[trust-model-v3.md](trust-model-v3.md); this page is the component map.
 
-## System Diagram
+## System
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ Car                                                                │
-│                                                                    │
-│ Freematics ONE+ Model B                                            │
-│  ESP32 + GNSS + IMU + microSD + Wi-Fi                              │
-│                                                                    │
-│  [drive]  GNSS / IMU → append-only encrypted local trip spool     │
-│  [park]   finalize bundle → sleep / periodic trusted-SSID check   │
-│  [home]   join home Wi-Fi → mTLS HTTPS upload → verify ACK        │
-│  [done]   retain until server receipt is durable → prune safely    │
-└──────────────────────────────┬─────────────────────────────────────┘
-                               │ LAN only; no Internet required
-                               ▼
-┌────────────────────────────────────────────────────────────────────┐
-│ Homelab                                                             │
-│                                                                    │
-│ Zig ingestion service                                               │
-│  ├─ mTLS / device identity                                         │
-│  ├─ resumable, idempotent bundle receiver                          │
-│  ├─ signature/hash validation                                      │
-│  └─ raw-object persistence                                         │
-│                                                                    │
-│ PostgreSQL + PostGIS                                                │
-│  ├─ raw GNSS samples                                               │
-│  ├─ normalized trips                                               │
-│  ├─ derived stops / parking locations                              │
-│  └─ tags / places / exports                                        │
-│                                                                    │
-│ Gleam trip-event service                                            │
-│  ├─ trip state transitions                                         │
-│  ├─ jobs, retries, event semantics                                 │
-│  └─ notification/automation policy                                 │
-│                                                                    │
-│ MoonBit plugin sandbox                                              │
-│  ├─ route scoring                                                  │
-│  ├─ trip classification                                            │
-│  └─ import/export transforms                                       │
-│                                                                    │
-│ Zig web/API service + PWA                                           │
-│  └─ Trip history, map, labels, places, export                     │
-│                                                                    │
-│ Optional: MQTT → Home Assistant                                    │
-└────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+  subgraph Car
+    D["Freematics ONE+ (ESP32)<br/>GNSS · IMU · OBD · microSD<br/>encrypted append-only segments"]
+  end
+  P["iPhone<br/>Cairn Companion"]
+  subgraph Host["Homelab host"]
+    TS["tailscaled<br/>(+ tailscale serve)"]
+    I["cairn-server<br/>:8443 device ingest (mTLS)"]
+    A["cairn-server<br/>:8444 app API · 127.0.0.1:8445"]
+    CAS[("CAS · ciphertext bundles")]
+    KS[("keystore · wrapped roots")]
+    W["cairn-worker<br/>decode"]
+    TSDB["cairn-tsdb<br/>in-memory DuckDB"]
+    UI["Nuxt UI"]
+  end
+  D -- "BLE: GPS assist, diagnostics" --- P
+  D -- "home Wi-Fi · mTLS" --> I
+  P -- "LAN · signed requests" --> A
+  P -- "Tailnet" --> TS --> A
+  I --> CAS
+  I -. escrowed roots .-> KS
+  CAS --> W --> PG[("PostgreSQL / PostGIS")]
+  CAS --> TSDB --> UI
+  KS -. decrypt .-> W
+  KS -. decrypt .-> TSDB
+  A --- AS[("sync log · audit")]
 ```
 
-## Core Rule
+## Core rules
 
-**The device must never require the server to complete a drive.** Every trip has a valid local representation on the microSD before any Wi-Fi transfer occurs.
+1. **The device never needs the server to complete a drive.** Every trip is a
+   valid, sealed, recoverable bundle on the card before any network exists.
+2. **The card is never the security boundary.** It holds ciphertext only; trust
+   roots live in device-held keys, the server's keystore and revocable
+   identities.
+3. **Everything uploaded is untrusted until it verifies**: signature, vehicle
+   assignment, counter and integrity chain.
+4. Raw, sealed bundles are authoritative; everything derived is disposable and
+   must prove it reproduces (ROADMAP invariants 1–5).
 
-## Component Responsibilities
+## Components
 
-### Device (Freematics ONE+ Model B)
+### Device — Freematics ONE+ Model B (`firmware/cairn-v2`)
 
-| Function | Responsibility |
-|----------|---------------|
-| Position | GNSS sample capture with fix/accuracy data |
-| Motion | IMU sampling, including low-power motion wake |
-| Drive detection | Lightweight state machine using GNSS speed and motion |
-| Time | GNSS-derived UTC when available; monotonic counter always |
-| Persistence | Append-only microSD records with periodic checkpoint |
-| Network | Home Wi-Fi only; no LTE initialization |
-| Sync | Upload finalized bundles with resume and receipt |
-| Power | Aggressively disable unused peripherals; sleep outside active/sync |
-| Status | Compact local status endpoint or serial diagnostics |
-| Updates | USB/serial in v1; signed local OTA after core proven |
+Classic ESP32 WROVER. Captures GNSS, IMU and OBD into append-only,
+CRC-chained, **AEAD-encrypted** segments; seals them into Ed25519-signed
+bundles; syncs over mTLS on home Wi-Fi; prunes a bundle only after verifying a
+signed server receipt. A BLE companion service accepts phone GNSS fixes. No
+LTE. Tailscale does not run here.
 
-### Zig Ingest Service (`ingestd`)
+### Server (`server/`, Go)
 
-Receives trip bundles from devices over mTLS. Validates signatures and content hashes. Stores raw immutable bundles and inserts normalized data into PostgreSQL/PostGIS. Issues durable receipts that the device uses to confirm successful storage.
+| Package | Role |
+|---|---|
+| `format` | Bundle format (frames, segments, manifest, Merkle, receipts, update descriptors) — the reference implementation; C firmware and Rust emulator must agree byte-for-byte |
+| `internal/devices` | Enrolment, signing key, revocation (effective immediately) |
+| `internal/vehicles` | Vehicles and device→vehicle assignments |
+| `internal/counters` | Per-device monotonic counter bound to content; replay/rollback detection |
+| `internal/keystore` | Escrowed per-device storage roots, wrapped; crypto-shredding |
+| `internal/intake` | Manifest-first, hash-addressed, resumable upload; issues signed receipts |
+| `internal/cas`, `outbox`, `ledger`, `receipts` | Raw store, decode queue, lifecycle audit, receipt signing |
+| `internal/clients`, `syncapi`, `audit` | Enrolled app identities, sync protocol, audit trail |
+| `internal/decode`, `store`, `worker` | Idempotent, reproducible decode into PostgreSQL/PostGIS |
+| `internal/tsdb`, `cmd/cairn-tsdb` | In-memory DuckDB analytical view, rebuilt from the CAS and card on every start |
+| `cmd/cairn-admin` | Vehicles, assignments, invitations, client revocation |
+| `cmd/cairn-verify`, `cairn-ledger`, `cairn-push`, `cairn-signfw` | Verifier, ledger reader, SD-to-server pusher, offline firmware signing |
 
-### Zig API Service (`api`)
+### UI (`ui/`, Nuxt 3)
 
-Read-only JSON API serving trip data, places, route geometry, tags, and exports. Powers the local PWA. Uses PostGIS for spatial queries (nearest place, distance, geofencing).
+Reads the analytical store through server-side routes proxying to `cairn-tsdb`;
+never SQL from the browser.
 
-### Gleam Trip Orchestrator
+### iOS companion (separate repository)
 
-Consumes persisted events from the database (not the raw sensor stream). Manages durable workflows: trip lifecycle projection, reprocessing on algorithm updates, automation execution, notification policy, and data-quality flagging. Runs under OTP supervision for fault tolerance.
+BLE GPS assist plus, in v3, an enrolled server client with an encrypted local
+store, a durable outbox and local-first/Tailnet-fallback sync. See ROADMAP
+Phase 25.
 
-### MoonBit Plugin Sandbox
+### Side tooling (optional, must not affect a drive)
 
-Runs user-defined or experimental enrichments in a WASM sandbox. Plugins receive structured input and return structured output. No database, network, or filesystem access. The host validates all results and records plugin version/hash for reproducibility.
+Gleam trip orchestrator, MoonBit plugins (WASM, no I/O), Odin desktop tools,
+Rust emulator and fault-injection harness.
 
-### Odin Native Tools
+## Data flow
 
-Standalone desktop utilities for inspecting, diffing, replaying, and analyzing trip data. Not part of the server's operational path.
-
-### Mojo Experimental Lane
-
-Offline trajectory analysis experiments (route clustering, map matching, anomaly detection). Outputs are proposals, not authoritative decisions. No production dependency.
-
-## Data Flow
-
-```
-Device microSD ──► finalized bundle
-                       │
-              home Wi-Fi detected
-                       │
-                       ▼
-              mTLS upload to ingestd
-                       │
-              ┌────────┼────────┐
-              ▼        ▼        ▼
-         raw bundle  PostgreSQL  receipt
-         (object     (normalized  (back to
-          store)      samples)    device)
-                       │
-                       ▼
-              API service + PWA
-              Gleam orchestrator
-              MoonBit plugins
-              MQTT → Home Assistant
+```text
+capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, key version)
+   → offer (mTLS) → chunks by hash → commit → signed receipt → verified prune
+        ↓
+   CAS (ciphertext) → decode with escrowed key → PostgreSQL / DuckDB → UI, app sync
 ```
 
-## Technology Boundary Rules
+## Listeners
 
-| Technology | Use For | Do Not Use For |
-|-----------|---------|---------------|
-| **Zig** | Device tools, parsers, binary format, ingest, API, CLI | Full UI, distributed workflow experimentation |
-| **Gleam** | Background processing, job state machines, retry, events | ESP32 firmware, hot telemetry loop |
-| **MoonBit** | WASM plugins: classify, redact, transform, score | Firmware, core auth, database access |
-| **Odin** | Desktop tools: inspect, diff, replay, heatmap | Always-on backend, embedded core |
-| **Mojo** | Experimental analysis: clustering, matching, ML | Required ingestion, production correctness |
-| **Arduino/C++** | Freematics firmware hardware enablement | Homelab services |
+| Listener | Auth | Audience |
+|---|---|---|
+| `:8443` device ingest | mTLS required at handshake | dongles |
+| `:8444` app API | server TLS; signed requests | iOS app on LAN |
+| `127.0.0.1:8445` app API | loopback HTTP; signed requests; Tailscale Serve headers trusted only from loopback | iOS app over the Tailnet |
+| `127.0.0.1:8480` cairn-tsdb | loopback | UI server |
+
+Remote access is **Tailscale only**, on the host, never Funnel, never port
+forwarding. See [tailscale-deployment.md](tailscale-deployment.md).
 
 ## Deployment
 
-The homelab stack runs via Docker Compose:
-
-- PostgreSQL + PostGIS
-- Zig ingest service
-- Zig API service
-- Caddy reverse proxy (TLS termination, mDNS)
-- Gleam orchestrator (after Phase 6)
-- MQTT broker (for Home Assistant events)
-
-All services are LAN-only. No port forwarding. Remote access through VPN only.
+systemd units on the VM (`deploy/systemd`) and a Compose/Podman stack
+(`deploy/`) for PostgreSQL, Caddy and Mosquitto. See [deploying.md](deploying.md).

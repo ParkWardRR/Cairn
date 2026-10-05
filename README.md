@@ -9,12 +9,12 @@
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
   <a href="https://github.com/ParkWardRR/Cairn/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0_tools-8E44AD?style=flat-square" alt="Release v0.1.0"></a>
-  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phases_1–11_Complete-2ECC71?style=flat-square" alt="Project Status"></a>
+  <a href="ROADMAP.md"><img src="https://img.shields.io/badge/status-Phases_1–15_Complete-2ECC71?style=flat-square" alt="Project Status"></a>
   <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/SvelteKit-FF3E00?style=flat-square&logo=svelte&logoColor=white" alt="SvelteKit">
+  <img src="https://img.shields.io/badge/Nuxt_3-00DC82?style=flat-square&logo=nuxt&logoColor=white" alt="Nuxt 3">
   <img src="https://img.shields.io/badge/Zig-F7A41D?style=flat-square&logo=zig&logoColor=white" alt="Zig">
   <img src="https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/Rust-000000?style=flat-square&logo=rust&logoColor=white" alt="Rust">
@@ -24,6 +24,7 @@
   <img src="https://img.shields.io/badge/ESP32-E7352C?style=flat-square&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/PostGIS-4CAF50?style=flat-square" alt="PostGIS">
+  <img src="https://img.shields.io/badge/DuckDB-FFF000?style=flat-square&logo=duckdb&logoColor=black" alt="DuckDB">
 </p>
 
 <p align="center">
@@ -44,7 +45,7 @@
 
 ## Screenshots
 
-The web UI (`ui/`) running against **invented data**: a fictional owner in Carmel-by-the-Sea, Monterey County, California, and two weeks of errands, beach and Mission runs, Point Lobos, Pebble Beach and Carmel Valley Road, all within a few miles of home. The roads are real; the drives, car and device are not. Nothing here comes from a real capture.
+The Nuxt 3 dashboard (`ui/`) running against **invented data**: a fictional owner in Carmel-by-the-Sea, Monterey County, California, and two weeks of errands, beach and Mission runs, Point Lobos, Pebble Beach and Carmel Valley Road, all within a few miles of home. The roads are real; the drives, car and device are not. Nothing here comes from a real capture.
 
 <table>
   <tr>
@@ -76,27 +77,55 @@ The data comes from `server/cmd/cairn-tsdb-demo`, which builds the production ts
 
 ```bash
 cd server && go run ./cmd/cairn-tsdb-demo        # synthetic store on 127.0.0.1:8480
-cd ui && npx nuxt dev --port 3123                # in a second terminal
-cd ui && node scripts/screenshots.mjs http://localhost:3123 ../docs/screenshots
+cd ui && npx nuxt dev                            # in a second terminal
+cd ui && node scripts/screenshots.mjs http://localhost:3000 ../docs/screenshots
 ```
 
-The shots are taken in day mode. Put a CARTO key in `ui/.env` (`NUXT_PUBLIC_CARTO_KEY=...`, gitignored) so the maps use CARTO's Voyager tiles; without one the capture script falls back to OpenStreetMap tiles. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, basemap © CARTO.
+Put a CARTO key in `ui/.env` (`NUXT_PUBLIC_CARTO_KEY=...`, gitignored) so the maps use CARTO's Voyager tiles; without one the capture script falls back to OpenStreetMap tiles. Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, basemap © CARTO.
 
 </details>
 
 ---
 
+## Next: v3 — encrypted, enrolled, multi-vehicle
+
+Started 2026-10-05, breaking by design (no migration, v2 recordings were test
+data). One trust model instead of three features:
+
+- **Encrypted storage.** Every frame on the SD card is sealed with
+  XChaCha20-Poly1305 under keys derived per segment and per vehicle. The card
+  alone is ciphertext; torn tails, CRCs, the chain and the Merkle root still
+  verify without a key. ([Format v3](docs/bundle-format-v3.md))
+- **An enrolled iPhone.** The app is its own client with a Secure-Enclave key and
+  signed requests, reachable on the LAN or over **Tailscale** (reachability, not
+  authorisation; never Funnel). ([Protocol](docs/app-sync-protocol.md),
+  [Tailscale setup](docs/tailscale-deployment.md))
+- **More than one car.** Vehicles and device assignments are first-class; every
+  bundle carries its vehicle, assignment and a monotonic device counter, so a
+  restored card or a cloned dongle is caught. A 2017 M240i (B58) joins the N20.
+
+**Status:** the server side is done and tested (vehicles, counters, escrowed
+keys, intake binding, the app API, `cairn-admin`, format v3 Go reference with
+33 conformance vectors). **Not done:** the Rust emulator and C firmware ports of
+format v3, the device-side key handling, and the ESP32 secure boot / flash
+encryption step. Full design: [docs/trust-model-v3.md](docs/trust-model-v3.md);
+plan: [ROADMAP.md](ROADMAP.md) Phases 19–25.
+
+---
+
 ## Status: v2 running on real hardware
 
-The v2 rebuild (Phases 1–12) is built, with Phase 9's tuning items still open, and as of **2026-10-01** the whole loop has
-run end to end on the actual dongle: capture → seal → offer → commit → receipt
-issued → receipt verified against the pinned key → prune, with the server ledger
-reporting **0 refusals or failures**. See [ROADMAP.md](ROADMAP.md) for what is done and what is
-ahead (engine telemetry, the in-memory analytical store, analysis views) and [docs/deploying.md](docs/deploying.md) for what is deployed.
+The v2 rebuild (Phases 1–15) is built and deployed. As of **2026-10-01** the
+whole loop has run end to end on the actual dongle — capture → seal → offer →
+commit → receipt issued → receipt verified against the pinned key → prune — with
+the server ledger reporting **0 refusals or failures**. The analytical store,
+analysis views, BLE companion, and the Nuxt 3 dashboard have shipped since. See
+[ROADMAP.md](ROADMAP.md) for what is done and what is ahead, and
+[docs/deploying.md](docs/deploying.md) for what is deployed.
 
 What is verified:
 
-- the [bundle format v2 specification](docs/bundle-format-v2.md), with **three
+- the [bundle format specification](docs/bundle-format-v3.md), with **three
   independent implementations** — Go, Rust and the firmware's portable C — that
   agree byte-for-byte across **25** committed conformance vectors;
 - the **v2 ingest server** (`server/`), running as a hardened systemd unit with
@@ -109,6 +138,11 @@ What is verified:
   three-layer schema with partitioned sample tables, an idempotent and
   reproducible decoder, derived trips and semantic MQTT, verified against real
   PostGIS and a real broker;
+- the **in-memory analytical store** (`server/internal/tsdb`, `cmd/cairn-tsdb`)
+  — DuckDB rebuilt from the CAS and the SD card, reproducibility-gated, with
+  Parquet snapshot export;
+- the **BLE companion** — phone GPS reinforcement via NimBLE GATT, radio
+  handoff between BLE and Wi-Fi, golden-vector validated;
 - the local CLI tooling and the web UI.
 
 ### What first contact with hardware actually found
@@ -218,9 +252,16 @@ No phone. No cloud. No cellular. No subscription. An append-only record of your 
 │  raw / normalized                            semantic events only   │
 │  / derived                                                          │
 │      │               Optional edges: Gleam, WASM plugins —          │
-│      ▼               these may fail freely without affecting        │
-│  API + SvelteKit     a drive or a receipt                           │
-│  ledger · maps                                                      │
+│      │               these may fail freely without affecting        │
+│      │               a drive or a receipt                           │
+│      │                                                              │
+│      │   In-memory analytical store (DuckDB)                        │
+│      │   CAS + SD card → decode twice → reproducibility gate        │
+│      │   cairn-tsdb on :8480 · Parquet snapshot export              │
+│      │               │                                              │
+│      └───────┬───────┘                                              │
+│              ▼                                                      │
+│  Nuxt 3 dashboard · ledger · maps                                   │
 │                                                                     │
 │  Local tools: Odin trip-inspector, trip-diff, trip-replay,         │
 │               route-density, sd-recover                             │
@@ -235,8 +276,8 @@ decoder job never implies a failed upload, and a plugin failure is a recorded
 result rather than a reason to reject a valid bundle.
 
 The v1 path — synchronous parse-and-insert on the upload request, plain HTTP,
-time-based pruning — has been replaced: all eleven v2 phases are complete per
-[ROADMAP.md](ROADMAP.md). The firmware has not yet run on hardware.
+time-based pruning — has been replaced. The v2 rebuild is complete and running
+on hardware per [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -246,14 +287,14 @@ time-based pruning — has been replaced: all eleven v2 phases are complete per
 
 The foundation of the v2 rebuild. Three implementations — firmware (C), server
 (Go) and emulator (Rust) — must agree byte-for-byte, so the format ships as a
-[normative specification](docs/bundle-format-v2.md) with a reference
+[normative specification](docs/bundle-format-v3.md) with a reference
 implementation and committed conformance vectors rather than prose.
 
 | Component | Details |
 |---|---|
-| **Spec** | [`docs/bundle-format-v2.md`](docs/bundle-format-v2.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
+| **Spec** | [`docs/bundle-format-v3.md`](docs/bundle-format-v3.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
 | **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
-| **Vectors** | `fixtures/format-v2/` — 25 vectors with machine-readable verdicts, generated deterministically by `server/cmd/mkvectors`. Go and C run all 25; Rust runs 22 and reports the 3 it skips rather than hiding them |
+| **Vectors** | `fixtures/format-v3/` — 33 vectors with machine-readable structural and keyed verdicts, generated deterministically by `server/cmd/mkvectors`. Go, Rust and C all run all 33 |
 
 ### v2 Device Firmware (`firmware/cairn-v2/`)
 
@@ -272,6 +313,7 @@ members, and **deletes nothing without a locally verified signed receipt**.
 | `src/lifecycle.cpp` | Four independent regions — capture, bundle, connectivity, health — each transitioning on its own evidence and journalling the policy version in force |
 | `src/sensor_task.cpp` | Sensing on its own core, reporting facts. One controller owns all state and is the only thing that touches the card |
 | `src/preroll.c` | 45 s pre-trip ring, so the start of a drive is not lost to the start dwell |
+| `src/ble_companion.cpp` | Phone GPS reinforcement via NimBLE GATT, passkey-protected, with radio handoff between BLE and Wi-Fi |
 
 Three details carry most of the correctness weight. The recovery scan is
 *streaming*, so a segment larger than DRAM is recoverable and the buffer-based
@@ -285,9 +327,10 @@ interrupts seals against exactly the code the device runs. It is
 mutation-checked: deleting the receipt signature check fails two rows, skipping
 the torn-tail truncation fails three.
 
-> Not yet run on hardware. See
-> [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
-> procedure.
+Running on hardware since 2026-10-01. Cold boot is ~3 s. See
+[docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
+procedure and [docs/flashing-and-testing.md](docs/flashing-and-testing.md) for
+bugs found and fixed.
 
 ### v2 Ingest Server (`server/`)
 
@@ -312,6 +355,7 @@ fail an upload.
 | `cmd/cairn-signfw` | Signs firmware images offline with the update key, which deliberately never lives on the server |
 | `internal/ledger` | Append-only lifecycle record. On disk, not in PostgreSQL, so the audit trail cannot give ingest a database dependency |
 | `cmd/cairn-verify` | Verifies bundles straight off an SD card with no server — separates "did the firmware record this correctly" from "did the upload work", which look identical in the device's own logs |
+| `cmd/cairn-push` | Ingests sealed v2 bundles from an SD card into the server via mTLS, for when the dongle cannot sync on its own |
 
 Two properties make the transfer protocol crash-safe with no bookkeeping: the
 set of missing chunks is **derived** from the raw store rather than tracked, so
@@ -377,6 +421,7 @@ Two properties define the decoder, and both are tested rather than asserted:
 |---|---|
 | **Idempotent** | One transaction that deletes the bundle's rows before reinserting. Re-decoding four times leaves identical row counts |
 | **Reproducible** | `derived.decode_runs.output_digest` hashes the output; 20 consecutive decodes give an identical digest. A decoder upgrade is a second row at a higher version, so comparing digests shows exactly which bundles a change altered |
+| **Sanitized** | GNSS null-island rows (module reports fix but no coordinates) are dropped at decode; outliers filtered from UI views |
 
 That second property is what makes a decoder bug tractable: fix it, re-derive
 everything from raw, and no device re-uploads a byte.
@@ -446,12 +491,17 @@ cairn-tsdb -data /var/lib/cairn -sd /var/lib/cairn-tsdb/sd -addr 127.0.0.1:8480
 curl -X POST localhost:8480/query -d 'SELECT count(*) FROM obd'
 curl -X POST localhost:8480/reload   # rebuild from the CAS and the card
 curl localhost:8480/metrics          # Prometheus text: bundles, reproduced, problems, rows
+curl localhost:8480/snapshot -o snapshot.tar.gz   # Parquet export of every table
 
 # -watch 5s rebuilds on its own when a receipt or a card bundle appears. A rebuild
 # that fails or does not reproduce leaves the previous store serving.
 
 # Mirror a card to the host and rebuild; additive, so pruned bundles are kept
 deploy/tsdb-mirror.sh user@cairn.example.lan /Volumes/CAIRN/cairn
+
+# Push bundles from an SD card into the server via mTLS
+cairn-push -server https://cairn.example.lan:8443 \
+  -ca ca.crt -cert device.crt -key device.key /Volumes/CAIRN/cairn
 ```
 
 Tables: `bundles`, `position`, `imu`, `obd`, `boost`, `status`, `transition`,
@@ -474,24 +524,22 @@ The v1 server — receives trip bundles from the device and serves the read API.
 | **Plugins** | WASM plugin host via wazero — classify trips, redact routes, run custom enrichments |
 | **CORS** | Built-in middleware for PWA access |
 
-### SvelteKit Web App (`web/`)
+### Nuxt 3 Dashboard (`ui/`)
 
-Apple HIG dark-theme web UI built with SvelteKit 2 + Svelte 5. Statically generated via `@sveltejs/adapter-static` — deploys as plain HTML/CSS/JS with no server-side runtime.
+Telemetry dashboard built with Nuxt 3, Vue 3, ECharts and Leaflet. Server-side
+API routes proxy to `cairn-tsdb`, so the browser never hits the analytical store
+directly and never sends arbitrary SQL.
 
-- **Today** — dashboard with trip stats (today/week/month/all time), most recent trip with route map, last parked location, device health, live sync status
-- **Trips** — filterable list with mini route maps, date/device/tag filters, pagination
-- **Trip detail** — full route with speed-colored polyline, events timeline, info table, tags CRUD, GPX/GeoJSON/CSV export
-- **Places** — interactive Leaflet map with click-to-set geofences, CRUD
-- **Devices** — device cards with status indicators, firmware, trip count, total distance
-- **Privacy & Data** — data summary, bulk export, trip management, bulk delete
-
-Design system: Apple HIG 2017 dark mode — `#000000` base, elevated surfaces, SF Pro/Inter font stack, 13px card radii, 0.5px separators, spring animations, vibrancy blur, filled/outlined icon states. Leaflet maps use dark CARTO tiles.
-
-An [animated hero demo](web/static/screenshots/hero-animation.html) cycles through Today → Trips → Devices views.
-
-### Legacy PWA (`pwa/`)
-
-Original vanilla HTML/CSS/JS web UI (no build tools). Superseded by the SvelteKit app above.
+- **Dashboard** — trip totals, drive heatmap (CARTO Voyager with dark filter), last trip, device health
+- **Trips** — list with mini route maps; trip detail with speed-coloured route, interactive timeline, GPS health, point inspection, estimated start
+- **Boost & Power** — boost curve and detected full-throttle pulls
+- **Fuel & Tune** — fuel-trim map by RPM and load, ethanol blend context
+- **Fuel Economy** — MPG estimation with tuning context
+- **Analytics** — per-trip speed, RPM, boost, lambda, trims and temperatures
+- **Behavior** — G-force distribution and vibration from the IMU
+- **Calibration** — OBD speed against GNSS speed
+- **Places** — trip start/end locations with GPS acquisition timing
+- **Device** — health history, decoded bundles, store status
 
 ### Gleam Trip Orchestrator (`gleam/trip-orchestrator/`)
 
@@ -540,7 +588,7 @@ against stdout.
 cd emulator
 
 # Does this implementation agree with the specification?
-cargo run --release -- conformance --vectors ../fixtures/format-v2
+cargo run --release -- conformance --vectors ../fixtures/format-v3
 
 # Local durability rows need no server
 cargo run --release -- fault-matrix --verbose
@@ -596,7 +644,7 @@ Offline trajectory analysis experiments for recorded trip bundles. Five subcomma
 | **Gleam** | Background event processing, job scheduling | Clean distributed-systems model with OTP fault isolation |
 | **MoonBit** | WASM plugins: trip classifier, privacy redactor | Portable sandboxed components via WASM, compiles to 62-94 KB |
 | **Odin** | Offline CLI tools: inspector, diff, replay, density, recovery | Pleasant native tooling with explicit memory, fast compilation |
-| **SvelteKit** | Web UI (Apple HIG dark theme) | Svelte 5 runes, static adapter, zero runtime overhead |
+| **Nuxt 3** | Web UI (telemetry dashboard) | Vue 3, ECharts, server-side API proxy to the analytical store |
 | **C++** | Freematics ESP32 firmware | Shortest path to real driving data on vendor hardware |
 
 ### Why not Python?
@@ -609,7 +657,7 @@ Every language in this stack was chosen for deterministic resources, strong stat
 
 ```
 Cairn/
-├── docs/bundle-format-v2.md     # Normative bundle format spec (v2 rebuild)
+├── docs/bundle-format-v3.md     # Normative bundle format spec (v3)
 ├── server/                      # v2 Go server
 │   ├── format/                  #   Bundle format v2 reference implementation
 │   ├── internal/cas/            #   Content-addressed raw object store
@@ -618,10 +666,15 @@ Cairn/
 │   ├── internal/devices/        #   Enrolment, revocation, quotas
 │   ├── internal/outbox/         #   Durable decode queue
 │   ├── internal/mtls/           #   Mutual TLS configuration
+│   ├── internal/tsdb/           #   In-memory DuckDB analytical store
 │   ├── cmd/cairn-server/        #   The ingest daemon
+│   ├── cmd/cairn-tsdb/          #   In-memory analytical store (DuckDB)
+│   ├── cmd/cairn-tsdb-demo/     #   Synthetic data generator for screenshots
+│   ├── cmd/cairn-worker/        #   Decode pipeline worker
+│   ├── cmd/cairn-push/          #   SD card bundle ingestion via mTLS
 │   ├── cmd/cairn-syncdemo/      #   Reference sync client for verification
 │   └── cmd/mkvectors/           #   Deterministic conformance vector generator
-├── fixtures/format-v2/          # 25 conformance vectors with expected verdicts
+├── fixtures/format-v3/          # 33 conformance vectors (structural + keyed verdicts)
 ├── firmware/                    # ESP32 / Freematics firmware (C++)
 │   └── freematics-base/         #   PlatformIO project using vendored FreematicsPlus
 │       ├── lib/FreematicsPlus/  #     Vendored Freematics hardware drivers (BSD)
@@ -652,21 +705,12 @@ Cairn/
 │   ├── trip-replay/             #   Replay bundles into ingest server
 │   ├── route-density/           #   SVG heatmap generation
 │   └── sd-recover/              #   MicroSD recovery for incomplete bundles
-├── web/                         # SvelteKit 2 + Svelte 5 web app (Apple HIG dark)
-│   ├── src/
-│   │   ├── app.css              #   Apple HIG dark design system tokens
-│   │   ├── app.html             #   Shell with Leaflet CDN + Google Fonts
-│   │   ├── lib/                 #   API client, stores, shared components
-│   │   └── routes/              #   SvelteKit pages: today, trips, places, devices, settings, hero
-│   ├── static/                  #   Icons, manifest, hero screenshots
-│   ├── svelte.config.js         #   adapter-static with SPA fallback
-│   └── package.json             #   SvelteKit 2, Svelte 5, Vite 5
-├── pwa/                         # Legacy vanilla HTML/CSS/JS web UI
-│   ├── index.html               #   SPA shell with Leaflet 1.9.4
-│   ├── app.js                   #   Router, API client, 6 views
-│   ├── style.css                #   Dark theme, responsive layout
-│   ├── sw.js                    #   Service worker for offline caching
-│   └── manifest.json            #   PWA manifest
+├── ui/                          # Nuxt 3 + Vue 3 telemetry dashboard
+│   ├── app/pages/               #   Dashboard, trips, boost, fuel, economy, analytics, etc.
+│   ├── server/                  #   API routes proxying to cairn-tsdb
+│   ├── scripts/                 #   Screenshot automation
+│   ├── nuxt.config.ts           #   Nuxt config with tsdb URL
+│   └── package.json             #   Nuxt 3, Vue 3, ECharts, Leaflet, Pinia
 ├── deploy/                      # Infrastructure
 │   ├── compose.yaml             #   PostgreSQL, Caddy, Mosquitto MQTT
 │   ├── caddy/                   #   Reverse proxy + PWA static serving
@@ -711,7 +755,7 @@ PostgreSQL + PostGIS:
 > written to support it. The `trips/` directories on an SD card are v1 leftovers
 > that every current tool ignores.
 >
-> Superseded by [Bundle Format v2](docs/bundle-format-v2.md). The layout below
+> Superseded by [Bundle Format v3](docs/bundle-format-v3.md). The layout below
 > has no record framing, so a power cut mid-write cannot be distinguished from
 > valid data, and the firmware only ever uploads `samples.bin`.
 
@@ -840,8 +884,8 @@ cat migrations/001_init.sql migrations/002_functions.sql migrations/003_gleam_ta
 ### Build from Source
 
 ```bash
-# SvelteKit web app
-cd web && npm install && npm run build
+# Nuxt 3 dashboard
+cd ui && npm install && npm run build
 
 # Go ingest service
 cd zig/ingest && go build ./cmd/ingestd/
@@ -929,7 +973,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 |-----|---------------------|
 | `build-zig` | Zig common, bundle, CLI + smoke test |
 | `build-go` | v1 Go ingest service + `go vet` |
-| `build-server` | v2 server: build, vet, gofmt, 161 tests, and a check that regenerating the conformance vectors produces no diff |
+| `build-server` | v2 server: build, vet, gofmt, 196 tests, and a check that regenerating the conformance vectors produces no diff |
 | `decode-pipeline` | v2 schema + decode worker against a real PostGIS service container |
 | `format-conformance` | The emulator's Rust format implementation against the same committed vectors |
 | `fault-matrix` | 16 property rows plus the server-crash-during-commit test |
@@ -938,7 +982,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | `build-gleam` | Gleam trip-orchestrator build + test |
 | `build-plugins` | MoonBit trip-classifier + privacy-redactor → WASM |
 | `build-odin` | All 5 Odin tools + trip-inspector smoke test |
-| `validate-pwa` | PWA file presence check |
+| `validate-ui` | Nuxt dashboard build check |
 | `emulator-test` | Emulator scenarios against live ingest |
 | `integration-test` | End-to-end smoke test |
 
@@ -953,8 +997,12 @@ The [CI workflow](.github/workflows/ci.yml) runs on a self-hosted runner and val
 | **[Deploying](docs/deploying.md)** | **The systemd unit, the mTLS chain, and why a reverse proxy cannot front device ingest** |
 | [Secure OTA](docs/ota.md) | Update descriptor format, the four preconditions, and the ordering argument |
 | [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
-| **[Bundle Format v2](docs/bundle-format-v2.md)** | **Normative spec for the v2 rebuild — byte layouts, manifest, receipt, transfer protocol** |
-| [Architecture](docs/architecture.md) | System design, data flow, component responsibilities (describes v1) |
+| **[Trust Model v3](docs/trust-model-v3.md)** | **Encrypted storage, enrolled app, Tailscale, vehicles — one trust model, with the threat table** |
+| **[Bundle Format v3](docs/bundle-format-v3.md)** | **Normative spec — byte layouts, AEAD frames, manifest, receipt, transfer protocol** |
+| **[App Sync Protocol](docs/app-sync-protocol.md)** | **The iOS client's contract: signing, enrolment, operations, cursor — with test vectors** |
+| [Tailscale Deployment](docs/tailscale-deployment.md) | Host install, Serve, ACLs, Funnel off |
+| [ESP32 Hardening](docs/esp32-hardening.md) | Flash encryption, secure boot, irreversibility, what the chip can and cannot do |
+| [Architecture](docs/architecture.md) | Component map, listeners, data flow (updated for v3) |
 | [Device Protocol](docs/device-protocol.md) | Firmware states, sensor rates, sync protocol (describes v1) |
 | [Trip File Format](docs/trip-file-format.md) | v1 bundle schema — superseded by Bundle Format v2 |
 | [Threat Model](docs/threat-model.md) | Security boundaries, device identity, transport security |
