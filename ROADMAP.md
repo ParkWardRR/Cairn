@@ -11,6 +11,55 @@
 
 Last reviewed 2026-10-05.
 
+> **Where the code lives.** On 2026-10-05 the single repository was split. This one is the
+> front door: system documentation, this roadmap, and the shared [contracts](contracts/).
+> The server, the web dashboard and the firmware are
+> [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server),
+> [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) and
+> [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware); the
+> iPhone app has its own. The original is preserved read-only as
+> [cairn-original-monorepo-archive](https://github.com/ParkWardRR/cairn-original-monorepo-archive).
+> The phase history below was written against the single repository: a path such as `ui/` or
+> `firmware/cairn-v2/` is now the root of the matching repository.
+
+## Product direction
+
+Where the project is going, in the order the owner chose (it is theirs to change). Each theme
+names the repository that owns the work and the contract it touches. Contract changes are
+**additive** and follow the contract-first loop in [contracts/README.md](contracts/README.md).
+
+| # | Theme | What it means | Owning repositories | Contract it touches |
+|---|---|---|---|---|
+| 1 | **History** | Statistics for any period (year, quarter, month, week, a custom range); bookmark, tag and search a route, so "revisit an interesting drive" is not scrolling a list | web (pages, filters); server (new store views such as a yearly summary) | [`store/v1`](contracts/store/v1/README.md): new views, additive |
+| 2 | **Vehicle insight** | A **tune record** (when the tune changed, set by the user, stored per vehicle) so "since the tune" has a meaning; baselines and trends; stock against after-tune; a plain "is my car healthy?" summary | server (derived metrics, per-vehicle baselines); web (health and tune views); firmware only if more PIDs are needed | `store/v1` additive; the per-vehicle record |
+| 3 | **Sharing** | Pick trips, preview, export as a portable file with redaction (privacy zones that blank a start, end or place). A file the owner sends, **not** a hosted service | web (choose, preview, export); server (anything that issues or checks a share token); iOS (share sheet) | [`share/v1`](contracts/share/v1/README.md) (reserved, draft). **The [threat model](docs/threat-model.md#sharing-design-constraints-before-any-design) comes first** |
+| 4 | **Approachability** | A plain-language pass on the web and every README, simple view by default and detail on request, setup docs that do not assume a homelab. Run alongside the others, since it is mostly copy and defaults | every README; web; iOS | none |
+| 5 | **Data control** | Export, import and backup for every store that holds user data (trips, places, annotations), as each store gains user data; render nice shareable high-resolution images | server, web, iOS | `store/v1`; `share/v1` |
+
+Open, not scheduled: GPU acceleration for analysis (no demonstrated need yet), and an optional
+S3-compatible object store such as Garage on the server for the content-addressed store.
+
+### What the work must not foreclose
+
+- **Trip identity stays stable and portable.** Sharing needs an id that survives export and
+  import. Today it is the boot id; do not change it casually.
+- **Per-vehicle scoping stays** (`vehicle_id` through the store and the API): insight and
+  sharing are both per vehicle.
+- **The store contract stays additive.** New views are added; existing ones are not repurposed.
+- **Every store keeps an export path**, and user data never moves somewhere an export cannot reach.
+- **The web layer keeps working with no cloud.**
+- **Privacy zones are a first-class idea**, so the place engine and saved places stay
+  reachable from the export path.
+
+### Reasons to use it, as acceptance tests
+
+| Reason | A release is not done until |
+|---|---|
+| Useful automatic capture | a drive is captured and visible without opening any app |
+| Detailed vehicle information | the OBD detail is browsable per trip and per vehicle |
+| Control of data | every store holding user data can be exported, imported and backed up, and nothing requires an account or a cloud service |
+| Adaptability | a new vehicle, a new place kind or a new metric can be added by configuration or a documented extension point, not by editing core code |
+
 ## Where Cairn is
 
 | Layer | State |
@@ -75,7 +124,7 @@ Target hardware is **classic ESP32** (xtensa LX6, WROVER with PSRAM), not an
 S3. There is no secure element, and the eFuse flash-encryption key cannot be
 read or derived from by software, so the root key is a random value in NVS inside
 hardware-encrypted flash — flash encryption protects it by protecting the flash
-it lives in. See [docs/esp32-hardening.md](docs/esp32-hardening.md).
+it lives in. See [docs/esp32-hardening.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/esp32-hardening.md).
 
 The car: an N20 428i on a BM3 Stage 1 tune, ~E41. For this car fuel trims
 and mixture say more about engine health than boost does, which is why Phase 15
@@ -424,7 +473,7 @@ verified).
       mtprobe suites again
 - [ ] Hardware round trip: capture → seal → offload → relay → decode with encryption on (stage A passes; stage B is Phase 26) —
       **blocked: the dongle has no SD card in it** (`GO_IDLE_STATE failed` on every
-      mount attempt). Runbook: [docs/hardware-roundtrip.md](docs/hardware-roundtrip.md)
+      mount attempt). Runbook: [docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md)
 - [x] The firmware host Makefile now tracks every header as a dependency, so a
       stale `build/` can no longer mask or fake a result
 
@@ -436,7 +485,7 @@ verified).
       **Verified on the car's dongle**: the server unsealed the real device's
       blob and escrowed its root; byte-identical to the Go reference. X25519 is
       constant-time and checked against RFC 7748. See
-      [docs/device-provisioning.md](docs/device-provisioning.md)
+      [docs/device-provisioning.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/device-provisioning.md)
 - [x] Device bundle counter in NVS (not on the card). It is **reserved and made
       durable before the first segment header exists** (the counter is in every
       header and authenticated into every frame, so it cannot wait until seal) and
@@ -476,7 +525,7 @@ verified).
 
 ## Phase 23 — Tailscale and deployment hardening — **in progress**
 
-[docs/tailscale-deployment.md](docs/tailscale-deployment.md).
+[docs/tailscale-deployment.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/tailscale-deployment.md).
 
 - [ ] `tailscaled` on the VM host (**installed, running, SSH off, DNS untouched;
       the login URL is waiting for approval**), then tag it `tag:cairn-server`
@@ -503,7 +552,7 @@ verified).
 
 ## Phase 24 — ESP32 chip hardening — **planned, gated**
 
-[docs/esp32-hardening.md](docs/esp32-hardening.md). Irreversible steps; do not
+[docs/esp32-hardening.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/esp32-hardening.md). Irreversible steps; do not
 start until each prerequisite below is checked.
 
 - [ ] Prerequisite: OTA install, rollback and power-loss-during-update exercised on
@@ -569,7 +618,7 @@ iOS ([#14](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/
 
 - [ ] BLE offload client, durable per-bundle state machine, background operation (CoreBluetooth state restoration, background `URLSession`). `server/internal/offloadclient` and `cmd/cairn-phone` are a working reference in Go
 
-Then the **hardware round trip** ([docs/hardware-roundtrip.md](docs/hardware-roundtrip.md) stage B):
+Then the **hardware round trip** ([docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md) stage B):
 capture → seal → BLE offload → relay → receipt → prune on the real dongle.
 
 ## Deferred deliberately
@@ -872,7 +921,7 @@ against the fault matrix.
 > A slot, 25.2% RAM) and the format agrees byte-for-byte with the Go and Rust
 > implementations on the host. That rules out a large class of bugs but not
 > driver or timing problems. See
-> [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
+> [docs/v2-firmware-testing.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/v2-firmware-testing.md) for the bench
 > procedure, including the destructive tests that are the actual point.
 
 ### Phase 9 — Degraded states and policy tuning — **in progress**

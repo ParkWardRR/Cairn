@@ -370,7 +370,7 @@ escrowed root and derives the same keys from the segment header alone — the
 header, not the caller, says which key applies. A copied card has ciphertext and
 no root. Details, threat table and the ESP32 specifics (the eFuse flash key is
 not usable as an HKDF input on a classic ESP32) are in
-[trust-model-v3.md](../../../docs/trust-model-v3.md) §3 and [esp32-hardening.md](../../../docs/esp32-hardening.md).
+[trust-model-v3.md](../../../docs/trust-model-v3.md) §3 and [esp32-hardening.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/esp32-hardening.md).
 
 ---
 

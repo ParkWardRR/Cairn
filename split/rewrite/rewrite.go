@@ -447,7 +447,9 @@ func (r *runner) crossLinks() error {
 	}
 	var files []string
 	_ = r.walk(func(rel string) error {
-		if strings.HasSuffix(rel, ".md") {
+		// the README templates link to files that exist only in the repository they are written
+		// into (the front door carries them), so they cannot resolve here
+		if strings.HasSuffix(rel, ".md") && !strings.HasPrefix(rel, "split/rewrite/templates/") {
 			files = append(files, rel)
 		}
 		return nil
@@ -637,4 +639,19 @@ func (r *runner) ci() error {
 		return err
 	}
 	return r.write(".github/workflows/ci.yml", wf, 0o644)
+}
+
+// CrossLinks rewrites, in the repository at o.Dir, every relative markdown link whose
+// target is no longer there into a link to the repository that now owns it. It is the
+// reduction of the front door run backwards through the same logic as an extraction. It
+// stages and commits nothing.
+func CrossLinks(o Options) error {
+	if o.Log == nil {
+		o.Log = func(string, ...any) {}
+	}
+	r := &runner{Options: o}
+	if err := r.crossLinks(); err != nil && err != errNothingToDo {
+		return err
+	}
+	return nil
 }

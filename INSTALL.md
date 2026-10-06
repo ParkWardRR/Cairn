@@ -28,7 +28,7 @@ with a warning; see the header of `server/Makefile`. Other binaries under
 not in the Makefile's list; build one with `go build ./cmd/<name>`.
 
 To run it on a host as a service (mutual-TLS device listener, certificates,
-receipt key, systemd unit), follow [docs/deploying.md](docs/deploying.md). The
+receipt key, systemd unit), follow [docs/deploying.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/deploying.md). The
 deploy script builds on the target and installs the units:
 
 ```bash
@@ -62,10 +62,10 @@ pio run -e cairn-selftest   # bench self-test image; flash this first
 `cairn-mtprobe`, `cairn-mtprobe-sniff`. The vendored FreematicsPlus drivers in
 `firmware/cairn-v2/third_party/freematics-base/lib` are picked up automatically.
 
-Flashing, the self-test, and first-boot checks: [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md)
-and [docs/flashing-and-testing.md](docs/flashing-and-testing.md). Enrolling the
-dongle and giving it credentials: [docs/device-provisioning.md](docs/device-provisioning.md).
-The first end-to-end drive: [docs/hardware-roundtrip.md](docs/hardware-roundtrip.md).
+Flashing, the self-test, and first-boot checks: [docs/v2-firmware-testing.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/v2-firmware-testing.md)
+and [docs/flashing-and-testing.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/flashing-and-testing.md). Enrolling the
+dongle and giving it credentials: [docs/device-provisioning.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/device-provisioning.md).
+The first end-to-end drive: [docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md).
 
 ## Emulator and conformance
 
@@ -101,7 +101,7 @@ deploy/deploy-ui.sh            # builds HEAD and installs it
 
 `deploy/deploy-ui.sh` has the target host hard-coded near the top; edit `HOST`
 for your own. Caddy fronts the UI only: device ingest terminates its own mutual
-TLS and is deliberately not behind a proxy (see [docs/deploying.md](docs/deploying.md)).
+TLS and is deliberately not behind a proxy (see [docs/deploying.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/deploying.md)).
 
 ## Further reading
 
@@ -110,5 +110,5 @@ TLS and is deliberately not behind a proxy (see [docs/deploying.md](docs/deployi
 | [docs/architecture.md](docs/architecture.md) | Component map |
 | [contracts/format/v3/spec.md](contracts/format/v3/spec.md) | The current bundle format |
 | [docs/trust-model-v3.md](docs/trust-model-v3.md) | Keys, identities, transport |
-| [docs/deploying.md](docs/deploying.md) | The running server and why it is shaped that way |
+| [docs/deploying.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/deploying.md) | The running server and why it is shaped that way |
 | [ROADMAP.md](ROADMAP.md) | What is done and what is open |

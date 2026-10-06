@@ -312,7 +312,7 @@ encryption is enabled (§7).
 
 ## 7. ESP32 hardening
 
-Detailed procedure and irreversibility notes: [esp32-hardening.md](esp32-hardening.md).
+Detailed procedure and irreversibility notes: [esp32-hardening.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/esp32-hardening.md).
 In short:
 
 | Control | Status | Notes |
@@ -356,7 +356,7 @@ container or compose file.
 | Backups | Encrypted, versioned, restore-tested, separate from live credentials |
 | Logs | Never raw telemetry, GPS points, bearer tokens, certificates, SSIDs or full VINs |
 
-See [tailscale-deployment.md](tailscale-deployment.md).
+See [tailscale-deployment.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/tailscale-deployment.md).
 
 ---
 

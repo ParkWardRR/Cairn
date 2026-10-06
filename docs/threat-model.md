@@ -196,6 +196,39 @@ database access, host-validated outputs, and no ability to alter raw data.
 | No cloud | No third-party accounts, APIs, or data sharing |
 | Retention policy | Configurable per-device and server-wide retention windows |
 
+## Sharing: design constraints before any design
+
+Nothing in Cairn shares a trip today. The only things that leave the owner's hands are the
+whole-store snapshot and the saved-places export, both deliberate and both the owner's own.
+Sharing a **selected trip with someone else** (roadmap theme 3, with the portable
+[`share/v1`](../contracts/share/v1/README.md) format) changes the threat model, because data
+that was safe on the owner's own server is handed to people and places the owner no longer
+controls. This section is written first, so the design has to meet it instead of explaining
+it away afterwards.
+
+**Scope.** A *share* is a derived export of chosen trips (a file, or a rendered image), made
+by the owner and sent by the owner. It is **not** a bundle: it carries no proof that the
+device captured it, and the format must not suggest otherwise. There is no hosted sharing
+service and no cloud; if one is ever proposed it needs its own review here.
+
+| # | Threat | Why it matters | Constraint on the design |
+|---|---|---|---|
+| S1 | **Home, work and routine disclosed** by where a trip starts and ends | The start and end of most trips are the owner's home and the places they visit; one shared route can name the address | Privacy zones are a first-class idea: start, end and chosen places are blanked or trimmed **by default**, and the owner sees what was removed |
+| S2 | **Re-identification from the route itself**, even with zones | A rare road, a long loop or a precise timestamp can identify a person without any id | Trim more than the zone, offer coarse or shifted timestamps, and say plainly that a route is hard to anonymise |
+| S3 | **Identifier linkage** across shares | A stable boot id, vehicle id or device id lets two shared trips be tied to one car and one owner | A share carries **per-share pseudonymous ids** and no stable owner, vehicle or device identifier |
+| S4 | **Metadata that was not meant to leave** | Device serials, firmware versions, key fingerprints, host names, file paths, image metadata | The format is an **allow-list**: only named fields are exported, so a new internal field cannot leak by default |
+| S5 | **Telemetry that becomes evidence or reveals the tune** | Speed against a limit can be used against the owner; engine data shows how the car is tuned | Speed and OBD detail are **excluded by default** and included only by an explicit choice, with a warning |
+| S6 | **No recall** | A file cannot be taken back once sent | Do not promise revocation. The preview shows exactly what the recipient will receive, and sharing is opt-in per trip |
+| S7 | **Forged or altered shares** | A recipient cannot verify a share, and a forged one can be passed off as the owner's | A share includes an integrity digest, is labelled as unverified derived data, and never reuses the bundle receipt or signature formats |
+| S8 | **Rendered images leak through their tiles** | Fetching map tiles tells a provider where the trip was; an image can embed metadata | Render with locally held map data where possible, apply the same redaction before rendering, and strip metadata |
+| S9 | **Other people in the data** | Passengers, and places that belong to others (a friend's address saved as a place) | Saved place names and categories are redacted by default; the owner chooses what a share names |
+| S10 | **A token-issuing service, if one is ever built** | Guessable tokens, over-wide scope, no expiry | It must reuse the existing client-authentication model, issue narrow tokens that expire, and be reviewed in this document first |
+
+**Required before `share/v1` leaves draft:** every row above has a concrete mechanism in the
+format or the app; a preview that shows the recipient's view; default-private behaviour (a
+fresh share exports the least it can); and an independent review of the draft against this
+table.
+
 ## Recommendations
 
 1. Use a dedicated VLAN or network segment for IoT devices including Cairn

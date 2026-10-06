@@ -118,7 +118,7 @@ capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, 
 | `127.0.0.1:8480` cairn-tsdb | loopback | UI server |
 
 Remote access is **Tailscale only**, on the host, never Funnel, never port
-forwarding. See [tailscale-deployment.md](tailscale-deployment.md).
+forwarding. See [tailscale-deployment.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/tailscale-deployment.md).
 
 ## Deployment
 
@@ -126,4 +126,4 @@ systemd units on the VM (`deploy/systemd`: `cairn-server`, `cairn-tsdb`, `cairn-
 installed by `deploy/deploy-v3.sh` and `deploy/deploy-ui.sh`; Caddy fronts the UI
 only. PostgreSQL and any MQTT broker are installed on the host separately and are
 not shipped in this repository (schema: `deploy/migrations/`). See
-[deploying.md](deploying.md).
+[deploying.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/deploying.md).

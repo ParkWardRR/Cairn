@@ -7,15 +7,17 @@ on:
     branches: [main]
 
 # Self-hosted jobs run only for pushes and for pull requests from branches of THIS
-# repository. A fork's pull request would otherwise run its own code on the machine
-# that also serves production. tests/check-runners.sh fails the build if a job loses
-# its guard, or if a workflow uses pull_request_target or workflow_run.
+# repository. A fork's pull request would otherwise run its own code on the machine that also
+# serves production. tests/check-runners.sh fails the build if a job loses its guard, or if a
+# workflow uses pull_request_target or workflow_run.
+#
+# The front door holds documentation, the contracts and the tooling that built the other
+# repositories. contracts.yml and docs.yml check the first two; this file checks the third.
 jobs:
-  # CI runs on the self-hosted `cairn` runner only, never a GitHub-hosted one.
-  # GitHub offers no setting to forbid hosted runners, so this is the guard.
   runner-policy:
     runs-on: [self-hosted, cairn]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -25,301 +27,25 @@ jobs:
       - name: The policy check can actually fail
         run: tests/check-runners-selftest.sh
 
-  # Server. Gates the bundle format reference implementation against the
-  # committed conformance vectors, so an accidental format change fails CI
-  # instead of silently diverging from the firmware and emulator.
-  build-server:
+  # The split tooling: path map, link rewriting, extraction rewrites, contract checks, the
+  # pin dashboard. (The extraction tests need git-filter-repo and are run by hand when the
+  # tooling is used, not on every change here.)
+  split-tooling:
     runs-on: [self-hosted, cairn]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.27'
+          go-version-file: split/go.mod
 
-      - name: Build
-        working-directory: server
-        run: go build ./...
+      - name: Vet and test
+        working-directory: split
+        run: go vet ./... && go test ./pathmap/ ./links/ ./rewrite/ ./contractcheck/ ./pindash/
 
-      - name: Vet
-        working-directory: server
-        run: go vet ./...
-
-      - name: Check formatting
-        working-directory: server
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w ."; exit 1; }
-
-      # The dongle's BLE offload protocol, compiled for the host. The end-to-end tests
-      # in internal/offloadclient run THE FIRMWARE'S OWN module against this client
-      # and the server's relay; without it they skip, which would hide a break.
-      - name: Build the firmware protocol simulator
-        run: make -C firmware/cairn-v2/test/host offload-sim
-
-      - name: Test
-        working-directory: server
-        env:
-          CAIRN_OFFLOAD_SIM: ${{ github.workspace }}/firmware/cairn-v2/test/host/build/offload-sim
-        run: go test ./...
-
-      # cairn-fsq is its own Go module (it is the web layer's tool, and imports nothing
-      # from the server), so the server's `go test ./...` no longer covers it.
-      - name: cairn-fsq (the web layer's own Go module)
-        working-directory: ui/tools/cairn-fsq
-        run: go vet ./... && go test ./...
-
-      - name: Conformance vectors are reproducible
-        working-directory: server
-        run: |
-          go run ./cmd/mkvectors
-          git diff --exit-code -- ../contracts/format/v3/vectors || {
-            echo "Regenerating the vectors produced a diff."
-            echo "If the format change is intended, commit the regenerated vectors."
-            exit 1
-          }
-
-  # The decode pipeline, against a real PostgreSQL + PostGIS.
-  #
-  # No mock here: partitioning, geography columns, generated columns and
-  # ON CONFLICT behaviour are exactly the things a fake would get wrong while
-  # reporting success.
-  #
-  # The database runs INSIDE the job (tests/ci/postgis.sh), not as a GitHub Actions
-  # service container. A service container needs a Docker socket, the runner is a
-  # container with none on purpose (a job that can reach a container socket can reach
-  # the host that also serves production), and so that form of this job could never
-  # start: it failed at "Initialize containers" on every run.
-  decode-pipeline:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    needs: [build-server]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-
-      - name: Start PostgreSQL + PostGIS and apply the migrations
-        run: |
-          set -euo pipefail
-          echo "CAIRN_TEST_DSN=$(tests/ci/postgis.sh start)" >> "$GITHUB_ENV"
-
-      - name: Decode pipeline tests
-        working-directory: server
-        run: go test ./internal/store/ -count=1 -v
-
-      - name: Stop the database
-        if: always()
-        run: tests/ci/postgis.sh stop
-
-  # The emulator's independent Rust implementation of bundle format v3, checked
-  # against the same committed vectors the Go reference passes. The vectors are
-  # bytes and expected verdicts, not code, so neither implementation can quietly
-  # drag the other along.
-  format-conformance:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Unit tests
-        working-directory: emulator
-        run: cargo test
-
-      - name: Conformance against the committed vectors
-        working-directory: emulator
-        run: cargo run --release -- conformance
-
-  # The vectors are generated deterministically, which is what makes them usable
-  # as a shared input rather than one implementation's output. Regenerating must
-  # produce no diff — otherwise a vector could drift between the generator and
-  # what is committed, and the implementations would be agreeing with a stale
-  # file instead of with each other.
-  vector-determinism:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: server/go.mod
-
-      - name: Regenerate the vectors
-        working-directory: server
-        run: go run ./cmd/mkvectors
-
-      - name: The committed vectors must be unchanged
-        run: |
-          if ! git diff --quiet -- contracts/format/v3/vectors; then
-            echo "Regenerating the vectors changed committed files."
-            echo "Either the generator is not deterministic, or a change to it"
-            echo "was committed without regenerating. Run:"
-            echo "  cd server && go run ./cmd/mkvectors"
-            git diff --stat -- contracts/format/v3/vectors
-            exit 1
-          fi
-
-  # The firmware's own C code, compiled natively. Two suites:
-  #
-  #   conformance  lib/cairn_format against the committed vectors. This is the
-  #                implementation that matters most — a disagreement means a
-  #                device writing bundles the server cannot recover, and "it
-  #                compiled for ESP32" would not have caught it.
-  #   faults       lib/cairn_store, lib/cairn_prune and the pre-roll over a
-  #                POSIX filesystem, with files torn mid-frame and receipts
-  #                forged. Properties about crash and adversarial behaviour,
-  #                which neither compiling nor a good drive tests.
-  firmware-conformance:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Format vectors and the storage property matrix
-        run: make -C firmware/cairn-v2/test/host
-
-      # Undefined behaviour in the scan path would be a parser reading past a
-      # torn segment — exactly the case the format exists to handle safely.
-      - name: Under AddressSanitizer and UBSan
-        run: make -C firmware/cairn-v2/test/host asan
-
-  # Compiling for the actual target, which the host suites do not do.
-  #
-  # The host suites prove the portable code is *correct*; this proves the whole
-  # firmware still *builds* for Xtensa. They catch different things: a C++
-  # linkage mistake, a missing IDF header, or a library that only resolves on
-  # the host all pass the host suites and fail here.
-  #
-  # Both configurations are built because they are genuinely different code
-  # paths — the OTA install path is behind CAIRN_OTA_AVAILABLE and is otherwise
-  # never compiled.
-  firmware-build:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install PlatformIO
-        run: |
-          python3 -m pip install --user --upgrade platformio
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # The template verbatim. Its placeholder values only affect runtime
-      # behaviour — an all-zero receipt key refuses to prune, it does not change
-      # what compiles — so there is nothing to override for a build check.
-      - name: Provide build-time configuration
-        working-directory: firmware/cairn-v2
-        run: cp include/secrets.h.example include/secrets.h
-
-      # Capped to one job: this runner is memory-constrained and an uncapped
-      # parallel build has wedged it before.
-      - name: Build the capture image
-        working-directory: firmware/cairn-v2
-        run: pio run -e cairn -j 1
-
-      - name: Build the self-test image
-        working-directory: firmware/cairn-v2
-        run: pio run -e cairn-selftest -j 1
-
-      - name: Build with OTA enabled
-        working-directory: firmware/cairn-v2
-        env:
-          PLATFORMIO_BUILD_FLAGS: >-
-            -DCAIRN_UPDATE_KEY_HEX='"0000000000000000000000000000000000000000000000000000000000000001"'
-        run: pio run -e cairn -j 1
-
-  # The fault-injection property matrix. Local durability rows need no server;
-  # protocol rows run against a dev-mode instance.
-  #
-  # Standing rule for the project: every later phase adds its own rows here
-  # before it closes.
-  fault-matrix:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    needs: [build-server, format-conformance]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-
-      - name: Local durability rows
-        working-directory: emulator
-        run: cargo run --release -- fault-matrix --work-dir target/fault-matrix --verbose
-
-      - name: Protocol rows against a running server
-        run: |
-          set -euo pipefail
-          DATA="$(mktemp -d)"
-          cd server && go build -o /tmp/cairn-server ./cmd/cairn-server \
-            && go build -o /tmp/cairn-admin ./cmd/cairn-admin && cd ..
-
-          # v3 intake needs, for every device: an escrowed storage root, a
-          # vehicle, and an assignment of the device to it. These are the
-          # emulator's PUBLIC test values (its default root and a fixed pair of
-          # ids); they protect nothing.
-          ROOT=636169726e2d656d756c61746f722d7075626c69632d746573742d726f6f7421
-          VEHICLE=606162636465666768696a6b6c6d6e6f
-          ASSIGNMENT=707172737475767778797a7b7c7d7e7f
-          MASTER="$(mktemp -d)/keystore.master"
-
-          # A persistent signing key: an ephemeral one would invalidate every
-          # receipt on restart, which the crash test exercises deliberately.
-          /tmp/cairn-server -data "$DATA" -keystore-master "$MASTER" \
-            -enroll 101112131415161718191a1b1c1d1e1f \
-            -enroll-key 9f8d4bbc0bf6feeabbabe4d2aff165db4f77fc4b6d46619818af409ddab507bf \
-            -enroll-root "$ROOT" \
-            -enroll-name ci-device
-          /tmp/cairn-admin -data "$DATA" vehicle add --id "$VEHICLE" --name "ci car"
-          /tmp/cairn-admin -data "$DATA" assign --assignment-id "$ASSIGNMENT" \
-            101112131415161718191a1b1c1d1e1f "$VEHICLE"
-
-          /tmp/cairn-server -data "$DATA" -addr 127.0.0.1:18700 -dev \
-            -keystore-master "$MASTER" \
-            -receipt-key "$DATA/receipt.seed" &
-          SERVER_PID=$!
-          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
-
-          for _ in $(seq 1 50); do
-            curl -sf http://127.0.0.1:18700/api/v2/health >/dev/null && break
-            sleep 0.2
-          done
-
-          cd emulator
-          cargo run --release -- fault-matrix \
-            --work-dir target/fault-matrix-net \
-            --root-key "$ROOT" --vehicle-id "$VEHICLE" --assignment-id "$ASSIGNMENT" \
-            --server http://127.0.0.1:18700 --verbose
-
-      - name: Server crash during commit
-        run: PORT=18701 ./tests/server-crash-during-commit.sh 4
-
-  build-rust:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build emulator
-        working-directory: emulator
-        run: cargo build --release
-
-      - name: Verify binary
-        run: ./emulator/target/release/cairn-emulator --help
+      - name: Every tracked path is accounted for
+        working-directory: split
+        run: go run ./cmd/split-check --ref HEAD --repo ..

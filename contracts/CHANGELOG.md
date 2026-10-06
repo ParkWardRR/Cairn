@@ -3,6 +3,11 @@
 Contract releases are tagged `contracts-vX.Y.Z` and cut by a maintainer; no CI job tags or
 publishes. Protocol directories are versioned independently of the collection tag.
 
+## Unreleased
+
+- `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
+  repository. Documentation only; no protocol or vector changed, so nothing is released for it.
+
 ## 0.1.0 (2026-10-05)
 
 The first release: the contracts move out of the monorepo into their own repository, and
