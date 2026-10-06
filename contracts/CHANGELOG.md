@@ -5,6 +5,15 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
+  repository. Documentation only; no protocol or vector changed, so nothing is released for it.
+
+## 0.2.0 (2026-10-05)
+
+New vectors and a machine-readable store schema, plus the `ble/v1` and `uplink/v1` drafts. A
+manifest with `valid: false` must now be refused at parse by every implementation, so a
+runner pinning this release needs the new expectation fields (see below).
+
 - `ble/v1` (**draft**, additive): `device-info.md` (a read-only `DEVICE_INFO` value: capabilities, firmware, identity,
   storage, transports, installed engines, boot timing, as unknown-skipping records; `UPLINK_EVENT` slot
   announcements) and `checkin.md` (four server-signed instruction types with a replay counter, and an unsigned,
@@ -35,10 +44,8 @@ publishes. Protocol directories are versioned independently of the collection ta
   implementation. Existing vectors are byte-identical.
 - `enrolment/v1`: `vectors/negative.json` (32 blobs, 5 stateful sequences).
 - Each protocol README lists its negative cases (`sync/v1`'s are in `exchanges.json`).
-- Not yet released: a runner that has not learned the new fields fails loudly, so the firmware
-  runners need updating before they pin the release that carries these.
-- `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
-  repository. Documentation only; no protocol or vector changed, so nothing is released for it.
+- A runner that has not learned the new fields fails loudly, so the firmware runners need
+  updating before they pin this release.
 
 ## 0.1.0 (2026-10-05)
 
