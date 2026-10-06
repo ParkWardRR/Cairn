@@ -11,6 +11,7 @@ what they share is here, versioned, and checked by machine.
 | [`sync/v1`](sync/v1/) | The phone's API to the server: signing, enrolment, push/pull, snapshot, bundle relay | server implements; app consumes | **draft**: the server implements it, the iOS app does not yet |
 | [`ble/v1`](ble/v1/) | The dongle's BLE service: phone GPS, status, and bundle offload | firmware serves; app consumes | **stable** for the companion; **offload** is implemented on the firmware and a Go reference client, not yet on the phone |
 | [`store/v1`](store/v1/) | The analytical store the web dashboard queries | server produces; web consumes | **draft**: surface described, machine-checked schema to come |
+| [`uplink/v1`](uplink/v1/) | How a dongle with Wi-Fi or LTE uploads bundles itself: device-signed requests, a pinned server key, the relay's offer/chunk/commit/receipt | reserved for the firmware; server | **draft**: spec and vectors only, nothing implements it yet |
 | [`share/v1`](share/v1/) | A portable trip export with redaction | reserved | **reserved, draft**: no design until the threat model has a sharing section |
 
 ## Versioning and releases

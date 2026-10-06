@@ -8,6 +8,7 @@ it (`.github/workflows/ci.yml`).
 | `cmd/contract-check`, `contractcheck/` | Checks every protocol version under `contracts/` is complete and valid | `contracts.yml` |
 | `cmd/link-check`, `links/` | Fails if a relative link in any markdown file does not resolve | `docs.yml` |
 | `cmd/pin-dashboard`, `pindash/` | Regenerates the README's table of pins from each repository's lock files | `pins.yml` |
+| `cmd/uplink-vectors`, `uplinkvectors/` | Generates and checks `contracts/uplink/v1/vectors`, and is the reference for its request-signing rules | `ci.yml` (the test fails if the checked-in vectors drift) |
 | `runner/` | Installs one self-hosted CI runner as a rootless Podman container under a shared memory cap | by hand, on the CI host |
 | `publish/create-repo.sh` | Creates a public repository with the project's standard settings | by hand |
 | `cutover/` | A cold snapshot of the whole stack and a restore test that boots it | by hand; **moving** to `deploy/` in cairn-vehicle-server, see [its issue 17](https://github.com/ParkWardRR/cairn-vehicle-server/issues/17), and then deleted here |

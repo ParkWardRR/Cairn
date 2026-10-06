@@ -1,0 +1,142 @@
+{
+  "description": "Cairn device uplink v1 request signing (DRAFT). Every key here is a PUBLIC TEST KEY derived from a published label; none protects anything. Signatures are deterministic (Ed25519): must equal.",
+  "device_seed": "9a561d3f90c14f4fe2185f61dda20ee5039f2fd6c7e46f6c17c25682debfb4a3",
+  "device_public_key": "cba5796661f5bf1c33df3ec9a1c5f13b33cce4393adcb938e999c74ff945e381",
+  "device_id": "1db5f72352f6d2a2cd7e1a5ec21f340e",
+  "server_now": 1790000005,
+  "positive": [
+    {
+      "name": "offer, over Wi-Fi in slot 3",
+      "method": "POST",
+      "target": "/v1/uplink/bundles/offer",
+      "body_hex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8",
+      "meta": "path=wifi;slot=3",
+      "ts": 1790000000,
+      "nonce": "b56a85f3156e0cf6e7546c00ff332bc3",
+      "body_sha256": "ca7b2e47708f0548b827ab1132a16b75dee1eb6a78c86829c47556f52df8892f",
+      "signing_string": "CAIRN-UPLINK-V1\nPOST\n/v1/uplink/bundles/offer\n1790000000\nb56a85f3156e0cf6e7546c00ff332bc3\nca7b2e47708f0548b827ab1132a16b75dee1eb6a78c86829c47556f52df8892f\n1db5f72352f6d2a2cd7e1a5ec21f340e\npath=wifi;slot=3",
+      "signature": "eab736db440a84c1696a09818a73715b0b8a7712087a8e880de802f275174e4a3078ad5cb55c5984ce223c4b3763eb3b1ca9e11f0c3aa47169d151eab030810b",
+      "authorization": "Cairn-Device device=1db5f72352f6d2a2cd7e1a5ec21f340e,ts=1790000000,nonce=b56a85f3156e0cf6e7546c00ff332bc3,sig=eab736db440a84c1696a09818a73715b0b8a7712087a8e880de802f275174e4a3078ad5cb55c5984ce223c4b3763eb3b1ca9e11f0c3aa47169d151eab030810b"
+    },
+    {
+      "name": "chunk upload, over LTE",
+      "method": "PUT",
+      "target": "/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/chunks/1e9bc38cbf860b9ec31918b065f9b52476c549a782e0e7990bed8ce3868d2371",
+      "body_hex": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d54",
+      "meta": "path=lte",
+      "ts": 1790000001,
+      "nonce": "48d8c023ed8389143632349f52ad1de1",
+      "body_sha256": "1e9bc38cbf860b9ec31918b065f9b52476c549a782e0e7990bed8ce3868d2371",
+      "signing_string": "CAIRN-UPLINK-V1\nPUT\n/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/chunks/1e9bc38cbf860b9ec31918b065f9b52476c549a782e0e7990bed8ce3868d2371\n1790000001\n48d8c023ed8389143632349f52ad1de1\n1e9bc38cbf860b9ec31918b065f9b52476c549a782e0e7990bed8ce3868d2371\n1db5f72352f6d2a2cd7e1a5ec21f340e\npath=lte",
+      "signature": "6dbfc5b62edd59ea3af69504da3b98c7d384e3f8e2d763a00af646255d5a1cee1fdbf8bf0d4535b4af536d44063170f15e995db96ba42ebc541deeb32f25a009",
+      "authorization": "Cairn-Device device=1db5f72352f6d2a2cd7e1a5ec21f340e,ts=1790000001,nonce=48d8c023ed8389143632349f52ad1de1,sig=6dbfc5b62edd59ea3af69504da3b98c7d384e3f8e2d763a00af646255d5a1cee1fdbf8bf0d4535b4af536d44063170f15e995db96ba42ebc541deeb32f25a009"
+    },
+    {
+      "name": "commit, no body and no meta",
+      "method": "POST",
+      "target": "/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/commit",
+      "body_hex": "",
+      "meta": "",
+      "ts": 1790000002,
+      "nonce": "ada487fe33e6ec1db2e52fcfa6df7685",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signing_string": "CAIRN-UPLINK-V1\nPOST\n/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/commit\n1790000002\nada487fe33e6ec1db2e52fcfa6df7685\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1db5f72352f6d2a2cd7e1a5ec21f340e\n",
+      "signature": "ffa93586094d126884d5808013ee4d008f7f3777636dd49726adb469f245baa7b9fd7497846849b7ce3efdd3a64b312cd5e04205d4ac3f35c962958ae83e8304",
+      "authorization": "Cairn-Device device=1db5f72352f6d2a2cd7e1a5ec21f340e,ts=1790000002,nonce=ada487fe33e6ec1db2e52fcfa6df7685,sig=ffa93586094d126884d5808013ee4d008f7f3777636dd49726adb469f245baa7b9fd7497846849b7ce3efdd3a64b312cd5e04205d4ac3f35c962958ae83e8304"
+    },
+    {
+      "name": "receipt fetch with a query-less GET",
+      "method": "GET",
+      "target": "/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/receipt",
+      "body_hex": "",
+      "meta": "path=wifi;slot=4",
+      "ts": 1790000003,
+      "nonce": "051ed1559f788f85afe441a4a310c1f0",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signing_string": "CAIRN-UPLINK-V1\nGET\n/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/receipt\n1790000003\n051ed1559f788f85afe441a4a310c1f0\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1db5f72352f6d2a2cd7e1a5ec21f340e\npath=wifi;slot=4",
+      "signature": "c0247ded47ee96654b01095b62d88962ec6921e48e2bbde2f5e6b39e24413ac542d4592e9b6798dc1d969572c9f26082e38257544cd16aad766502045c8bc500",
+      "authorization": "Cairn-Device device=1db5f72352f6d2a2cd7e1a5ec21f340e,ts=1790000003,nonce=051ed1559f788f85afe441a4a310c1f0,sig=c0247ded47ee96654b01095b62d88962ec6921e48e2bbde2f5e6b39e24413ac542d4592e9b6798dc1d969572c9f26082e38257544cd16aad766502045c8bc500"
+    }
+  ],
+  "negative": [
+    {
+      "name": "meta altered after signing",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "meta=path=lte;slot=3",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "target altered after signing",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "target=/v1/uplink/bundles/d104645355a3f765edc31fe115adaa4c/commit",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "method altered after signing",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "method=PUT",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "body altered after signing",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "body_flip_first_byte",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "a different device id in the header",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "device=31873f45e647c1648b31568938c72b2c",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "device not enrolled",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "device_unenrolled",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "signature with one bit flipped",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "sig_flip_bit",
+      "server_now": 1790000005,
+      "want": "unauthenticated"
+    },
+    {
+      "name": "valid signature, server clock 121 s ahead",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "none",
+      "server_now": 1790000121,
+      "want": "clock_skew"
+    },
+    {
+      "name": "valid signature, server clock 121 s behind",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "none",
+      "server_now": 1789999879,
+      "want": "clock_skew"
+    },
+    {
+      "name": "valid signature, exactly 120 s skew is accepted",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "none",
+      "server_now": 1790000120,
+      "want": "ok"
+    },
+    {
+      "name": "the same request delivered twice",
+      "base": "offer, over Wi-Fi in slot 3",
+      "mutation": "none",
+      "server_now": 1790000005,
+      "deliver_twice": true,
+      "want": "ok",
+      "want_second": "unauthenticated"
+    }
+  ]
+}
