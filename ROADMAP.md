@@ -592,7 +592,7 @@ upload but cannot read a trip, forge a receipt or make the dongle delete anythin
 What it costs: trips reach the server only when the phone offloads them, so the dongle
 must be awake and in range after a drive.
 
-Firmware ([Cairn #6](https://github.com/ParkWardRR/Cairn/issues/6)):
+Firmware ([firmware #1](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/1)):
 
 - [x] Wi-Fi, HTTP upload, TLS client and HTTP OTA fetch removed; flash image about 1.1 MB → 0.45 MB.
       Receipt verification and receipt-gated pruning are untouched (`cairn_prune.c`)
@@ -606,7 +606,7 @@ Firmware ([Cairn #6](https://github.com/ParkWardRR/Cairn/issues/6)):
 - [ ] Flash the offload build and run `cairn-phone offload` against the dongle (the unit was unplugged when this was written)
 - [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
 
-Server ([Cairn #5](https://github.com/ParkWardRR/Cairn/issues/5), [#7](https://github.com/ParkWardRR/Cairn/issues/7)):
+Server ([server #4](https://github.com/ParkWardRR/cairn-vehicle-server/issues/4), [#7](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/7)):
 
 - [x] Relay contract specified ([app-sync-protocol](contracts/sync/v1/spec.md) §13)
 - [x] `/v1/relay/bundles/*` on the app API: offer returns offset/length per missing chunk; signed or bearer; scoped by the manifest's vehicle on every step; reuses the intake core. **Deployed to the VM**

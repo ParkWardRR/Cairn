@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ParkWardRR/Cairn/split/pindash"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pindash"
 )
 
 const owner = "ParkWardRR"

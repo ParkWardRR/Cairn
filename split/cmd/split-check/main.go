@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ParkWardRR/Cairn/split/pathmap"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pathmap"
 )
 
 func main() {

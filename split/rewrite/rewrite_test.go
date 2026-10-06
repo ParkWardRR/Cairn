@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ParkWardRR/Cairn/split/pathmap"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pathmap"
 )
 
 func git(t *testing.T, dir string, args ...string) {
@@ -73,7 +73,7 @@ func TestCrossLinksAbsolutizesOnlyWhatBroke(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(dir, "docs/a.md"))
-	want := "see [b](b.md), [spec](https://github.com/ParkWardRR/Cairn/blob/main/contracts/x/spec.md#s1) and [web](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard/blob/main/README.md)\n"
+	want := "see [b](b.md), [spec](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/contracts/x/spec.md#s1) and [web](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard/blob/main/README.md)\n"
 	if string(got) != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
 	}

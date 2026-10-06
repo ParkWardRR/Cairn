@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ParkWardRR/Cairn/split/extract"
-	"github.com/ParkWardRR/Cairn/split/pathmap"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/extract"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pathmap"
 )
 
 // A small monorepo with everything extraction has to survive: a rename, an

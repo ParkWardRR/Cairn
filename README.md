@@ -3,7 +3,7 @@
 
 <p align="center">
   <a href="https://blueoakcouncil.org/license/1.0.0"><img src="https://img.shields.io/badge/license-Blue_Oak_1.0.0-2E86C1?style=flat-square" alt="Blue Oak Model License 1.0.0"></a>
-  <a href="https://github.com/ParkWardRR/Cairn/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/Cairn/ci.yml?style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://github.com/ParkWardRR/cairn-driving-log-selfhosted/actions"><img src="https://img.shields.io/github/actions/workflow/status/ParkWardRR/cairn-driving-log-selfhosted/ci.yml?style=flat-square&label=CI" alt="CI"></a>
   <img src="https://img.shields.io/badge/cloud-none-95A5A6?style=flat-square" alt="No cloud">
   <img src="https://img.shields.io/badge/account-none-95A5A6?style=flat-square" alt="No account">
 </p>

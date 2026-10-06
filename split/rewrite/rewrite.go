@@ -23,8 +23,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/ParkWardRR/Cairn/split/links"
-	"github.com/ParkWardRR/Cairn/split/pathmap"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/links"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pathmap"
 )
 
 //go:embed templates/*
@@ -34,12 +34,12 @@ var templates embed.FS
 const Owner = "ParkWardRR"
 
 // Names are the GitHub names of the repositories. The front door is still called Cairn
-// until the last phase renames it; a link to the old name redirects afterwards.
+// (renamed from Cairn in the last phase of the split; links to the old name redirect).
 var Names = map[string]string{
 	pathmap.Server:   "cairn-vehicle-server",
 	pathmap.Web:      "cairn-vehicle-web-dashboard",
 	pathmap.Firmware: "cairn-esp32-device-firmware",
-	pathmap.Door:     "Cairn",
+	pathmap.Door:     "cairn-driving-log-selfhosted",
 }
 
 // Protocols each repository is pinned to, as the body of the "protocols" JSON object.

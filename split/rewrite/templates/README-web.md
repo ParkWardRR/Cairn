@@ -1,6 +1,6 @@
 # Cairn vehicle web dashboard
 
-The browser dashboard of the [Cairn driving log](https://github.com/ParkWardRR/Cairn): trips, routes,
+The browser dashboard of the [Cairn driving log](https://github.com/ParkWardRR/cairn-driving-log-selfhosted): trips, routes,
 places, boost and fuel-trim analysis, device health. A Nuxt app with a small server layer in front of
 the vehicle server's time-series store; nothing is sent anywhere except the map tiles and, if you turn
 it on, place-name lookups.
@@ -40,7 +40,7 @@ it drifts from `server/api`.
 
 ## Related repositories
 
-- [cairn-driving-log-selfhosted](https://github.com/ParkWardRR/Cairn): the front door, system docs and the contracts
+- [cairn-driving-log-selfhosted](https://github.com/ParkWardRR/cairn-driving-log-selfhosted): the front door, system docs and the contracts
 - [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server): the vehicle server
 - [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware): the dongle firmware
 - [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble): the iPhone app

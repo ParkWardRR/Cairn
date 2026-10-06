@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ParkWardRR/Cairn/split/pathmap"
-	"github.com/ParkWardRR/Cairn/split/rewrite"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/pathmap"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/rewrite"
 )
 
 func gitConfig(dir, key string) string {

@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ParkWardRR/Cairn/split/links"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/links"
 )
 
 type moveFlags []string
