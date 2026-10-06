@@ -229,6 +229,76 @@ format or the app; a preview that shows the recipient's view; default-private be
 fresh share exports the least it can); and an independent review of the draft against this
 table.
 
+## Planned: the networked dongle (Wi-Fi and LTE)
+
+> **Planned, not shipped.** The owner decided on 2026-10-05 that the dongle gets Wi-Fi and LTE
+> back, alongside BLE ([issue 19](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/19)).
+> Everything above this section is true of the **shipped** firmware, which has no network stack and
+> holds no network credential; it stays as written until the firmware that changes it ships. This
+> section is the model that firmware must meet **before** it ships, in the same way the sharing
+> section below was written before any sharing design. Status of every mitigation here is
+> **planned**; none is implemented, and those the issue did not already name (for example joining only networks the dongle was given, a PIN-locked capped SIM, an LTE-only modem) are the author's proposals for the review to accept or change. Protocol: [`uplink/v1`](../contracts/uplink/v1/spec.md) (draft).
+> Tracking: [issue 23](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/23).
+
+### Rule zero: encrypt first
+
+**No network credential is provisioned onto a unit until flash encryption and NVS encryption are
+enabled on that unit** ([firmware issue 18](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/18)).
+This is a **gate**, not an accepted risk, for the Wi-Fi password, the LTE APN and SIM PIN, and
+the pinned server keys. A unit without it keeps working over BLE only. (Proposed rule; the owner
+confirms it.) What an attacker gets:
+
+| Attacker | Before flash and NVS encryption | After |
+|---|---|---|
+| Dumps the chip's flash | Everything in NVS in clear: the storage root, the device signing seed, and (if provisioned) the Wi-Fi password and SIM PIN. Cairn therefore forbids provisioning credentials in this state | Ciphertext only |
+| Steals the unit, powered off | As above | With secure boot as well: nothing readable, unsigned firmware will not run |
+| Steals the unit, running or able to be powered on | The device key and, once provisioned, the credentials | The device key and the pinned server keys work **as that device** until revoked; it does **not** yield a list of the owner's home networks in the clear, because the dongle stores only what it was given for networks it must join and nothing else |
+| Reads the SD card | Ciphertext only (unchanged, format v3) | Unchanged |
+
+A stolen running unit is handled by revocation (one admin action), not cryptography. A SIM in a
+stolen unit is separately handled by the carrier (N3).
+
+### New threats and their disposition
+
+Each row has a mitigation or an explicit accepted-risk entry. "Gate" means a precondition for
+shipping, not a nice-to-have.
+
+| # | Threat | Mitigation (planned) | Residual risk / accepted |
+|---|---|---|---|
+| N1 | **Credentials on the chip**: Wi-Fi password, LTE APN and SIM PIN, server pins; NVS is plaintext today | Rule zero (gate). Secrets are write-only on the dongle (nothing reads them back over any interface), never logged, scrubbed from RAM after use. Pins are public keys, not secrets, but an attacker who can change them can redirect the unit, so they live in the encrypted, signed-firmware region | A chip dump of a unit locked down late (an early build in the field) reveals what was provisioned before. Accepted for those units only if they were never given a credential; otherwise re-provision after enabling encryption |
+| N2 | **Evil-twin Wi-Fi** (T2b, applicable again) | Server key **pinned** in firmware and every request signed (uplink §2, §3), so an impostor sees TLS handshake metadata and traffic volume but cannot impersonate the server, read data (sealed), or forge a receipt (pinned receipt key). The dongle never falls back to unpinned TLS or plain HTTP | Metadata: when the unit is awake and how much it sends. It will also hand a captive network its Wi-Fi password **if the network is allowed to ask for one**, so the dongle joins only networks it was explicitly given (SSID and security type, WPA2/3 only; no open networks, no portal flows) |
+| N3 | **SIM theft** (a stolen dongle's SIM is a data plan) | The SIM is locked with a PIN held only in the encrypted store; the data cap is enforced on the dongle (N13) and on the carrier's plan, which should be a capped, data-only SIM with no voice or SMS | A thief who defeats the PIN with a SIM swap into another device spends only the plan's cap. Accepted |
+| N4 | **Rogue base station, downgrade, IMSI and SMS exposure** | The application does not depend on the carrier: TLS pinned end to end, sealed data. The modem is configured for LTE-only (no 2G fallback) where the module allows, and SMS is not used for any control path | The carrier and a rogue cell see that a SIM is attached and the volume it moves, and a rogue cell can force a denial of service (jam or refuse attach). Both accepted; BLE remains the fallback |
+| N5 | **A device-facing endpoint reachable from the internet** | Four routes only, on a dedicated hostname or port, nothing of the app API or dashboard reachable on it; authentication checked before any body is read; uniform `401` for every pre-signature failure (no enumeration); per-address and per-device rate limits; bounded bodies; per-request nonce and ±120 s window (uplink §7, §8). The exposure option is **proposed, not decided** (an owner decision) | Volumetric denial of service is not solved by protocol (an upstream firewall or the host's limits do that). The cost of an unauthenticated request is one hex parse and one signature verification, and **must be measured** under load before this endpoint is opened |
+| N6 | **The same bundle arriving by BLE and LTE at once** | Offer and chunks are idempotent and content-addressed; the server persists one receipt per bundle and returns it verbatim to every path, so both receipts are the same bytes and the dongle prunes once (a second receipt for an already-pruned bundle is ignored) | None expected; covered by a drill when the firmware exists |
+| N7 | **Phone-to-dongle instructions** (the check-in) are a new remote-control surface: a malicious or stolen enrolled phone, replay, flooding, an unauthenticated nearby central feeding instructions | Allow-listed message types only (nothing that deletes data, changes credentials, or raises the data cap), signed by an enrolled client key, a per-session counter against replay, a rate limit, and an audit trail on the dongle and in the app. Anything beyond the allow-list needs the sealed configuration path (N10) | A stolen enrolled phone can issue allow-listed instructions until revoked; the allow-list is chosen so that is an annoyance (a check-in, a slot request), never a loss |
+| N8 | **Time-sliced radio**: the dongle is deaf to BLE during a Wi-Fi slot | A slot is bounded (a hard maximum duration, set so the longest deaf window is short next to a trip and cannot be extended by the network); nothing safety-relevant depends on BLE being up; a trip starting ends the slot ([firmware issue 17](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/17)) | During a slot an attacker can cause no more harm than during any other period, and cannot reach BLE-only functions; they can at worst time an attack to the window, which the bound limits. Accepted |
+| N9 | **"Home" detection** leaks where the owner lives if it stores coordinates or a network list | Prefer the **phone-asserted** option: the app tells the dongle "you are home" (an allow-listed instruction, N7), so the dongle stores no coordinates and no list of places; a scanned option stores only the one Wi-Fi network it was given and leaks nothing beyond N1; a **geofence** on the dongle stores coordinates and is the worst on exactly this property, so it is the last choice | The Wi-Fi network the dongle was provisioned with is itself a hint about where it lives, protected by rule zero |
+| N10 | **Configuration passes through a web UI and a server** on its way to the dongle | The web layer is modelled as a **credential-handling system**: authenticated sessions only, write-only fields (a stored secret is never shown again), no secret in a log, a URL, the browser's storage or an error message, TLS only. The server seals the configuration **to the device's key** so neither the server's database nor an intermediary holds usable plaintext at rest, and the dongle verifies it before applying anything ([issue 27](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/27)) | The web UI sees a secret while the owner types it. A compromised server or browser can read what is typed; that is the cost of configuring from a browser, and the reason the sealed path and the allow-list exist. Accepted, with the owner informed |
+| N11 | **The LTE digest** could be mistaken for proof of upload | A digest is **provisional and is never a prune receipt**: it is a different message type with a different signing context, and the dongle's prune logic accepts only a v3 receipt verified against the pinned key, naming the bundle's content root ([issue 26](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/26)) | None, provided the negative vectors (a digest presented as a receipt) are enforced in the firmware |
+| N12 | **Live location ticks**, if ever enabled, are a tracking surface | Off by default and not part of the first networked release. If added: opt-in per vehicle, a coarse position, its own enrolled-client scope, a retention limit, and an off switch that does not need the network | If enabled, the server and anyone with that scope can see where the car is, by design |
+| N13 | **The LTE data cap is also a safety control** | The cap is enforced **on the dongle**, below a hard ceiling compiled into the firmware that **cannot be raised remotely without an authorised, sealed message** (N10); a bug or a stolen unit cannot spend past it | Within the ceiling the plan can be spent by a compromised device before revocation. Accepted: that is what the ceiling is for |
+| N14 | **Physical access to the USB port** | Still the trust boundary until secure boot ships: whoever holds the unit can re-provision an unassigned or freshly rebooted device. The existing 60 s post-boot window and the "never during a trip" rule remain | Closed only by secure boot and the lock-down in `esp32-hardening.md` |
+
+### What changes in the matrix
+
+- T2b returns for the networked dongle (N2).
+- T3 (forged upload): a bundle may now arrive directly from the device as well as via a phone;
+  the manifest signature and assignment checks are the same, and the request signature adds
+  *who is calling* (uplink §2).
+- T4 (replay): adds the per-request nonce and window (N5).
+- T5 (man in the middle): adds dongle ↔ server over the internet, covered by the pinned key (N2, N4).
+- T1 (physical theft): adds credentials to what a chip dump could reveal; see rule zero.
+
+### Review
+
+**Not yet done.** This section is a first draft of the model by the author of the protocol, which
+is the wrong person to approve it. The issue's done-condition is a review that has passed, recorded
+here with its date and reviewer; until then the networked dongle must not ship. The most useful
+things for a reviewer to attack: the cost of an unauthenticated request (N5), the late-lock-down
+units (N1), the "allow-list is harmless" claim for phone instructions (N7), and the interaction of
+the data-cap ceiling with revocation latency (N13).
+
 ## Recommendations
 
 1. Use a dedicated VLAN or network segment for IoT devices including Cairn

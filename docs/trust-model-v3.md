@@ -44,6 +44,57 @@ model covering three things that were previously designed separately:
 | What the BLE bond protects | Live phone GNSS and status | Also the **metadata** of what is stored (counts, sizes, times in the manifest). Not the data |
 | Cost | n/a | Trips reach the server only when the phone offloads them; the dongle must be awake and in range. See [ble-offload.md](../contracts/ble/v1/offload.md) §5 |
 
+## 0.2 Planned: the networked dongle (not shipped)
+
+On 2026-10-05 the owner decided the dongle gets Wi-Fi and LTE back, in addition to BLE
+([issue 19](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/19)). Section 0.1 and
+the rest of this document describe the **shipped** firmware and stay true of it until the firmware
+that changes them ships. This section states what the model must be for the networked one, so it
+is settled before the firmware is. The threats, mitigations and accepted risks are in
+[threat-model.md](threat-model.md#planned-the-networked-dongle-wi-fi-and-lte) (N1-N14); the protocol
+is [`uplink/v1`](../contracts/uplink/v1/spec.md) (draft).
+
+| | Shipped firmware | Planned networked firmware |
+|---|---|---|
+| Who talks to the server | The phone, signed requests | The phone **or** the dongle itself, over Wi-Fi or LTE; BLE stays |
+| How the dongle authenticates | n/a | Each request signed by its enrolled Ed25519 key (domain-separated), over TLS 1.3 **pinned to the server's key in firmware**; no client certificate, no CA |
+| Who authorises deletion | A server-signed receipt against a pinned key | **Unchanged**, whichever path carried it. Receipts are identical bytes on every path |
+| Secrets on the chip | The storage root and signing seed (no network credential) | Also the Wi-Fi password, the SIM PIN and the pinned server keys, **only after** flash and NVS encryption are on (a gate) |
+| What a hostile network sees | n/a | Traffic metadata only: it cannot impersonate the server, read data or forge a receipt |
+| New surface | none | An internet-reachable device endpoint (four routes, authenticated before any body), a phone-to-dongle instruction channel (allow-listed), and a sealed configuration path |
+| The BLE radio during a Wi-Fi slot | n/a | Unavailable for the slot's bounded duration |
+
+**Added to "what is not trusted" for the networked dongle:** any Wi-Fi network and any cellular
+network (including a rogue base station); the carrier; the server's web UI as a place secrets
+pass through (it is modelled as credential-handling, N10); a digest message as evidence of upload
+(N11); the device's clock beyond a coarse sanity check; and the phone's instructions to the
+dongle beyond an allow-list (N7).
+
+**Paths added by the networked dongle** (to table 1, not yet real):
+
+| Path | Transport | Authentication | Exposure |
+|---|---|---|---|
+| Dongle → server, home Wi-Fi | HTTPS on the LAN address, server key pinned | Device-signed requests (uplink §2) | LAN |
+| Dongle → server, LTE or other Wi-Fi | HTTPS on a public hostname, server key pinned | The same | A narrow public endpoint; **proposed, an owner decision** |
+| Server → dongle configuration | Carried by the next uplink or BLE session | Sealed to the device key, verified before applying | Via the web UI and server (N10) |
+
+**Added to the threat-to-outcome table (section 6) for the networked dongle:**
+
+| Scenario | Outcome |
+|---|---|
+| Evil-twin Wi-Fi network | The dongle joins only networks it was given; even then the attacker sees metadata only (pinned key, signed requests) |
+| A stolen dongle's SIM is used elsewhere | Capped by the on-dongle data ceiling and the carrier plan; revoke the device and suspend the SIM |
+| Rogue base station | Metadata and a denial of service; no impersonation, no data. BLE offload remains |
+| Chip dump of a unit with encryption on | Ciphertext; a unit without encryption never held a network credential (rule zero) |
+| Same bundle uploaded over BLE and LTE | One receipt, returned verbatim to both; the dongle prunes once |
+| A digest is replayed as a receipt | Refused: different message type and signing context; only a v3 receipt authorises a prune |
+| A flood of unauthenticated requests at the endpoint | One uniform `401` each, authentication before any body, per-address limits; volumetric attacks need an upstream control |
+
+**Review:** see the last subsection of the threat model's planned section. It has **not** been
+done, and the networked dongle must not ship before it is.
+
+---
+
 ## 1. Actors, paths and what authenticates each
 
 | Path | Transport | Authentication | Role | Exposure |
