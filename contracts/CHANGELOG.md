@@ -5,6 +5,11 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `ble/v1` (**draft**, additive): `device-info.md` (a read-only `DEVICE_INFO` value: capabilities, firmware, identity,
+  storage, transports, installed engines, boot timing, as unknown-skipping records; `UPLINK_EVENT` slot
+  announcements) and `checkin.md` (four server-signed instruction types with a replay counter, and an unsigned,
+  bounded `HOME_TRIGGER`). `PROTOCOL_VERSION` capability bit 3 = device information. 29 vectors including
+  negatives. No existing byte or vector changed.
 - `uplink/v1` (**draft**, new): the device uplink protocol for direct Wi-Fi and LTE upload. Per-request Ed25519
   signatures by the enrolled device key (`CAIRN-UPLINK-V1`, eight-line signing string), a server key pinned in
   firmware, the relay's offer, chunk, commit and receipt under `/v1/uplink/bundles/`, and 15 deterministic

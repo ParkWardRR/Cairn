@@ -26,7 +26,7 @@ This spec is normative here, in the Cairn contracts (`contracts/ble/v1/`). The i
 | `OBD_LIVE` | `0020` | device → phone | 48 B | ~1 Hz | 2 |
 | `DEVICE_STATUS` | `0021` | device → phone | 12 B | 1 Hz | 2 |
 
-`PROTOCOL_VERSION`: `u8 version` + `u8 capabilities bitmap`. The app refuses to stream to unknown major versions.
+`PROTOCOL_VERSION`: `u8 version` + `u8 capabilities bitmap`. The app refuses to stream to unknown major versions. Bit 2 = bundle offload ([offload.md](offload.md)); bit 3 = device information ([device-info.md](device-info.md), which also defines the characteristics `0040` to `0044`).
 
 ## `GNSS_FIX` (28 bytes)
 
