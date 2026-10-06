@@ -5,6 +5,11 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `store/v1/README.md`: documents the `GET /healthz` JSON (`status`, `build`, `store_contract`), the
+  `GET /capabilities` response (tables, views, columns, endpoints) and the minor-version rule (a minor
+  increments on any additive change; removing, renaming or repurposing is `store/v2`), taken from the
+  server implementation. Documentation only; `schema.json` and every vector are unchanged, so nothing is
+  released for it.
 - `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
   repository. Documentation only; no protocol or vector changed, so nothing is released for it.
 
