@@ -1,0 +1,376 @@
+{
+  "description": "Negative vectors for the sealed enrolment blob. Every key here is a PUBLIC TEST KEY derived from a published label; none protects anything.",
+  "spec": "contracts/enrolment/v1/spec.md",
+  "notes": [
+    "Each vector derives from the 'first enrolment, key version 1' blob in vectors.json with one thing wrong. 'blob' is hex; 'blob_text' is the console line or bare base64 and replaces it.",
+    "The verdict is the FIRST refusal of this acceptance path: decode the text; check the fingerprint the operator typed is well formed; parse (length, magic, version, non-zero ids, then the proof-of-possession signature); compare the typed fingerprint with the blob's; unseal with server_private_key and refuse an all-zero root.",
+    "error classes: malformed, bad_signature, unseal, fingerprint_mismatch, fingerprint_required, fingerprint_invalid. A conformant opener refuses every vector and names the class.",
+    "confirm_fingerprint is what the operator typed: the fingerprint of the device key inside the blob, unless the vector is about the fingerprint.",
+    "Sequences carry server state (an escrow, a registry) and are run only by a server. The dongle seals blobs and never opens one, so it has nothing to refuse here. Within a sequence 'error' is empty when the step succeeds.",
+    "A replay of the very same blob is NOT refused: re-enrolling an identical blob changes nothing and succeeds, so a half-finished enrolment can be re-run. What a replay cannot do is bring back what has since been destroyed or revoked; see the sequences."
+  ],
+  "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+  "device_id": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+  "fingerprint": "5fd41190",
+  "vectors": [
+    {
+      "name": "signature-bit-flipped",
+      "description": "The genuine blob with one bit of the signature flipped.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b903e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "signed-by-another-key",
+      "description": "The genuine blob re-signed by a different Ed25519 key, the public key field untouched.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4539ee24537c9ab60d063fdfb12de70f3e9e10951ea2993d033fe190cd277fd95fea3a5614f039668313012177df7596d04b34de3487e206c5622c382dfb37402",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "device-id-edited",
+      "description": "The genuine blob with a device_id bit flipped and the signature left as it was.",
+      "blob": "43454e5201a1a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "key-version-edited",
+      "description": "The genuine blob with a storage_key_version bit flipped and the signature left as it was.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101010000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "ciphertext-edited",
+      "description": "The genuine blob with a ciphertext bit flipped and the signature left as it was.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6618aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "tag-edited",
+      "description": "The genuine blob with a Poly1305 tag bit flipped and the signature left as it was.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c4ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "bad_signature"
+    },
+    {
+      "name": "device-id-edited-resigned",
+      "description": "device_id edited and the blob re-signed with the device key, as someone able to forge the signature would.",
+      "blob": "43454e5201a1a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4c5423246062a16bd12fb8a45d5b1367c557bf07e8fc498495a63f02e47803f7bd61392fe086c18d13bf71d82f5684e689f743f8a8dc52ce8ae6ceaa307a11b04",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "key-version-edited-resigned",
+      "description": "storage_key_version edited and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101010000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce43a73ac4ee1b7c2347e22380118ed374b5417fc3e854683efa7e007c0d7487f9477dbafae084a086d27a5b96a11d401a17a6711e2ff004bdd0532c2b69c3a8105",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "ephemeral-key-edited-resigned",
+      "description": "The ephemeral X25519 key edited and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518642c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b23f20c79e951d98ff5f1b5c3de729c7bf078c1d253417f68d473055cdf2ff12e12127420a95c7fa5e25730a12da6bbedbc7365c5952f4be0227b6dd85057906",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "nonce-edited-resigned",
+      "description": "The nonce edited and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a07eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4e6dc6f293db5ab8aa7adf546c19616e48a8d8a035ff1cc85278e808d8bebda75f389ee5e654f1e8f1b51f2179bca8f53c510f4c668f4ad05a789e4e623282d0e",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "ciphertext-edited-resigned",
+      "description": "The ciphertext edited and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6618aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4044d80a94cf8e46b326dc25fd5721072dbd7cd5793c087dff9fdf3482ac6471dd5d3f1e8305b206ce9135bb2c35a069d2bcc9bf1d434e4e42132583e7633cf0d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "tag-edited-resigned",
+      "description": "The Poly1305 tag edited and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c4ff0dea048a027dc0e0dcee62c9dce4ab40070ae5f3d66ea9ad32900f2212e86df70d7a863ef6a6e9571401abf07185a55c9686152752c8079d088183ed2aeef50c0a3ec35bcdb6a86b6b86d76f860e",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "low-order-ephemeral-key-resigned",
+      "description": "The ephemeral key replaced by the all-zero point, a low-order point whose shared secret is all zero, and re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a69411010000000000000000000000000000000000000000000000000000000000000000000000a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4c60471b446e5f47f5956287ee3b8401f08c6cd87da1ae05c7ee4e0a6f3620df5c23a80389393e00f76472adce2bdba7560e771e988af0fc2f2588351ffd0750f",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "public-key-swapped-resigned",
+      "description": "The device public key replaced with another key's and re-signed by that key: the proof of possession is genuine, for the wrong key. The operator confirms that key's fingerprint.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafcc964680bd293a287318334e16951f3520c570f53ef325336252909d4598e0d401000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4610c52c19fec6ed6722c2333ef251cf99ef0e0a483c307fb4f71a5da4455f3f9e6933e44caf64c75fcfbde6d5a6b0cb250baaf50ae3a58668eec3782874f5d06",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "235a1909",
+      "error": "unseal"
+    },
+    {
+      "name": "sealed-to-another-server-key",
+      "description": "The genuine blob offered to a server whose enrolment key is not the one it was sealed to.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "9a4da9f03360fc76fe7cd621e9443a127e7135dcabfc4baa12d53ad32e5f8203",
+      "confirm_fingerprint": "5fd41190",
+      "error": "unseal"
+    },
+    {
+      "name": "bad-magic",
+      "description": "The first four bytes are XENR, not CENR.",
+      "blob": "58454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4e7892f1619dc771e1ff5c66201f386665c33d2a2e1026a4327aa13d2388633217593073fb028f1578339c6111bfa639b383e34ce8d6203a0ef7042eb8845fd0e",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "unsupported-version",
+      "description": "version 2, re-signed.",
+      "blob": "43454e5202a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce48a207d9d5f386e349bed3420427a835225598b30d42a4ee3e15c251fd14a7898f6487d7b86c05438aec945b4d9074597571638cb58c08000ca060cae34093009",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "zero-device-id",
+      "description": "An all-zero device_id, re-signed.",
+      "blob": "43454e520100000000000000000000000000000000dc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce48809787d98cf839482827d16c02cbdf930d8d0a9adb94b662f4b98a10470aaf84a3a55b9ac2f59ac1796350eae74dac944b54e81c00adcd9dfc110f9f6fbb60c",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "zero-key-version",
+      "description": "storage_key_version 0, re-signed.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941100000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce46679a70a213c2a3c6862eec73cf056ad83e02f117d521e91959f2edbb5fc2d885a498affe6e706e15e8f0e1fc863e24ea0d1cf4c59bd0b1484dfe83927bbeb01",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "truncated",
+      "description": "The genuine blob minus its last byte (224 bytes).",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b871",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "extended",
+      "description": "The genuine blob plus one zero byte (226 bytes).",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d00",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "empty",
+      "description": "Zero bytes.",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "zero-root",
+      "description": "A correctly signed and sealed blob whose storage root is 32 zero bytes.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75fd038143dc78ea23d8093f5b301d982aaeb24979454b876ac3c4a44d623cced461fc6a94c0e38c05f4f569e65f6fcf9c224aeebbeb0d5af12b1a549afd69ec56cd6e736d4b534f9270a3e873b36096278de6974aea5488287c251cddd72cfc225caf6f3331bdfc2aa36c19e5f0b90ce05",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "fingerprint-mismatch",
+      "description": "The genuine blob, confirmed with the fingerprint of a different unit (00000000).",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "00000000",
+      "error": "fingerprint_mismatch"
+    },
+    {
+      "name": "fingerprint-missing",
+      "description": "The genuine blob with no fingerprint confirmed: there is no approve-whatever-arrived mode.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "",
+      "error": "fingerprint_required"
+    },
+    {
+      "name": "fingerprint-too-short",
+      "description": "The genuine blob, confirmed with 6 hex characters.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd411",
+      "error": "fingerprint_invalid"
+    },
+    {
+      "name": "fingerprint-not-hex",
+      "description": "The genuine blob, confirmed with an 8-character value that is not hex.",
+      "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd4119z",
+      "error": "fingerprint_invalid"
+    },
+    {
+      "name": "text-extra-padding",
+      "description": "The base64 of the genuine blob with a trailing =.",
+      "blob_text": "Q0VOUgGgoaKjpKWmp6ipqqusra6v3GE1lQ9naTQM3GezC+mV/YkKCJS8kFENiYPzsfKmlBEBAAAAx1GGAsdZVxUgxL4maDJ8MBffLBVA6Neq7US7QqahwUOhfu1CLPIVLiqPriJhV1bBnJpANGIEp19krzJFCOrmYIrKleKqDhUZi3vthco3VmiD8yao6mRNmMX/DeoEigJ9wODc7mLJ3OSzc7r/+wZ4WfJ7kT6Ex4mSMqrP+E7zYzqm7UnbTP54VhnsQ2fLyoFjDdI6Bxo61ONelaejMtv2e2xZZiq1uHEN=",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "text-inner-space",
+      "description": "The base64 of the genuine blob with a space inside it.",
+      "blob_text": "Q0VOUgGgoa KjpKWmp6ipqqusra6v3GE1lQ9naTQM3GezC+mV/YkKCJS8kFENiYPzsfKmlBEBAAAAx1GGAsdZVxUgxL4maDJ8MBffLBVA6Neq7US7QqahwUOhfu1CLPIVLiqPriJhV1bBnJpANGIEp19krzJFCOrmYIrKleKqDhUZi3vthco3VmiD8yao6mRNmMX/DeoEigJ9wODc7mLJ3OSzc7r/+wZ4WfJ7kT6Ex4mSMqrP+E7zYzqm7UnbTP54VhnsQ2fLyoFjDdI6Bxo61ONelaejMtv2e2xZZiq1uHEN",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "text-truncated",
+      "description": "The base64 of the genuine blob minus its last four characters (222 bytes).",
+      "blob_text": "Q0VOUgGgoaKjpKWmp6ipqqusra6v3GE1lQ9naTQM3GezC+mV/YkKCJS8kFENiYPzsfKmlBEBAAAAx1GGAsdZVxUgxL4maDJ8MBffLBVA6Neq7US7QqahwUOhfu1CLPIVLiqPriJhV1bBnJpANGIEp19krzJFCOrmYIrKleKqDhUZi3vthco3VmiD8yao6mRNmMX/DeoEigJ9wODc7mLJ3OSzc7r/+wZ4WfJ7kT6Ex4mSMqrP+E7zYzqm7UnbTP54VhnsQ2fLyoFjDdI6Bxo61ONelaejMtv2e2xZZiq1",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "text-url-alphabet",
+      "description": "The genuine blob in the URL-safe base64 alphabet (- and _ for + and /).",
+      "blob_text": "Q0VOUgGgoaKjpKWmp6ipqqusra6v3GE1lQ9naTQM3GezC-mV_YkKCJS8kFENiYPzsfKmlBEBAAAAx1GGAsdZVxUgxL4maDJ8MBffLBVA6Neq7US7QqahwUOhfu1CLPIVLiqPriJhV1bBnJpANGIEp19krzJFCOrmYIrKleKqDhUZi3vthco3VmiD8yao6mRNmMX_DeoEigJ9wODc7mLJ3OSzc7r_-wZ4WfJ7kT6Ex4mSMqrP-E7zYzqm7UnbTP54VhnsQ2fLyoFjDdI6Bxo61ONelaejMtv2e2xZZiq1uHEN",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    },
+    {
+      "name": "text-not-base64",
+      "description": "A console line that is not base64.",
+      "blob_text": "ENROLL-BLOB this is not base64!",
+      "server_private_key": "ef1616ece568088186273c13bc2c7926d09c0885767e7db711b1e59b15c079e2",
+      "confirm_fingerprint": "5fd41190",
+      "error": "malformed"
+    }
+  ],
+  "sequences": [
+    {
+      "name": "replay-of-the-same-blob",
+      "description": "The same blob enrolled twice. The second succeeds and reports the root already escrowed: a replay changes nothing.",
+      "steps": [
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": ""
+        },
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": "",
+          "root_already_escrowed": true
+        }
+      ]
+    },
+    {
+      "name": "replay-after-crypto-shred",
+      "description": "A blob enrolled, its key version then crypto-shredded, and the captured blob replayed. A destroyed version cannot be brought back by presenting its blob again.",
+      "steps": [
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": ""
+        },
+        {
+          "action": "destroy_key",
+          "device_id": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+          "key_version": 1,
+          "error": ""
+        },
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": "root_shredded"
+        }
+      ]
+    },
+    {
+      "name": "replay-after-revocation",
+      "description": "A blob enrolled, the device then revoked, and the captured blob replayed. Re-enrolment must not silently un-revoke a device.",
+      "steps": [
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": ""
+        },
+        {
+          "action": "revoke",
+          "device_id": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+          "error": ""
+        },
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": "revoked_device"
+        }
+      ]
+    },
+    {
+      "name": "same-version-different-root",
+      "description": "A different storage root offered for a device and key version that already has one escrowed. The escrow is write-once per version.",
+      "steps": [
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": ""
+        },
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f490f0503e859bd47f7eb517657def0e3bbb3ab12fb23be6445252887c824dd75689651e7b57e9ce1e8b7ec301ca01ef3206d90d8853c02ef476ab9faaab18ebf2434f56e8ec52e0884dad20aa9d9fda1b7a2b92692a03c0809d6cc3eaaa746b4a1cbc02d66569aaf2c4835458949590f",
+          "confirm_fingerprint": "5fd41190",
+          "error": "root_mismatch"
+        }
+      ]
+    },
+    {
+      "name": "same-device-id-different-signing-key",
+      "description": "A device id that is already enrolled, offered with another signing key. Refused unless the operator deliberately allows a key change.",
+      "steps": [
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafdc6135950f6769340cdc67b30be995fd890a0894bc90510d8983f3b1f2a6941101000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d98c5ff0dea048a027dc0e0dcee62c9dce4b373bafffb067859f27b913e84c7899232aacff84ef3633aa6ed49db4cfe785619ec4367cbca81630dd23a071a3ad4e35e95a7a332dbf67b6c59662ab5b8710d",
+          "confirm_fingerprint": "5fd41190",
+          "error": ""
+        },
+        {
+          "action": "enrol",
+          "blob": "43454e5201a0a1a2a3a4a5a6a7a8a9aaabacadaeafcc964680bd293a287318334e16951f3520c570f53ef325336252909d4598e0d401000000c7518602c759571520c4be2668327c3017df2c1540e8d7aaed44bb42a6a1c143a17eed422cf2152e2a8fae22615756c19c9a40346204a75f64af324508eae6608aca95e2aa0e15198b7bed85ca37566883f326a8ea644d983e50df4e5b827558c2112832998ce50086855e7d0a797c55ade535fb7d6988e5d4433c1b73418535a32439f3512283f4eec6e421a8edfe10946a96dd70ae155212f4ef8a255176e867965ff2db64360f",
+          "confirm_fingerprint": "235a1909",
+          "error": "key_changed"
+        }
+      ]
+    }
+  ]
+}

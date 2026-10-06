@@ -26,6 +26,17 @@ publishes. Protocol directories are versioned independently of the collection ta
 - `sync/v1/spec.md`: clarified, not changed: a bearer token on a signed-only route is
   `401 signature_required` (what the server has always sent; §2.5 said every 401 is
   `unauthenticated`), and the relay's stable error codes are named (§13).
+- `format/v3`: 26 negative vectors (now 59): header magic / version / short, frame header tamper, manifest
+  tamper / wrong key / unsupported version / non-canonical / missing mandatory field, one vector per
+  manifest binding rule, receipt bad signature / wrong signer / tampered root / unsupported version /
+  non-canonical / truncated / trailing bytes, update descriptor tamper / wrong key. New expectation
+  fields: `receipt.parse_error`, and `header.parse_error` values `bad_magic`, `short_header`,
+  `unsupported_format_version`. A manifest with `valid: false` must now be refused at parse by every
+  implementation. Existing vectors are byte-identical.
+- `enrolment/v1`: `vectors/negative.json` (32 blobs, 5 stateful sequences).
+- Each protocol README lists its negative cases (`sync/v1`'s are in `exchanges.json`).
+- Not yet released: a runner that has not learned the new fields fails loudly, so the firmware
+  runners need updating before they pin the release that carries these.
 - `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
   repository. Documentation only; no protocol or vector changed, so nothing is released for it.
 
