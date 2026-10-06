@@ -14,6 +14,10 @@ publishes. Protocol directories are versioned independently of the collection ta
   signatures by the enrolled device key (`CAIRN-UPLINK-V1`, eight-line signing string), a server key pinned in
   firmware, the relay's offer, chunk, commit and receipt under `/v1/uplink/bundles/`, and 15 deterministic
   vectors including negative cases. Additive: no existing protocol or vector changed.
+- `store/v1/schema.json`: the first machine-readable store contract, 8 tables and 10 views
+  generated from the server's own native schema (`store/v1.0`). Read as a compatible range
+  (see `store/v1/README.md`). Content change: needs a tagged release before a server can pin it.
+
 - `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
   repository. Documentation only; no protocol or vector changed, so nothing is released for it.
 
