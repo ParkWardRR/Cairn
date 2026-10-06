@@ -42,8 +42,16 @@ jobs:
         working-directory: server
         run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w ."; exit 1; }
 
+      # The dongle's BLE offload protocol, compiled for the host. The end-to-end tests
+      # in internal/offloadclient run THE FIRMWARE'S OWN module against this client
+      # and the server's relay; without it they skip, which would hide a break.
+      - name: Build the firmware protocol simulator
+        run: make -C firmware/cairn-v2/test/host offload-sim
+
       - name: Test
         working-directory: server
+        env:
+          CAIRN_OFFLOAD_SIM: ${{ github.workspace }}/firmware/cairn-v2/test/host/build/offload-sim
         run: go test ./...
 
       - name: Conformance vectors are reproducible
