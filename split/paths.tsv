@@ -40,6 +40,7 @@ fixtures/format-v3/	door	contracts/format/v3/vectors/
 fixtures/enroll-v1/	door	contracts/enrolment/v1/vectors/
 fixtures/app-sync-v1/	door	contracts/sync/v1/vectors/
 fixtures/ble-offload-v1/	door	contracts/ble/v1/vectors/offload/
+fixtures/ble-v1/	door	contracts/ble/v1/vectors/golden/	vendored from the iOS repo so the firmware test is self-contained
 
 # ── deploy: server side ──────────────────────────────────────────────────────
 deploy/migrations/	server	deploy/migrations/
@@ -93,6 +94,7 @@ docs/v2-hardware-mapping-audit.md	firmware	docs/v2-hardware-mapping-audit.md
 # with history: each component writes its own, and the front door keeps its own.
 .github/	door	.github/	the front door's own workflows are rewritten in phase 4
 tests/check-runners.sh	server	tests/check-runners.sh	copied into every repo with CI in the rewrite step
+tests/check-runners-selftest.sh	server	tests/check-runners-selftest.sh	copied with it
 tests/server-crash-during-commit.sh	server	tests/interop/server-crash-during-commit.sh	interop: needs the firmware repo's emulator, pinned
 .gitignore	door	.gitignore	split per repository in the rewrite step
 LICENSE	door	LICENSE	copied into every repository in the rewrite step
