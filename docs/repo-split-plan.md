@@ -2,6 +2,8 @@
 
 > **Executed on 2026-10-05.** Phases 0 to 7 are done, production runs from the new repositories, and the old repository is preserved read-only. What remains is recorded as issues, listed below. The plan that follows the status block is kept **verbatim** (revision 4, including the owner's opening notes and inline answers) as the record of what was decided and why.
 
+> **Tooling note (issue 18).** The plan names a `split/` directory (`split/paths.tsv`, the extraction and rewrite tools). That directory no longer exists: the migration-only parts were removed once the split was done and live in this repository's history (the commit before `split/` became `tools/`) and in the archive repository. What is still used is in [`tools/`](../tools/README.md).
+
 ## Outcome by phase
 
 | Phase | Outcome |

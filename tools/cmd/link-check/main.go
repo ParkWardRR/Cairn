@@ -1,7 +1,7 @@
-// Command split-links rewrites or checks the relative links in a repository's markdown.
+// Command link-check rewrites or checks the relative links in a repository's markdown.
 //
-//	split-links --root . --check                          # every relative link resolves?
-//	split-links --root . --move old=new --move ... --write  # a set of moves already made with git mv
+//	link-check --root . --check                          # every relative link resolves?
+//	link-check --root . --move old=new --move ... --write  # a set of moves already made with git mv
 //
 // With --write, every tracked text file is updated: markdown links are recomputed (both
 // for links TO moved files and for links INSIDE moved files) and mentions of moved
@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/links"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/tools/links"
 )
 
 type moveFlags []string

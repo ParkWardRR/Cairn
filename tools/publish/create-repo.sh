@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Creates one empty PUBLIC component repository with the project's standard settings.
 #
-#   split/publish/create-repo.sh <name> "<description>" <topic>...
+#   tools/publish/create-repo.sh <name> "<description>" <topic>...
 #
 # Standard settings: no wiki or projects, branches deleted on merge, secret scanning and
 # push protection on, workflows read-only by default and unable to approve pull requests,

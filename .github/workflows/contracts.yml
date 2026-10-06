@@ -9,10 +9,10 @@ name: Contracts
 on:
   push:
     branches: [main]
-    paths: ['contracts/**', 'split/contractcheck/**', 'split/cmd/contract-check/**', '.github/workflows/contracts.yml']
+    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**', '.github/workflows/contracts.yml']
   pull_request:
     branches: [main]
-    paths: ['contracts/**', 'split/contractcheck/**', 'split/cmd/contract-check/**', '.github/workflows/contracts.yml']
+    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**', '.github/workflows/contracts.yml']
 
 jobs:
   contracts:
@@ -25,12 +25,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: split/go.mod
+          go-version-file: tools/go.mod
 
       - name: The checker itself passes its tests
-        working-directory: split
+        working-directory: tools
         run: go test ./contractcheck/
 
       - name: Every protocol version is complete and valid
-        working-directory: split
+        working-directory: tools
         run: go run ./cmd/contract-check ../contracts

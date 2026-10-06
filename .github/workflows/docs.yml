@@ -6,10 +6,10 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: ['**.md', 'split/links/**', 'split/cmd/split-links/**', '.github/workflows/docs.yml']
+    paths: ['**.md', 'tools/links/**', 'tools/cmd/link-check/**', '.github/workflows/docs.yml']
   pull_request:
     branches: [main]
-    paths: ['**.md', 'split/links/**', 'split/cmd/split-links/**', '.github/workflows/docs.yml']
+    paths: ['**.md', 'tools/links/**', 'tools/cmd/link-check/**', '.github/workflows/docs.yml']
 
 jobs:
   links:
@@ -22,10 +22,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: split/go.mod
+          go-version-file: tools/go.mod
 
       - name: No broken relative links
-        working-directory: split
-        # the README templates under split/rewrite link to files that exist only in the
-        # repository they are written into, so they are checked there, not here
-        run: go run ./cmd/split-links -check -root .. -skip split/rewrite/templates
+        working-directory: tools
+        run: go run ./cmd/link-check -check -root ..

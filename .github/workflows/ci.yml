@@ -27,10 +27,10 @@ jobs:
       - name: The policy check can actually fail
         run: tests/check-runners-selftest.sh
 
-  # The split tooling: path map, link rewriting, extraction rewrites, contract checks, the
-  # pin dashboard. (The extraction tests need git-filter-repo and are run by hand when the
-  # tooling is used, not on every change here.)
-  split-tooling:
+  # The tools that outlived the split: the contract checker, the link checker and the pin
+  # dashboard. (The migration tooling that carved the repositories apart is gone; it is in
+  # this repository's history and in the archive repository.)
+  tools:
     runs-on: [self-hosted, cairn]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 15
@@ -40,12 +40,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: split/go.mod
+          go-version-file: tools/go.mod
 
       - name: Vet and test
-        working-directory: split
-        run: go vet ./... && go test ./pathmap/ ./links/ ./rewrite/ ./contractcheck/ ./pindash/
-
-      - name: Every tracked path is accounted for
-        working-directory: split
-        run: go run ./cmd/split-check --ref HEAD --repo ..
+        working-directory: tools
+        run: go vet ./... && go test ./...

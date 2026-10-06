@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ParkWardRR/cairn-driving-log-selfhosted/split/contractcheck"
+	"github.com/ParkWardRR/cairn-driving-log-selfhosted/tools/contractcheck"
 )
 
 func main() {
