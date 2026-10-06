@@ -19,6 +19,7 @@ Last reviewed 2026-10-05.
 > [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware); the
 > iPhone app has its own. The original is preserved read-only as
 > [cairn-original-monorepo-archive](https://github.com/ParkWardRR/cairn-original-monorepo-archive).
+> The plan, what was executed and the follow-up issues are in [docs/repo-split-plan.md](docs/repo-split-plan.md).
 > The phase history below was written against the single repository: a path such as `ui/` or
 > `firmware/cairn-v2/` is now the root of the matching repository.
 
