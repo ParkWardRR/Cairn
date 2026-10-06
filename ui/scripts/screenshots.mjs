@@ -1,13 +1,13 @@
 // Captures the README screenshots from a running UI.
 //
 //   go run ./server/cmd/cairn-tsdb-demo        # synthetic data on :8480
-//   npx nuxt dev --port 3123                   # in ui/
-//   node scripts/screenshots.mjs http://localhost:3123 ../docs/screenshots
+//   npx nuxt dev --port 3123                   # in the web repository root (ui/ in the monorepo)
+//   node scripts/screenshots.mjs http://localhost:3123 docs/screenshots   # monorepo: ../docs/screenshots
 import { chromium } from '@playwright/test'
 import { mkdirSync, readFileSync, existsSync } from 'node:fs'
 
 const base = process.argv[2] ?? 'http://localhost:3123'
-const out = process.argv[3] ?? '../docs/screenshots'
+const out = process.argv[3] ?? 'docs/screenshots'
 const scale = Number(process.env.SCALE ?? 1)
 mkdirSync(out, { recursive: true })
 
