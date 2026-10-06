@@ -251,7 +251,7 @@ owner on 2026-10-05.) What an attacker gets:
 | Attacker | Before flash and NVS encryption | After |
 |---|---|---|
 | Dumps the chip's flash | Everything in NVS in clear: the storage root, the device signing seed, and (if provisioned) the Wi-Fi password and SIM PIN. Cairn therefore forbids provisioning credentials in this state | Ciphertext only |
-| Steals the unit, powered off | As above | With secure boot as well: nothing readable, unsigned firmware will not run |
+| Steals the unit, powered off | As above | Flash and NVS encryption: nothing readable. Unsigned firmware is still *not* refused on the car's unit (ESP32-D0WDQ6 revision v1.0 cannot use secure boot V2; V1 is weaker, irreversible and not planned). A unit of revision v3.0 or later would add secure boot V2 |
 | Steals the unit, running or able to be powered on | The device key and, once provisioned, the credentials | The device key and the pinned server keys work **as that device** until revoked; it does **not** yield a list of the owner's home networks in the clear, because the dongle stores only what it was given for networks it must join and nothing else |
 | Reads the SD card | Ciphertext only (unchanged, format v3) | Unchanged |
 
@@ -278,7 +278,7 @@ shipping, not a nice-to-have.
 | N11 | **The LTE digest** could be mistaken for proof of upload | A digest is **provisional and is never a prune receipt**: it is a different message type with a different signing context, and the dongle's prune logic accepts only a v3 receipt verified against the pinned key, naming the bundle's content root ([issue 26](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/26)) | None, provided the negative vectors (a digest presented as a receipt) are enforced in the firmware |
 | N12 | **Live location ticks**, if ever enabled, are a tracking surface | Off by default and not part of the first networked release. If added: opt-in per vehicle, a coarse position, its own enrolled-client scope, a retention limit, and an off switch that does not need the network | If enabled, the server and anyone with that scope can see where the car is, by design |
 | N13 | **The LTE data cap is also a safety control** | The cap is enforced **on the dongle**, below a hard ceiling compiled into the firmware that **cannot be raised remotely without an authorised, sealed message** (N10); a bug or a stolen unit cannot spend past it | Within the ceiling the plan can be spent by a compromised device before revocation. Accepted: that is what the ceiling is for |
-| N14 | **Physical access to the USB port** | Still the trust boundary until secure boot ships: whoever holds the unit can re-provision an unassigned or freshly rebooted device. The existing 60 s post-boot window and the "never during a trip" rule remain | Closed only by secure boot and the lock-down in `esp32-hardening.md` |
+| N14 | **Physical access to the USB port** | Still the trust boundary until secure boot ships, which on the car's unit (revision v1.0, no secure boot V2) means until it is replaced by a revision v3.0 or later unit: whoever holds the unit can re-provision an unassigned or freshly rebooted device. The existing 60 s post-boot window and the "never during a trip" rule remain | Closed only by secure boot (V2, a revision v3.0+ unit) and the lock-down in `esp32-hardening.md`; flash encryption alone does not stop re-flashing over USB while development mode is on |
 
 ### What changes in the matrix
 

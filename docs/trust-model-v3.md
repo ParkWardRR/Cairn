@@ -346,7 +346,7 @@ the VPN up in the background, so uploads resume when the app next gets time.
 | Frames deleted, reordered or spliced | `prev_crc32` chain and AAD binding detect it |
 | Old card image restored | Same (counter, content) → idempotent duplicate; a forged different bundle under a spent counter → **conflict, quarantined** |
 | Dongle stolen while running | Revoke the device in Cairn (one admin action); further uploads are refused. Cryptography cannot help against a live, unlocked device — minimise the window |
-| Dongle stolen powered off | With flash encryption + secure boot: firmware and NVS unreadable, unsigned firmware will not boot |
+| Dongle stolen powered off | With flash encryption: firmware and NVS unreadable. Unsigned firmware is refused only with secure boot V2, which the car's unit (ESP32-D0WDQ6 rev v1.0) cannot do; a rev v3.0+ unit can |
 | Dongle moved between cars | Explicit reassignment; bundles under a superseded or unrecognised assignment are rejected |
 | Phone lost | Revoke that app client; its signed requests and bearer tokens stop working immediately |
 | Server disk imaged | CAS is ciphertext; keystore roots are wrapped under a master key kept apart from the data dir |
@@ -371,7 +371,7 @@ In short:
 | Application-layer AEAD on every SD frame | **Phase 21** | No SD encryption hardware exists; this is the only layer that can protect the card |
 | Hardware RNG for every nonce and key | **Phase 21** | `esp_fill_random`; never timestamps or sequence numbers |
 | Flash encryption (release mode) | **Phase 24 — gated** | Irreversible; do on a sacrificial unit first; needs the build migrated off precompiled Arduino libs |
-| Secure boot | **Phase 24 — gated** | Irreversible; V1 vs V2 depends on chip revision (check first) |
+| Secure boot | **Phase 24 — gated** | Irreversible; V2 needs chip revision v3.0+. Measured: the car's unit is v1.0, so V2 is unavailable there and V1 is not planned. No eFuse burn without a spare unit |
 | Signed OTA | Written (Phase 11), **install not yet exercised on hardware** | Must be proven, with rollback, before locking anything |
 | JTAG / UART ROM download disabled | Phase 24, after the above | Part of release lock-down |
 | Tailscale on the dongle | **No** | Not realistic on the ESP32. Tailscale runs on the host and the iPhone |
