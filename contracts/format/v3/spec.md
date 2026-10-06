@@ -1008,6 +1008,14 @@ verdicts: *structural* (no key) and *keyed* (with the vector's root).
 | `merkle-empty` | Empty tree root = `SHA256(0x02)` |
 | `content-root-member-order` | Member ordering is by raw name bytes; permuted input yields the same root |
 | `receipt-wrong-content-root` | Valid signature over a different root → rejected as an acknowledgement |
+| `header-bad-magic` / `header-unsupported-format-version` / `header-short` | A header that is not a v3 header, declares another format version, or is cut short → refused, keyed or not, never read on |
+| `frame-header-tampered` | A frame header field edited, CRC repaired → structurally clean, keyed `AUTH_FAILED` |
+| `manifest-tampered-body` / `manifest-wrong-device-key` | A manifest edited after signing, or signed by another key → signature rejected |
+| `manifest-unsupported-version` / `manifest-non-canonical` / `manifest-missing-mandatory-field` | Correctly signed but unreadable manifests → refused at parse |
+| `manifest-device-id-mismatch` … `manifest-segment-gap` (nine vectors with `manifest-segment-header-mismatch`) | Every §5.4 binding rule, one vector each: device, boot, vehicle, assignment, counter, key version, capture index, journal index, contiguous naming |
+| `receipt-bad-signature` / `receipt-wrong-server-key` / `receipt-tampered-content-root` | A receipt whose signature does not verify against the pinned key, including one edited to carry the uploaded root → not an acknowledgement |
+| `receipt-unsupported-version` / `receipt-non-canonical` / `receipt-truncated` / `receipt-trailing-bytes` | A receipt that cannot be read → refused at parse, before any signature |
+| `update-descriptor-tampered-body` / `update-descriptor-wrong-key` | A descriptor edited after signing, or signed by the receipt key → refused |
 
 Each vector directory contains the input bytes, the expected parse verdict and
 the expected derived values, so a conformance runner needs no implementation

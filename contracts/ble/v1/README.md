@@ -16,3 +16,13 @@ instructions and the home trigger. Both are **draft**.
   firmware and a Go reference client and tested end to end; the phone app has not
   implemented it yet.
 - **Support window:** for as long as firmware that serves it is supported.
+
+## Negative cases
+
+[`vectors/offload/`](vectors/offload/) scenarios that must be refused: `read_bad_arguments`,
+`unknown_bundle`, `trip_active`, `mtu_too_small`, and on the receipt path
+`put_receipt_wrong_key`, `put_receipt_no_pinned_key`, `put_receipt_bad_length`, `put_receipt_out_of_order`.
+A refused receipt stores and deletes nothing. Those are produced by the firmware's own
+module, not by `mkvectors`. The receipt bytes themselves (signature, signer, tampered root, version,
+canonical form) are covered by the `receipt-*` vectors in [`format/v3`](../../format/v3/). The golden
+companion frames have no negative cases yet.
