@@ -551,21 +551,23 @@ Firmware ([Cairn #6](https://github.com/ParkWardRR/Cairn/issues/6)):
       legacy Wi-Fi and key slots are erased from NVS at boot (host-tested, mutation-checked)
 - [x] `secrets.h` holds trust anchors only (enrolment key, receipt key, BLE passkey)
 - [x] Host suite green: storage matrix 41/41, format vectors 33/33, provisioning 12/12
-- [ ] Flash the new build on the real dongle (needs a USB replug) and confirm the legacy slots are erased
-- [ ] BLE offload service: `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone is connected
-- [ ] Golden vectors `fixtures/ble-offload-v1/`, shared with the iOS repo
+- [x] Flashed on the real dongle: the key and certificate were physically overwritten in flash; a residual Wi-Fi password survived (documented in device-provisioning.md; flash encryption is the real fix)
+- [x] BLE offload (`lib/cairn_offload` + NimBLE shim): `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone works. 22 host rows, ASan clean, nine mutations of the receipt gate and checks caught. **Host-tested only: the offload firmware has not yet been flashed or run over the air**
+- [x] Golden vectors `fixtures/ble-offload-v1/`, generated from the firmware's own module; a test fails if they drift
+- [ ] Flash the offload build and run `cairn-phone offload` against the dongle (the unit was unplugged when this was written)
 - [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
 
 Server ([Cairn #5](https://github.com/ParkWardRR/Cairn/issues/5), [#7](https://github.com/ParkWardRR/Cairn/issues/7)):
 
 - [x] Relay contract specified ([app-sync-protocol](docs/app-sync-protocol.md) §13)
-- [ ] `/v1/relay/bundles/*` on the app API: offer returns offset/length per missing chunk; signed or bearer; scoped by the manifest's vehicle; reuses the intake core
+- [x] `/v1/relay/bundles/*` on the app API: offer returns offset/length per missing chunk; signed or bearer; scoped by the manifest's vehicle on every step; reuses the intake core. **Deployed to the VM**
+- [x] End-to-end test with no radio: the phone client, the firmware's own protocol module (host-built as `offload-sim`) and the server's real relay, including lost and corrupted notifications, a wrongly pinned dongle, an out-of-scope phone and SD bit rot
 - [ ] Emulator matrix drives the relay path
 - [ ] Retire the `:8443` device listener, device certificates and `/api/v2/firmware/*` once the relay is proven on hardware
 
 iOS ([#14](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/issues/14)):
 
-- [ ] BLE offload client, durable per-bundle state machine, background operation (CoreBluetooth state restoration, background `URLSession`)
+- [ ] BLE offload client, durable per-bundle state machine, background operation (CoreBluetooth state restoration, background `URLSession`). `server/internal/offloadclient` and `cmd/cairn-phone` are a working reference in Go
 
 Then the **hardware round trip** ([docs/hardware-roundtrip.md](docs/hardware-roundtrip.md) stage B):
 capture → seal → BLE offload → relay → receipt → prune on the real dongle.
