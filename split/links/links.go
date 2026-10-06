@@ -154,6 +154,45 @@ func Rewrite(text, oldFile, newFile string, m Moves) string {
 	return out.String()
 }
 
+// Map rewrites every relative link target in a markdown document through fn, skipping
+// fenced code. fn receives the target as written (fragment included) and returns the
+// replacement; returning it unchanged leaves the link alone.
+func Map(text string, fn func(target string) string) string {
+	var out strings.Builder
+	inFence := false
+	for _, line := range strings.SplitAfter(text, "\n") {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "```") || strings.HasPrefix(trim, "~~~") {
+			inFence = !inFence
+			out.WriteString(line)
+			continue
+		}
+		if inFence {
+			out.WriteString(line)
+			continue
+		}
+		line = mdLink.ReplaceAllStringFunc(line, func(s string) string {
+			sub := mdLink.FindStringSubmatch(s)
+			if !isRelative(sub[1]) {
+				return s
+			}
+			return "](" + fn(sub[1]) + sub[2] + ")"
+		})
+		line = htmlAttr.ReplaceAllStringFunc(line, func(s string) string {
+			sub := htmlAttr.FindStringSubmatch(s)
+			if !isRelative(sub[2]) {
+				return s
+			}
+			return sub[1] + `="` + fn(sub[2]) + `"`
+		})
+		out.WriteString(line)
+	}
+	return out.String()
+}
+
+// SplitTarget separates a link target into its path and its "#fragment" or "?query".
+func SplitTarget(t string) (path, suffix string) { return splitFrag(t) }
+
 // ReplacePaths rewrites mentions of moved repo-root-relative paths in any text (code
 // comments, build files, prose). A mention must start at a word edge, so "x/fixtures/a"
 // or "../fixtures/a" is left for a human: those are relative to somewhere, and guessing
