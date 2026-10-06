@@ -26,4 +26,6 @@ jobs:
 
       - name: No broken relative links
         working-directory: split
-        run: go run ./cmd/split-links -check -root ..
+        # the README templates under split/rewrite link to files that exist only in the
+        # repository they are written into, so they are checked there, not here
+        run: go run ./cmd/split-links -check -root .. -skip split/rewrite/templates

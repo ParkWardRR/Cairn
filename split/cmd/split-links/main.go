@@ -29,6 +29,7 @@ func main() {
 	root := flag.String("root", ".", "repository root")
 	check := flag.Bool("check", false, "only report broken relative links")
 	write := flag.Bool("write", false, "apply the rewrite")
+	skip := flag.String("skip", "", "with --check: do not check markdown under this repo-relative directory (templates whose links resolve only in the repository they are written into)")
 	var mv moveFlags
 	flag.Var(&mv, "move", "old=new path move (repeatable); files or directories, repo-relative")
 	flag.Parse()
@@ -55,7 +56,7 @@ func main() {
 		}
 		p := string(f)
 		files = append(files, p)
-		if strings.HasSuffix(p, ".md") {
+		if strings.HasSuffix(p, ".md") && (*skip == "" || !strings.HasPrefix(p, strings.TrimSuffix(*skip, "/")+"/")) {
 			md = append(md, p)
 		}
 	}
