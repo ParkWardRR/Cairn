@@ -166,6 +166,13 @@ type storeColumns struct {
 	Columns []struct{ Name, Type string } `json:"columns"`
 }
 
+// storeMacro is a table macro (store/v1.1 on): its parameter names in order, and the columns
+// it returns.
+type storeMacro struct {
+	Parameters []string `json:"parameters"`
+	storeColumns
+}
+
 // checkStoreSchema validates the shape of store/v1/schema.json: not whether the server
 // still produces it (the server's CI compares its native schema with this file), only that
 // the file is something such a comparison can be run against.
@@ -183,6 +190,7 @@ func checkStoreSchema(rel, path string) []Problem {
 		StoreContract string                  `json:"store_contract"`
 		Tables        map[string]storeColumns `json:"tables"`
 		Views         map[string]storeColumns `json:"views"`
+		Macros        map[string]storeMacro   `json:"macros"`
 	}
 	dec := json.NewDecoder(strings.NewReader(string(b)))
 	dec.DisallowUnknownFields()
@@ -227,6 +235,25 @@ func checkStoreSchema(rel, path string) []Problem {
 	}
 	for n, v := range s.Views {
 		check("view", n, v)
+	}
+	for n, m := range s.Macros {
+		if _, dup := s.Tables[n]; dup {
+			add(n + " is listed as both a table and a macro")
+		}
+		if _, dup := s.Views[n]; dup {
+			add(n + " is listed as both a view and a macro")
+		}
+		if len(m.Parameters) == 0 {
+			add("macro " + n + " has no parameters: a view would do")
+		}
+		seen := map[string]bool{}
+		for _, p := range m.Parameters {
+			if p == "" || seen[strings.ToLower(p)] {
+				add("macro " + n + " has an empty or repeated parameter name")
+			}
+			seen[strings.ToLower(p)] = true
+		}
+		check("macro", n, m.storeColumns)
 	}
 	return out
 }
