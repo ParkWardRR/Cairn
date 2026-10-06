@@ -1,0 +1,3598 @@
+{
+  "version": 1,
+  "spec": "contracts/sync/v1/spec.md",
+  "notes": [
+    "STATUS: draft. sync/v1 stays draft until the iOS app has passed these vectors; the server producing and checking them is not independent validation.",
+    "The steps are ONE timeline against ONE server, in order. Replay, expiry, revocation and cursors depend on what came before. Run them in order against your client's request builder and response parser; each step is self-contained (full request, full response), so a mock server can serve the recorded responses.",
+    "server_clock_unix is the server's clock for that step. Build ts from the step's `signing.ts`, not from your own clock. A step whose signing.ts differs from server_clock_unix is a skew case.",
+    "For a signed step, rebuild signing.signing_string from request (method, request_target, signing.ts, signing.nonce, SHA-256 of the body, signing.client_id) and require it equal. matches_request=false marks a step where the request sent differs from what was signed: your string for the request AS SENT will not equal signing_string, which is the point.",
+    "signature_der_base64 is ASN.1 DER ECDSA-P256-SHA256, standard base64. These signatures are deterministic (RFC 6979) so the file is reproducible; CryptoKit's are randomised, so verify rather than compare. signature_valid says whether it verifies over signing_string under the registered key of the client the header names.",
+    "The test keys are public and protect nothing. Client keys are in fixture.clients; the dongle's device key and the receipt-signing key are given as Ed25519 public keys.",
+    "response.body_json is the compacted JSON the server sent; compare it as JSON, not as text. response.body_hex is used for non-JSON bodies (CBOR receipts). Opaque values (bearer token, cursor, epoch) are whatever this server drew: a client must treat them as opaque; they appear verbatim because later steps use them.",
+    "Every authentication failure is 401 with error `unauthenticated` and the message `authentication failed`, whatever was wrong (the one exception is a bearer token on a signed-only route: `signature_required`). Do not branch on the cause.",
+    "Not covered here: the 200 Parquet body of /v1/snapshot (it is the analytical store's output, not the sync protocol's) and the administration listings."
+  ],
+  "fixture": {
+    "instance_id": "00112233445566778899aabbccddeeff",
+    "clock_start_unix": 1790000000,
+    "clients": [
+      {
+        "name": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "role": "admin",
+        "scope": [
+          "*"
+        ],
+        "private_scalar_hex": "8aac6f3f3fe56dfe0e6f2394e2bdd79e8d3d2884af895900a91fb648cea64fdf",
+        "public_key_x963_hex": "04ce94467103a5644ee81938385df4ccaea7e1afbe4f7394c41d533ed060587231fe00bcd887b6bedb09801488c0785a915627d5ac2e7d430b8a2902237c616551"
+      },
+      {
+        "name": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "role": "user",
+        "scope": [
+          "303132333435363738393a3b3c3d3e3f"
+        ],
+        "private_scalar_hex": "d25c6228c56e74df1f804b604d6355c8490bb810346ca40d92b4cdeb5659f6ab",
+        "public_key_x963_hex": "04319835125278a3a8f3509ec27c5e796c3c998943912d144335b69a80c47f5f7c92665a5ac7f8909cbcf289cb4fac5985290058f750dfd222fe0cefc150ba3297"
+      },
+      {
+        "name": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "role": "user",
+        "scope": [
+          "404142434445464748494a4b4c4d4e4f"
+        ],
+        "private_scalar_hex": "f8535e5974796c027025de9b8f2dd3298ac1379e5bacc4703ac8c8dab8bdbb69",
+        "public_key_x963_hex": "04015659652208ad72184b8b663830db5f79743f05e4e0636f4cabd26175f0f33efe54cd8acffcf64732f8734762ba3ef53b3314962c871effc8cd5363fbd5e7d7"
+      },
+      {
+        "name": "charlie",
+        "client_id": "0190c0de000070008000000000000a04",
+        "role": "user",
+        "scope": [
+          "303132333435363738393a3b3c3d3e3f"
+        ],
+        "private_scalar_hex": "7f738b1cb6cc6eb9cb5754f3de934aceb7d8b7e738c0f53750468853a691e4f4",
+        "public_key_x963_hex": "0403bd10c217a5eb943625061d1e79614c77cd6018eae65d422bd3ace11252bfd89396599848db9ba6610b2e426722519f8ea8d426687fc30d858d27b825a96d8c"
+      }
+    ],
+    "vehicles": [
+      {
+        "name": "v1",
+        "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+        "display_name": "2014 BMW 428i — N20",
+        "archived": false
+      },
+      {
+        "name": "v2",
+        "vehicle_id": "404142434445464748494a4b4c4d4e4f",
+        "display_name": "2017 BMW M240i — B58",
+        "archived": false
+      },
+      {
+        "name": "v3",
+        "vehicle_id": "606162636465666768696a6b6c6d6e6f",
+        "display_name": "2009 BMW 335i — N54 (sold)",
+        "archived": true
+      }
+    ],
+    "device_id": "101112131415161718191a1b1c1d1e1f",
+    "device_public_key_ed25519_hex": "9f8d4bbc0bf6feeabbabe4d2aff165db4f77fc4b6d46619818af409ddab507bf",
+    "receipt_signing_public_key_ed25519_hex": "6ac68127eb3cadf81445bd5db346c9e1ef351949789223a0342e9a1238eb6beb",
+    "bundles": [
+      {
+        "name": "delivered",
+        "bundle_id": "364ba7c8cb59ab8f74c09a8f78aeef35",
+        "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+        "content_root_hex": "67ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d8085",
+        "manifest_cbor_hex": "b81b01030250364ba7c8cb59ab8f74c09a8f78aeef350350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858204d5b6e87abdd63245cac83bd993915efc8f27bcdcfa4b0ce6f56b98c069cde2483707365672d30303030303030302e73656719014858201cc93137d8a720b8752eba2bce38396ccfa45afbb48530db1cf1f2f13bbef6c683707365672d30303030303030312e73656718dc58203ef42ebd204c09f9db476720536200ca08371173756661722c8b2b3e44b4c50910838300190100582084791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82830119010058204266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def830218fc5820d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe5111582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d808512f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a01181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631",
+        "manifest_signature_hex": "7296c06b5f724b2f2e969e1b6e95a34360eaea73327610eadf70b65ffff00acaa2a23abd07f1bee9e26e1827654f682e2b531f336d315ba64eea3588f483c406"
+      },
+      {
+        "name": "refused",
+        "bundle_id": "091aa87d2d7d4f0f574a25a47580cb49",
+        "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+        "content_root_hex": "04663b407c72c99fb3fbd0c00e88dd1e3f92ae7ef7585cb0dc5359304efaf529",
+        "manifest_cbor_hex": "b81b01030250091aa87d2d7d4f0f574a25a47580cb490350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858202fadda2057b334943f23decf6c023134dff6a2ba5dd5e9452ed8bcb9ba4a938283707365672d30303030303030302e73656719014858204d07789cba5e4c5ead0a624bf39bbe51bbc89454aaef86b3f07a123f2f966c4d83707365672d30303030303030312e73656718dc5820044cae176a4b7fa58312b80de76a8984ba51e7830fef2be563eab88513c7ec181083830019010058202cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680830119010058205c47a7d4183f58e02e181443016e31796be9a9f2cf7fb753970a493aa99163d5830218fc5820092e48e6a50e2c7e03db92b067e923aa8cff8b8a76aa4413e44598b283e8abff11582004663b407c72c99fb3fbd0c00e88dd1e3f92ae7ef7585cb0dc5359304efaf52912f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a02181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631",
+        "manifest_signature_hex": "f2d9e7e633c5c205395efa44f14fe5853d63a22ce05bb54cab940f1d31fc46936c0c1c83eca4b5d43f1f735bf92abb789959d5cfe7372c27442b417e0c96c400"
+      }
+    ],
+    "invitation_codes": {
+      "admin": "95712dca029e0f9e9c9dc38800343306",
+      "alpha": "5ccc017c68ba9d4354cedaa9564df39b",
+      "bravo": "157e2bf54f4675f921135e845e6b4821",
+      "charlie": "53983411c656bfd7931e99e9460b970b"
+    },
+    "unknown_client_id": "0190c0de0000700080000000000000ff",
+    "unknown_vehicle_id": "99999999999999999999999999999999",
+    "foreign_epoch_cursor": "YzE6MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA6MQ"
+  },
+  "steps": [
+    {
+      "name": "health",
+      "doc": "Unauthenticated liveness. instance_id is what the app compares between its LAN and Tailnet URLs; server_time is for diagnosing clock skew.",
+      "server_clock_unix": 1790000000,
+      "auth": "none",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/health",
+        "body_hex": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "instance_id": "00112233445566778899aabbccddeeff",
+          "protocol_version": 1,
+          "server_time": "2026-09-21T14:13:20Z",
+          "status": "ok"
+        }
+      }
+    },
+    {
+      "name": "enrol_admin",
+      "doc": "A valid enrolment: 201 with the client id, role, scope and the server identity to pin.",
+      "server_clock_unix": 1790000001,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223935373132646361303239653066396539633964633338383030333433333036222c226e616d65223a2241646d696e206950686f6e65222c2270726f6f66223a224d4555434951446466797a746a685370724f6465636b5a5831787047546f54764472345774536c534b6c4270464432695141496748526c3339326c675462686e79735550505848596e31444873525a4b4b7132333476565a5146616f5a45493d222c227075626c69635f6b6579223a2230346365393434363731303361353634346565383139333833383564663463636165613765316166626534663733393463343164353333656430363035383732333166653030626364383837623662656462303938303134383863303738356139313536323764356163326537643433306238613239303232333763363136353531227d",
+        "body_text": "{\"code\":\"95712dca029e0f9e9c9dc38800343306\",\"name\":\"Admin iPhone\",\"proof\":\"MEUCIQDdfyztjhSprOdeckZX1xpGToTvDr4WtSlSKlBpFD2iQAIgHRl392lgTbhnysUPPXHYn1DHsRZKKq234vVZQFaoZEI=\",\"public_key\":\"04ce94467103a5644ee81938385df4ccaea7e1afbe4f7394c41d533ed060587231fe00bcd887b6bedb09801488c0785a915627d5ac2e7d430b8a2902237c616551\"}"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "client_id": "0190c0de000070008000000000000a01",
+          "role": "admin",
+          "server_identity": {
+            "instance_id": "00112233445566778899aabbccddeeff",
+            "spki_sha256": ""
+          },
+          "server_time": "2026-09-21T14:13:21Z",
+          "vehicles": [
+            "*"
+          ]
+        }
+      }
+    },
+    {
+      "name": "enrol_alpha",
+      "doc": "A client scoped to one vehicle (v1).",
+      "server_clock_unix": 1790000002,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223563636330313763363862613964343335346365646161393536346466333962222c226e616d65223a22416c706861206950686f6e65222c2270726f6f66223a224d45554349425270364966756b543457545656496b777334756934344a33644c6a58685232523155686256626e4b37304169454171644e52577148326c6878744a4c6447464f534f62514a754c796245394c71616c7035776d6d4c4e4d714d3d222c227075626c69635f6b6579223a2230343331393833353132353237386133613866333530396563323763356537393663336339393839343339313264313434333335623639613830633437663566376339323636356135616337663839303963626366323839636234666163353938353239303035386637353064666432323266653063656663313530626133323937227d",
+        "body_text": "{\"code\":\"5ccc017c68ba9d4354cedaa9564df39b\",\"name\":\"Alpha iPhone\",\"proof\":\"MEUCIBRp6IfukT4WTVVIkws4ui44J3dLjXhR2R1UhbVbnK70AiEAqdNRWqH2lhxtJLdGFOSObQJuLybE9Lqalp5wmmLNMqM=\",\"public_key\":\"04319835125278a3a8f3509ec27c5e796c3c998943912d144335b69a80c47f5f7c92665a5ac7f8909cbcf289cb4fac5985290058f750dfd222fe0cefc150ba3297\"}"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "client_id": "0190c0de000070008000000000000a02",
+          "role": "user",
+          "server_identity": {
+            "instance_id": "00112233445566778899aabbccddeeff",
+            "spki_sha256": ""
+          },
+          "server_time": "2026-09-21T14:13:22Z",
+          "vehicles": [
+            "303132333435363738393a3b3c3d3e3f"
+          ]
+        }
+      }
+    },
+    {
+      "name": "enrol_bad_proof",
+      "doc": "NEGATIVE: the proof was made by a different key than the one being enrolled. 400, and the invitation is NOT consumed.",
+      "server_clock_unix": 1790000003,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223135376532626635346634363735663932313133356538343565366234383231222c226e616d65223a22427261766f206950686f6e65222c2270726f6f66223a224d45514349466a684e6d2f5663304b376330647138435a54614c4d576665703966777131736b54626c7432584e566630416941674741573543582b46663632586f495078445a493263436b74684c4538644234612f4a70535862773177413d3d222c227075626c69635f6b6579223a2230343031353635393635323230386164373231383462386236363338333064623566373937343366303565346530363336663463616264323631373566306633336566653534636438616366666366363437333266383733343736326261336566353362333331343936326338373165666663386364353336336662643565376437227d",
+        "body_text": "{\"code\":\"157e2bf54f4675f921135e845e6b4821\",\"name\":\"Bravo iPhone\",\"proof\":\"MEQCIFjhNm/Vc0K7c0dq8CZTaLMWfep9fwq1skTblt2XNVf0AiAgGAW5CX+Ff62XoIPxDZI2cCkthLE8dB4a/JpSXbw1wA==\",\"public_key\":\"04015659652208ad72184b8b663830db5f79743f05e4e0636f4cabd26175f0f33efe54cd8acffcf64732f8734762ba3ef53b3314962c871effc8cd5363fbd5e7d7\"}"
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "enrolment rejected"
+        }
+      }
+    },
+    {
+      "name": "enrol_bravo_after_bad_proof",
+      "doc": "The same invitation still works after the bad proof above.",
+      "server_clock_unix": 1790000004,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223135376532626635346634363735663932313133356538343565366234383231222c226e616d65223a22427261766f206950686f6e65222c2270726f6f66223a224d45554349444d4b4c4f61715a68507a5a6b4b5168785431324473585431706957362b68707a4668434e683156554a78416945416a456c387863695a4338562f464777485377614e37723031634e6c7a5661653079667761493156517049343d222c227075626c69635f6b6579223a2230343031353635393635323230386164373231383462386236363338333064623566373937343366303565346530363336663463616264323631373566306633336566653534636438616366666366363437333266383733343736326261336566353362333331343936326338373165666663386364353336336662643565376437227d",
+        "body_text": "{\"code\":\"157e2bf54f4675f921135e845e6b4821\",\"name\":\"Bravo iPhone\",\"proof\":\"MEUCIDMKLOaqZhPzZkKQhxT12DsXT1piW6+hpzFhCNh1VUJxAiEAjEl8xciZC8V/FGwHSwaN7r01cNlzVae0yfwaI1VQpI4=\",\"public_key\":\"04015659652208ad72184b8b663830db5f79743f05e4e0636f4cabd26175f0f33efe54cd8acffcf64732f8734762ba3ef53b3314962c871effc8cd5363fbd5e7d7\"}"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "client_id": "0190c0de000070008000000000000a03",
+          "role": "user",
+          "server_identity": {
+            "instance_id": "00112233445566778899aabbccddeeff",
+            "spki_sha256": ""
+          },
+          "server_time": "2026-09-21T14:13:24Z",
+          "vehicles": [
+            "404142434445464748494a4b4c4d4e4f"
+          ]
+        }
+      }
+    },
+    {
+      "name": "enrol_charlie",
+      "doc": "A second client scoped to v1; used for the revocation steps.",
+      "server_clock_unix": 1790000005,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223533393833343131633635366266643739333165393965393436306239373062222c226e616d65223a22436861726c6965206950686f6e65222c2270726f6f66223a224d455543495143643539337148425450535678342b534b4f5a486632346d5448646d48334a69585331507476626c6f346d5149674c476a6172565349694d2f366e46306e455336653765667a696a6f71342f3176376e69664d432b376c786f3d222c227075626c69635f6b6579223a2230343033626431306332313761356562393433363235303631643165373936313463373763643630313865616536356434323262643361636531313235326266643839333936353939383438646239626136363130623265343236373232353139663865613864343236363837666333306438353864323762383235613936643863227d",
+        "body_text": "{\"code\":\"53983411c656bfd7931e99e9460b970b\",\"name\":\"Charlie iPhone\",\"proof\":\"MEUCIQCd593qHBTPSVx4+SKOZHf24mTHdmH3JiXS1Ptvblo4mQIgLGjarVSIiM/6nF0nES6e7efzijoq4/1v7nifMC+7lxo=\",\"public_key\":\"0403bd10c217a5eb943625061d1e79614c77cd6018eae65d422bd3ace11252bfd89396599848db9ba6610b2e426722519f8ea8d426687fc30d858d27b825a96d8c\"}"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "client_id": "0190c0de000070008000000000000a04",
+          "role": "user",
+          "server_identity": {
+            "instance_id": "00112233445566778899aabbccddeeff",
+            "spki_sha256": ""
+          },
+          "server_time": "2026-09-21T14:13:25Z",
+          "vehicles": [
+            "303132333435363738393a3b3c3d3e3f"
+          ]
+        }
+      }
+    },
+    {
+      "name": "enrol_code_already_used",
+      "doc": "NEGATIVE: an invitation works once. 403 enrolment_refused (a used, expired or unknown code all look the same).",
+      "server_clock_unix": 1790000006,
+      "auth": "none",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/enroll/app",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22636f6465223a223935373132646361303239653066396539633964633338383030333433333036222c226e616d65223a2241646d696e206950686f6e65222c2270726f6f66223a224d4555434951446466797a746a685370724f6465636b5a5831787047546f54764472345774536c534b6c4270464432695141496748526c3339326c675462686e79735550505848596e31444873525a4b4b7132333476565a5146616f5a45493d222c227075626c69635f6b6579223a2230346365393434363731303361353634346565383139333833383564663463636165613765316166626534663733393463343164353333656430363035383732333166653030626364383837623662656462303938303134383863303738356139313536323764356163326537643433306238613239303232333763363136353531227d",
+        "body_text": "{\"code\":\"95712dca029e0f9e9c9dc38800343306\",\"name\":\"Admin iPhone\",\"proof\":\"MEUCIQDdfyztjhSprOdeckZX1xpGToTvDr4WtSlSKlBpFD2iQAIgHRl392lgTbhnysUPPXHYn1DHsRZKKq234vVZQFaoZEI=\",\"public_key\":\"04ce94467103a5644ee81938385df4ccaea7e1afbe4f7394c41d533ed060587231fe00bcd887b6bedb09801488c0785a915627d5ac2e7d430b8a2902237c616551\"}"
+      },
+      "response": {
+        "status": 403,
+        "error_code": "enrolment_refused",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "enrolment_refused",
+          "message": "enrolment rejected"
+        }
+      }
+    },
+    {
+      "name": "token_mint_alpha",
+      "doc": "Mint a 1-hour bearer token (signed, empty body). The token is opaque: its value here is whatever this server drew, a client must not parse it.",
+      "server_clock_unix": 1790000010,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/auth/token",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000010\",nonce=\"a6e9a33dfa19adecb802125c3b501abb\",sig=\"MEUCIDVpXcoWMIGaOeAIFIQUEPLjvwERSBP0XX+ZNqSthT98AiEA42omqFUWC/K33gF7ovKchNlQ4ka8/cMXcCT+owmZEdg=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000010",
+        "nonce": "a6e9a33dfa19adecb802125c3b501abb",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/auth/token\n1790000010\na6e9a33dfa19adecb802125c3b501abb\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIDVpXcoWMIGaOeAIFIQUEPLjvwERSBP0XX+ZNqSthT98AiEA42omqFUWC/K33gF7ovKchNlQ4ka8/cMXcCT+owmZEdg=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "expires_at": "2026-09-21T15:13:30Z",
+          "scope": "sync",
+          "token": "mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds"
+        }
+      }
+    },
+    {
+      "name": "token_mint_charlie",
+      "doc": "A token for the client that is revoked later.",
+      "server_clock_unix": 1790000010,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/auth/token",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a04\",ts=\"1790000010\",nonce=\"91fd0986515d98ae5aa56b1901872cf2\",sig=\"MEQCIAyxntxmajNL3zSfe35vRwqw99Cqjlt2ocn0dLMvCVdmAiBrADksQj6mZoMTKc1RZIEQiISOK00oxkuW7n8tRiYQjQ==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "charlie",
+        "client_id": "0190c0de000070008000000000000a04",
+        "ts": "1790000010",
+        "nonce": "91fd0986515d98ae5aa56b1901872cf2",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/auth/token\n1790000010\n91fd0986515d98ae5aa56b1901872cf2\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a04",
+        "signature_der_base64": "MEQCIAyxntxmajNL3zSfe35vRwqw99Cqjlt2ocn0dLMvCVdmAiBrADksQj6mZoMTKc1RZIEQiISOK00oxkuW7n8tRiYQjQ==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "expires_at": "2026-09-21T15:13:30Z",
+          "scope": "sync",
+          "token": "HXVU4TAmbYjWL-OzCn8tRyi4KHLiO06zjAHgfAHD3lQ"
+        }
+      }
+    },
+    {
+      "name": "token_on_signed_only_route",
+      "doc": "NEGATIVE: a bearer token on /v1/auth/token, which accepts signatures only. 401 signature_required: the one 401 that is not the uniform `unauthenticated`, because the client knows it sent a token.",
+      "server_clock_unix": 1790000011,
+      "auth": "bearer",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/auth/token",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "signature_required",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "signature_required",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "push_accepted",
+      "doc": "A signed push of one append-only operation: accepted with its server_sequence.",
+      "server_clock_unix": 1790000020,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000020\",nonce=\"5340c75797c9b0032a23e8f73f72a4b6\",sig=\"MEUCIQCxeonOjd8r3jdsJHOPiL73XRhSB88CLnIyPM2bBM20zwIgcjXIFr1AHyso3hJBNIVsxR7GzkmNeaOByg38q0AciNo=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613031222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226d61696e74656e616e63655f6576656e74222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226b696e64223a226f696c222c226f646f6d657465725f6b6d223a34353231307d2c22636f6e74656e745f68617368223a2266333831343233653531323837303030316636636531353838396631333663383835316662343861636464663535666236633430623032323765363234643666227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"maintenance_event\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"kind\":\"oil\",\"odometer_km\":45210},\"content_hash\":\"f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000020",
+        "nonce": "5340c75797c9b0032a23e8f73f72a4b6",
+        "body_sha256": "f6cdd97df46e66d5968dadbd71341fdcc27c60433ef65db12c22791331cf5b4d",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000020\n5340c75797c9b0032a23e8f73f72a4b6\nf6cdd97df46e66d5968dadbd71341fdcc27c60433ef65db12c22791331cf5b4d\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCxeonOjd8r3jdsJHOPiL73XRhSB88CLnIyPM2bBM20zwIgcjXIFr1AHyso3hJBNIVsxR7GzkmNeaOByg38q0AciNo=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 1,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+              "status": "accepted",
+              "server_sequence": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_duplicate",
+      "doc": "The same operation again (a retry, with a NEW nonce and signature): `duplicate` carrying the original server_sequence. This is success; creates nothing.",
+      "server_clock_unix": 1790000021,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000021\",nonce=\"4382d51036f0761669cf5e5a85a15897\",sig=\"MEYCIQDcbqvN9RWcQiM80Sv4yPhI8rQUHwORGXO/X+NF7dS1dAIhAOkVLf3/uySUuJyJ05K+VYpMgDqDSJI4FeTF5zHiQDYX\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613031222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226d61696e74656e616e63655f6576656e74222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226b696e64223a226f696c222c226f646f6d657465725f6b6d223a34353231307d2c22636f6e74656e745f68617368223a2266333831343233653531323837303030316636636531353838396631333663383835316662343861636464663535666236633430623032323765363234643666227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"maintenance_event\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"kind\":\"oil\",\"odometer_km\":45210},\"content_hash\":\"f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000021",
+        "nonce": "4382d51036f0761669cf5e5a85a15897",
+        "body_sha256": "f6cdd97df46e66d5968dadbd71341fdcc27c60433ef65db12c22791331cf5b4d",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000021\n4382d51036f0761669cf5e5a85a15897\nf6cdd97df46e66d5968dadbd71341fdcc27c60433ef65db12c22791331cf5b4d\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDcbqvN9RWcQiM80Sv4yPhI8rQUHwORGXO/X+NF7dS1dAIhAOkVLf3/uySUuJyJ05K+VYpMgDqDSJI4FeTF5zHiQDYX",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 1,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+              "status": "duplicate",
+              "server_sequence": 1,
+              "original_status": "accepted"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_with_bearer_token",
+      "doc": "Push authenticated by the bearer token instead of a signature.",
+      "server_clock_unix": 1790000022,
+      "auth": "bearer",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613032222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a22726174746c6520617420333030302072706d227d2c22636f6e74656e745f68617368223a2230633966373334623839353961663538663038656632356362386436363137613464656664336635313164386238633736653338313632303665303134643031227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a02\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"rattle at 3000 rpm\"},\"content_hash\":\"0c9f734b8959af58f08ef25cb8d6617a4defd3f511d8b8c76e3816206e014d01\"}]}"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a02",
+              "status": "accepted",
+              "server_sequence": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_scope",
+      "doc": "NEGATIVE, wrong scope: alpha is scoped to v1 and names v2. 200 overall, the operation is `rejected` with reason `scope`.",
+      "server_clock_unix": 1790000023,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000023\",nonce=\"2ddcfcd7eb25e075341555054f524372\",sig=\"MEQCIC6W90NKLoy6t7m97ZLtzr2LG0kTngvjYX4MkKf5YKCfAiABWJZCA/va4/ldZ0Cy3Lk1CMx9x5upBRQDtnrIo7p/wA==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223430343134323433343434353436343734383439346134623463346434653466222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a226e6f74206d696e65227d2c22636f6e74656e745f68617368223a2263613164663139616234663162663830646232373131653038306230613333303662363565396561646337633534656164383238396639613133636532346632227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"404142434445464748494a4b4c4d4e4f\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"not mine\"},\"content_hash\":\"ca1df19ab4f1bf80db2711e080b0a3306b65e9eadc7c54ead8289f9a13ce24f2\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000023",
+        "nonce": "2ddcfcd7eb25e075341555054f524372",
+        "body_sha256": "9deb017536d7c1a96c2e8a1605282d85ab369a30fb03440cb76e3af42bbdff39",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000023\n2ddcfcd7eb25e075341555054f524372\n9deb017536d7c1a96c2e8a1605282d85ab369a30fb03440cb76e3af42bbdff39\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIC6W90NKLoy6t7m97ZLtzr2LG0kTngvjYX4MkKf5YKCfAiABWJZCA/va4/ldZ0Cy3Lk1CMx9x5upBRQDtnrIo7p/wA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "rejected",
+              "reason": "scope"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_unknown_vehicle",
+      "doc": "NEGATIVE, unknown vehicle: a client scoped to every vehicle names one that does not exist. `rejected`, reason `unknown_vehicle`.",
+      "server_clock_unix": 1790000023,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a01\",ts=\"1790000023\",nonce=\"ad54b5d2e6fb975e8841a84a2e004ef8\",sig=\"MEQCIAnErf0S22Jev+1oYDR9zHUDPiaPx0QW5xwnYkwoMocoAiB4jKYePDnrzUqK8oxw1ROxJyuunFkKtRlEJEfqGNeiuw==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613031222c2276656869636c655f6964223a223939393939393939393939393939393939393939393939393939393939393939222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a226e6f207375636820636172227d2c22636f6e74656e745f68617368223a2266303932353337313363313538393338643333333939356564616361623530356137363563363931316134353565373533653566303933313739646334623730227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a01\",\"vehicle_id\":\"99999999999999999999999999999999\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"no such car\"},\"content_hash\":\"f09253713c158938d333995edacab505a765c6911a455e753e5f093179dc4b70\"}]}"
+      },
+      "signing": {
+        "signer": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "ts": "1790000023",
+        "nonce": "ad54b5d2e6fb975e8841a84a2e004ef8",
+        "body_sha256": "50c7daa3abe82b775eb73d1fb5c8cf9c3695229e6a02672febd956158de1bbe6",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000023\nad54b5d2e6fb975e8841a84a2e004ef8\n50c7daa3abe82b775eb73d1fb5c8cf9c3695229e6a02672febd956158de1bbe6\n0190c0de000070008000000000000a01",
+        "signature_der_base64": "MEQCIAnErf0S22Jev+1oYDR9zHUDPiaPx0QW5xwnYkwoMocoAiB4jKYePDnrzUqK8oxw1ROxJyuunFkKtRlEJEfqGNeiuw==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "rejected",
+              "reason": "unknown_vehicle"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_archived_vehicle",
+      "doc": "NEGATIVE: the vehicle is archived. `rejected`, reason `archived_vehicle`.",
+      "server_clock_unix": 1790000023,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a01\",ts=\"1790000023\",nonce=\"391dc31c43c2d8243d918d42f7bff34b\",sig=\"MEUCIQCwGV4hIHvdV72722M01/GSlJKrKxcxdrUP1HVBWi+z/gIgDmK+7qd8mf7olH0H52NeXGJV/Bre6F/u4gt0HF1Bij8=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613031222c2276656869636c655f6964223a223630363136323633363436353636363736383639366136623663366436653666222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a22736f6c6420636172227d2c22636f6e74656e745f68617368223a2237626466363361373533363161346464346332316163316133313531336133623733353232613463636166326334333663656533323730363263623362353063227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a01\",\"vehicle_id\":\"606162636465666768696a6b6c6d6e6f\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"sold car\"},\"content_hash\":\"7bdf63a75361a4dd4c21ac1a31513a3b73522a4ccaf2c436cee327062cb3b50c\"}]}"
+      },
+      "signing": {
+        "signer": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "ts": "1790000023",
+        "nonce": "391dc31c43c2d8243d918d42f7bff34b",
+        "body_sha256": "1fa2a3123ea5c730bfed3006ab39d051134385653ad07aa138cdd133234756bf",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000023\n391dc31c43c2d8243d918d42f7bff34b\n1fa2a3123ea5c730bfed3006ab39d051134385653ad07aa138cdd133234756bf\n0190c0de000070008000000000000a01",
+        "signature_der_base64": "MEUCIQCwGV4hIHvdV72722M01/GSlJKrKxcxdrUP1HVBWi+z/gIgDmK+7qd8mf7olH0H52NeXGJV/Bre6F/u4gt0HF1Bij8=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "rejected",
+              "reason": "archived_vehicle"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_hash_mismatch",
+      "doc": "NEGATIVE: content_hash is not the SHA-256 of the canonical payload. `rejected`, reason `hash_mismatch`.",
+      "server_clock_unix": 1790000024,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000024\",nonce=\"e8efeb9a4bfd4b6eb1942bd84d1677c9\",sig=\"MEUCIQDhclbW7OwM25AmHKRaKsQR7y2AN0Sj9E9ZBCj9eEpalgIgBAqTPf3OEEpF/0lhxKcVEwOK6eMsyJwCLZAuu8DxT4g=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a2274616d7065726564227d2c22636f6e74656e745f68617368223a2230303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"tampered\"},\"content_hash\":\"0000000000000000000000000000000000000000000000000000000000000000\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000024",
+        "nonce": "e8efeb9a4bfd4b6eb1942bd84d1677c9",
+        "body_sha256": "855ef1bd0918f66793fdf3a58335a6b72f454322dea2fffcaaa2992c7bc000fc",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000024\ne8efeb9a4bfd4b6eb1942bd84d1677c9\n855ef1bd0918f66793fdf3a58335a6b72f454322dea2fffcaaa2992c7bc000fc\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDhclbW7OwM25AmHKRaKsQR7y2AN0Sj9E9ZBCj9eEpalgIgBAqTPf3OEEpF/0lhxKcVEwOK6eMsyJwCLZAuu8DxT4g=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "rejected",
+              "reason": "hash_mismatch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_operation_id_conflict",
+      "doc": "NEGATIVE: an operation_id reused with different content. `rejected`, reason `operation_id_conflict`.",
+      "server_clock_unix": 1790000024,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000024\",nonce=\"ab3ec5801d830b03718f2b352c548f98\",sig=\"MEUCIQCmbNlJynq8R+PV8Y8y0Gy+99PDnptOrW26kGkiVX1qiQIgd9IO87GGT/jHgSGPfBBE5xgDo9CkkyYbc/Ll+a7QrYs=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613031222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226d61696e74656e616e63655f6576656e74222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226b696e64223a226f696c222c226f646f6d657465725f6b6d223a39393939397d2c22636f6e74656e745f68617368223a2233653339643530653339656134363239343032336230316566373435626432393763393934353431653933336166663433653165323462633630663037303639227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"maintenance_event\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"kind\":\"oil\",\"odometer_km\":99999},\"content_hash\":\"3e39d50e39ea46294023b01ef745bd297c994541e933aff43e1e24bc60f07069\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000024",
+        "nonce": "ab3ec5801d830b03718f2b352c548f98",
+        "body_sha256": "3002439b417a5aa891b38978e800dc12f8eb417dece42fadfb64fd81e6990ee2",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000024\nab3ec5801d830b03718f2b352c548f98\n3002439b417a5aa891b38978e800dc12f8eb417dece42fadfb64fd81e6990ee2\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCmbNlJynq8R+PV8Y8y0Gy+99PDnptOrW26kGkiVX1qiQIgd9IO87GGT/jHgSGPfBBE5xgDo9CkkyYbc/Ll+a7QrYs=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+              "status": "rejected",
+              "reason": "operation_id_conflict"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_rejected_client_mismatch",
+      "doc": "NEGATIVE: the operation names a different client_id than the one authenticated. `rejected`, reason `client_mismatch`.",
+      "server_clock_unix": 1790000024,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000024\",nonce=\"6a13782bb8fd23be1d72189a56e141b9\",sig=\"MEYCIQC4zTwkTVY/yz1t1grNpgZQpmpOJUjbh6DxQLYOg1mG6gIhANpD0/8uHX+jRYslvKzNHv5wAw8hXQu8RcjuRMdVd5+J\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613033222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a226f62736572766174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b226e6f7465223a22696d706572736f6e6174696f6e227d2c22636f6e74656e745f68617368223a2238343131333430383861353365326363333865623564656661386533393663303033663032396161383666303230656262323166353136313561323938373061227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a03\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"observation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"note\":\"impersonation\"},\"content_hash\":\"841134088a53e2cc38eb5defa8e396c003f029aa86f020ebb21f51615a29870a\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000024",
+        "nonce": "6a13782bb8fd23be1d72189a56e141b9",
+        "body_sha256": "a3355e5600300b920f2e16f9fee6a6cb21d6ded03d39312d33c34abb04d2faec",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000024\n6a13782bb8fd23be1d72189a56e141b9\na3355e5600300b920f2e16f9fee6a6cb21d6ded03d39312d33c34abb04d2faec\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQC4zTwkTVY/yz1t1grNpgZQpmpOJUjbh6DxQLYOg1mG6gIhANpD0/8uHX+jRYslvKzNHv5wAw8hXQu8RcjuRMdVd5+J",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 2,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "rejected",
+              "reason": "client_mismatch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_mutable_accepted",
+      "doc": "A mutable kind: per-field revisions come back (`title` is now at revision 1).",
+      "server_clock_unix": 1790000025,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000025\",nonce=\"7bee15ecc2db56d5e391d955388110f0\",sig=\"MEYCIQDTjvmB0WbTvdHXFkiJwgLJ1qZmvpU6id3a2flbXHLNCgIhAOMkfBN0s1Hb5KnZt8ywW8YVWIp99OSGWq6Qu4c5+Uwl\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613033222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613032222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a22747269705f616e6e6f746174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b22746172676574223a22747269702d31222c226669656c6473223a7b227469746c65223a224d6f726e696e6720636f6d6d757465227d7d2c22636f6e74656e745f68617368223a2232313265656331636566383866656631376564633635303965383537356566333934643366346230646365383566303132346437356565343631663837323864227d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03\",\"client_id\":\"0190c0de000070008000000000000a02\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"trip_annotation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"target\":\"trip-1\",\"fields\":{\"title\":\"Morning commute\"}},\"content_hash\":\"212eec1cef88fef17edc6509e8575ef394d3f4b0dce85f0124d75ee461f8728d\"}]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000025",
+        "nonce": "7bee15ecc2db56d5e391d955388110f0",
+        "body_sha256": "43f9f194c6efc0d81f8a02405a649e9a75311cea7993d0c7a1d6c62ce2f54376",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000025\n7bee15ecc2db56d5e391d955388110f0\n43f9f194c6efc0d81f8a02405a649e9a75311cea7993d0c7a1d6c62ce2f54376\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDTjvmB0WbTvdHXFkiJwgLJ1qZmvpU6id3a2flbXHLNCgIhAOMkfBN0s1Hb5KnZt8ywW8YVWIp99OSGWq6Qu4c5+Uwl",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 3,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+              "status": "accepted",
+              "server_sequence": 3,
+              "revisions": {
+                "title": 1
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_mutable_conflict",
+      "doc": "NEGATIVE: base_revision says `title` was last seen at 0 but the server holds revision 1. `conflict` with the current value; nothing is applied.",
+      "server_clock_unix": 1790000025,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a01\",ts=\"1790000025\",nonce=\"ff97af470f968ec5bfa4132652877e1a\",sig=\"MEQCIEniUWXdiQkIvzGwXuDgStIKulxvK1rF1OYAyn2tHCEMAiAtLXvDI22b5flHz0j+R65bZrhXhRtOewFrKe4320faLg==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b7b226f7065726174696f6e5f6964223a2230313930613162322d633364342d376535662d386136622d376338643965306631613034222c22636c69656e745f6964223a223031393063306465303030303730303038303030303030303030303030613031222c2276656869636c655f6964223a223330333133323333333433353336333733383339336133623363336433653366222c226b696e64223a22747269705f616e6e6f746174696f6e222c22637265617465645f6174223a22323032362d30392d32315431333a33333a32305a222c227061796c6f61645f76657273696f6e223a312c227061796c6f6164223a7b22746172676574223a22747269702d31222c226669656c6473223a7b227469746c65223a224576656e696e6720636f6d6d757465227d7d2c22636f6e74656e745f68617368223a2239623265313463393465653039396632343734666664633864653731373762303432356133333763376564656463383730383761633962656531313434393431222c22626173655f7265766973696f6e223a7b227469746c65223a307d7d5d7d",
+        "body_text": "{\"operations\":[{\"operation_id\":\"0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a04\",\"client_id\":\"0190c0de000070008000000000000a01\",\"vehicle_id\":\"303132333435363738393a3b3c3d3e3f\",\"kind\":\"trip_annotation\",\"created_at\":\"2026-09-21T13:33:20Z\",\"payload_version\":1,\"payload\":{\"target\":\"trip-1\",\"fields\":{\"title\":\"Evening commute\"}},\"content_hash\":\"9b2e14c94ee099f2474ffdc8de7177b0425a337c7ededc87087ac9bee1144941\",\"base_revision\":{\"title\":0}}]}"
+      },
+      "signing": {
+        "signer": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "ts": "1790000025",
+        "nonce": "ff97af470f968ec5bfa4132652877e1a",
+        "body_sha256": "f12f82640801e66351f061262a878cd2c3dd6379e634bb2cb54fa61bd7e0a9cb",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000025\nff97af470f968ec5bfa4132652877e1a\nf12f82640801e66351f061262a878cd2c3dd6379e634bb2cb54fa61bd7e0a9cb\n0190c0de000070008000000000000a01",
+        "signature_der_base64": "MEQCIEniUWXdiQkIvzGwXuDgStIKulxvK1rF1OYAyn2tHCEMAiAtLXvDI22b5flHz0j+R65bZrhXhRtOewFrKe4320faLg==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "head": 3,
+          "results": [
+            {
+              "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a04",
+              "status": "conflict",
+              "conflicts": [
+                {
+                  "field": "title",
+                  "current_revision": 1,
+                  "current_value": "Morning commute"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "push_malformed_body",
+      "doc": "NEGATIVE: not JSON. 400 bad_request.",
+      "server_clock_unix": 1790000026,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000026\",nonce=\"69a42f8c8d6d2c4b3f054087eb88262e\",sig=\"MEUCICQZ65DVULgaDUNtKGuXrOMq0z8en9HpFJIzS5LIaqBPAiEA4zcc3PlddOPzXCgoZgaweAHyTIzAGIEmCtmNhmIvkYU=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a",
+        "body_text": "{\"operations\":"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000026",
+        "nonce": "69a42f8c8d6d2c4b3f054087eb88262e",
+        "body_sha256": "c0449ffdc3dfa18e7e7f6d8b12a8e892b758929da46a6317d767301afa95d9e3",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000026\n69a42f8c8d6d2c4b3f054087eb88262e\nc0449ffdc3dfa18e7e7f6d8b12a8e892b758929da46a6317d767301afa95d9e3\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCICQZ65DVULgaDUNtKGuXrOMq0z8en9HpFJIzS5LIaqBPAiEA4zcc3PlddOPzXCgoZgaweAHyTIzAGIEmCtmNhmIvkYU=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "malformed push"
+        }
+      }
+    },
+    {
+      "name": "push_no_operations",
+      "doc": "NEGATIVE: a push carries 1 to 200 operations. 400 bad_request.",
+      "server_clock_unix": 1790000026,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/push",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000026\",nonce=\"16b5e7c5d221878bbf87c44bc09df2f4\",sig=\"MEUCIQDk3ljEvnOARX1P3UmIG+Crm6CFhup+FQz1d6nKv/dnGAIgWw1lBobNNzv2sL5axfrgn3Fjvn+PAfMstXt+MDRfJ4k=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b226f7065726174696f6e73223a5b5d7d",
+        "body_text": "{\"operations\":[]}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000026",
+        "nonce": "16b5e7c5d221878bbf87c44bc09df2f4",
+        "body_sha256": "ba008b3ff2e64fd0f721e62a4159d1068da4c3f8ca432bf40a0414c167013059",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/push\n1790000026\n16b5e7c5d221878bbf87c44bc09df2f4\nba008b3ff2e64fd0f721e62a4159d1068da4c3f8ca432bf40a0414c167013059\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDk3ljEvnOARX1P3UmIG+Crm6CFhup+FQz1d6nKv/dnGAIgWw1lBobNNzv2sL5axfrgn3Fjvn+PAfMstXt+MDRfJ4k=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "a push carries 1 to 200 operations"
+        }
+      }
+    },
+    {
+      "name": "pull_first_page",
+      "doc": "First page, no cursor, limit 3. Changes are in server_sequence order and scoped to the client's vehicle (v1 only). has_more is true.",
+      "server_clock_unix": 1790000030,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=3",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000030\",nonce=\"767a7ea09845499b44e358e7d48e4367\",sig=\"MEUCIQCKxoSpwqUevs4+NyoXO+slpoG/Ii57H1f9azBD9cjsxgIgY6C8xX3M27E22GW/h9qaxvk+ZAFSO7nGTrs7xQOf7ZQ=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000030",
+        "nonce": "767a7ea09845499b44e358e7d48e4367",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=3\n1790000030\n767a7ea09845499b44e358e7d48e4367\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCKxoSpwqUevs4+NyoXO+slpoG/Ii57H1f9azBD9cjsxgIgY6C8xX3M27E22GW/h9qaxvk+ZAFSO7nGTrs7xQOf7ZQ=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            },
+            {
+              "server_sequence": 2,
+              "at": 1790000022000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a02",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "observation",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "note": "rattle at 3000 rpm"
+                },
+                "content_hash": "0c9f734b8959af58f08ef25cb8d6617a4defd3f511d8b8c76e3816206e014d01"
+              }
+            },
+            {
+              "server_sequence": 3,
+              "at": 1790000025000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "trip_annotation",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "fields": {
+                    "title": "Morning commute"
+                  },
+                  "target": "trip-1"
+                },
+                "content_hash": "212eec1cef88fef17edc6509e8575ef394d3f4b0dce85f0124d75ee461f8728d",
+                "revisions": {
+                  "title": 1
+                }
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "pull_second_page",
+      "doc": "The page after the first cursor.",
+      "server_clock_unix": 1790000031,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw\u0026limit=3",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000031\",nonce=\"0e785c1c870c21fe19446f5a3460da40\",sig=\"MEQCIFU1+/qCtt0yp2cHMw0MC6pwjowFOaLSrZ+oueQeXisZAiBXlNl+v1jLAU3iiyorKsAoV+DltlW03qnmOMn1JGMlYQ==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000031",
+        "nonce": "0e785c1c870c21fe19446f5a3460da40",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw\u0026limit=3\n1790000031\n0e785c1c870c21fe19446f5a3460da40\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIFU1+/qCtt0yp2cHMw0MC6pwjowFOaLSrZ+oueQeXisZAiBXlNl+v1jLAU3iiyorKsAoV+DltlW03qnmOMn1JGMlYQ==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 4,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "303132333435363738393a3b3c3d3e3f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "archived": false,
+                "display_name": "2014 BMW 428i — N20",
+                "engine_code": "",
+                "id": "303132333435363738393a3b3c3d3e3f",
+                "make": "",
+                "model": "",
+                "vin_last4": "3456",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 7,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "assignment",
+              "entity_id": "505152535455565758595a5b5c5d5e5f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "device_id": "101112131415161718191a1b1c1d1e1f",
+                "id": "505152535455565758595a5b5c5d5e5f",
+                "open": true,
+                "seq": 1,
+                "starts_at": "2026-09-21T14:11:50Z",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_second_page_again",
+      "doc": "A cursor is repeatable: the same request with a new nonce returns the byte-identical page.",
+      "server_clock_unix": 1790000032,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw\u0026limit=3",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000032\",nonce=\"2c3e127afcc75e961d2ef5c62e594936\",sig=\"MEUCIBv3uPx+H7vJ2gSFAczGFBincI2f/TeodFZJvOaLFyDvAiEAinwFK+EupUjo/3i39aaHWKw4ohYlkqw2hJOidS7DAG8=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000032",
+        "nonce": "2c3e127afcc75e961d2ef5c62e594936",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw\u0026limit=3\n1790000032\n2c3e127afcc75e961d2ef5c62e594936\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIBv3uPx+H7vJ2gSFAczGFBincI2f/TeodFZJvOaLFyDvAiEAinwFK+EupUjo/3i39aaHWKw4ohYlkqw2hJOidS7DAG8=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 4,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "303132333435363738393a3b3c3d3e3f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "archived": false,
+                "display_name": "2014 BMW 428i — N20",
+                "engine_code": "",
+                "id": "303132333435363738393a3b3c3d3e3f",
+                "make": "",
+                "model": "",
+                "vin_last4": "3456",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 7,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "assignment",
+              "entity_id": "505152535455565758595a5b5c5d5e5f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "device_id": "101112131415161718191a1b1c1d1e1f",
+                "id": "505152535455565758595a5b5c5d5e5f",
+                "open": true,
+                "seq": 1,
+                "starts_at": "2026-09-21T14:11:50Z",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_last_page",
+      "doc": "Follow the cursor to the end with the default limit: has_more is false.",
+      "server_clock_unix": 1790000033,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000033\",nonce=\"7c9e9895bc0cc3ce16b8b052e34debc4\",sig=\"MEUCIQD6VRqcDnrRAxDSKScwrpus9QGTkYGPNuBYxn0aDin00AIgSAzF0aasxNuUMUFZO6Zqr3Sh76ATBEL18lVSrYpdcSU=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000033",
+        "nonce": "7c9e9895bc0cc3ce16b8b052e34debc4",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Mw\n1790000033\n7c9e9895bc0cc3ce16b8b052e34debc4\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQD6VRqcDnrRAxDSKScwrpus9QGTkYGPNuBYxn0aDin00AIgSAzF0aasxNuUMUFZO6Zqr3Sh76ATBEL18lVSrYpdcSU=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 4,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "303132333435363738393a3b3c3d3e3f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "archived": false,
+                "display_name": "2014 BMW 428i — N20",
+                "engine_code": "",
+                "id": "303132333435363738393a3b3c3d3e3f",
+                "make": "",
+                "model": "",
+                "vin_last4": "3456",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 7,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "assignment",
+              "entity_id": "505152535455565758595a5b5c5d5e5f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "device_id": "101112131415161718191a1b1c1d1e1f",
+                "id": "505152535455565758595a5b5c5d5e5f",
+                "open": true,
+                "seq": 1,
+                "starts_at": "2026-09-21T14:11:50Z",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_scoped_to_other_vehicle",
+      "doc": "VEHICLE SCOPING: bravo is scoped to v2 and sees only v2's records, none of alpha's operations.",
+      "server_clock_unix": 1790000034,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000034\",nonce=\"35a99c5f4915d3e1cde193321a5a24d5\",sig=\"MEUCIDXrzN0MW+cNG7zTezp1ry/Xlk/ciRqG6lTBpB6v2ToxAiEAz/2JH4gFvagYHqJZM6buVuo6u/gP5c6Y0CvlKh9TUYQ=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000034",
+        "nonce": "35a99c5f4915d3e1cde193321a5a24d5",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull\n1790000034\n35a99c5f4915d3e1cde193321a5a24d5\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEUCIDXrzN0MW+cNG7zTezp1ry/Xlk/ciRqG6lTBpB6v2ToxAiEAz/2JH4gFvagYHqJZM6buVuo6u/gP5c6Y0CvlKh9TUYQ=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 5,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "404142434445464748494a4b4c4d4e4f",
+              "vehicle_id": "404142434445464748494a4b4c4d4e4f",
+              "data": {
+                "archived": false,
+                "display_name": "2017 BMW M240i — B58",
+                "engine_code": "",
+                "id": "404142434445464748494a4b4c4d4e4f",
+                "make": "",
+                "model": "",
+                "vin_last4": "",
+                "year": 0
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_all_vehicles",
+      "doc": "A client scoped to every vehicle sees all of them (including the archived one, flagged `archived`).",
+      "server_clock_unix": 1790000034,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a01\",ts=\"1790000034\",nonce=\"7953c738708edf9cdb0dcc76d86a3aa1\",sig=\"MEUCIQCRqNiQqYphlqVwXB2fwPwnhgQpczlQsMDGS3z8ugUFIAIgOshLx55NUX/21lVDKYX2zCIlsufJuJQaXQWgKAYa/WY=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "ts": "1790000034",
+        "nonce": "7953c738708edf9cdb0dcc76d86a3aa1",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull\n1790000034\n7953c738708edf9cdb0dcc76d86a3aa1\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a01",
+        "signature_der_base64": "MEUCIQCRqNiQqYphlqVwXB2fwPwnhgQpczlQsMDGS3z8ugUFIAIgOshLx55NUX/21lVDKYX2zCIlsufJuJQaXQWgKAYa/WY=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            },
+            {
+              "server_sequence": 2,
+              "at": 1790000022000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a02",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "observation",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "note": "rattle at 3000 rpm"
+                },
+                "content_hash": "0c9f734b8959af58f08ef25cb8d6617a4defd3f511d8b8c76e3816206e014d01"
+              }
+            },
+            {
+              "server_sequence": 3,
+              "at": 1790000025000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a03",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "trip_annotation",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "fields": {
+                    "title": "Morning commute"
+                  },
+                  "target": "trip-1"
+                },
+                "content_hash": "212eec1cef88fef17edc6509e8575ef394d3f4b0dce85f0124d75ee461f8728d",
+                "revisions": {
+                  "title": 1
+                }
+              }
+            },
+            {
+              "server_sequence": 4,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "303132333435363738393a3b3c3d3e3f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "archived": false,
+                "display_name": "2014 BMW 428i — N20",
+                "engine_code": "",
+                "id": "303132333435363738393a3b3c3d3e3f",
+                "make": "",
+                "model": "",
+                "vin_last4": "3456",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 5,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "404142434445464748494a4b4c4d4e4f",
+              "vehicle_id": "404142434445464748494a4b4c4d4e4f",
+              "data": {
+                "archived": false,
+                "display_name": "2017 BMW M240i — B58",
+                "engine_code": "",
+                "id": "404142434445464748494a4b4c4d4e4f",
+                "make": "",
+                "model": "",
+                "vin_last4": "",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 6,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "vehicle",
+              "entity_id": "606162636465666768696a6b6c6d6e6f",
+              "vehicle_id": "606162636465666768696a6b6c6d6e6f",
+              "data": {
+                "archived": true,
+                "display_name": "2009 BMW 335i — N54 (sold)",
+                "engine_code": "",
+                "id": "606162636465666768696a6b6c6d6e6f",
+                "make": "",
+                "model": "",
+                "vin_last4": "",
+                "year": 0
+              }
+            },
+            {
+              "server_sequence": 7,
+              "at": 1790000030000,
+              "type": "entity",
+              "entity_type": "assignment",
+              "entity_id": "505152535455565758595a5b5c5d5e5f",
+              "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+              "data": {
+                "device_id": "101112131415161718191a1b1c1d1e1f",
+                "id": "505152535455565758595a5b5c5d5e5f",
+                "open": true,
+                "seq": 1,
+                "starts_at": "2026-09-21T14:11:50Z",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_with_bearer_token",
+      "doc": "Pull authenticated by a bearer token.",
+      "server_clock_unix": 1790000035,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": false
+        }
+      }
+    },
+    {
+      "name": "pull_bad_cursor",
+      "doc": "NEGATIVE: a cursor the server did not issue. 400 bad_cursor.",
+      "server_clock_unix": 1790000036,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=bm90LWEtY3Vyc29y",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000036\",nonce=\"03aa0e02ace04cada5b252e1a348c703\",sig=\"MEQCIEiRqA+Ln57RjOkVCHLXzOaVyl+oMnpVEZpnzznpR24QAiAWtL+cXeRJsiT0Z1LfCX2rx76N9DU7wnCqKf8TkCj3uw==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000036",
+        "nonce": "03aa0e02ace04cada5b252e1a348c703",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=bm90LWEtY3Vyc29y\n1790000036\n03aa0e02ace04cada5b252e1a348c703\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIEiRqA+Ln57RjOkVCHLXzOaVyl+oMnpVEZpnzznpR24QAiAWtL+cXeRJsiT0Z1LfCX2rx76N9DU7wnCqKf8TkCj3uw==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_cursor",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_cursor",
+          "message": "cursor is not valid"
+        }
+      }
+    },
+    {
+      "name": "pull_cursor_from_another_epoch",
+      "doc": "NEGATIVE: a well-formed cursor from a different epoch (the server's data was reset). 410 cursor_reset: discard server-derived data and resync, do NOT treat as up to date.",
+      "server_clock_unix": 1790000036,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?cursor=YzE6MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA6MQ",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000036\",nonce=\"87bec70a9bd34cb989d817a0b6fe40d6\",sig=\"MEQCIHaiY7M86lDGnPoSAxaXyAT1MmNIalY0+HEQ0uVtUgzHAiAOvAtOgmYRHuxn7Fecf4G3OK66faYIhZWiJgKOnjdDuA==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000036",
+        "nonce": "87bec70a9bd34cb989d817a0b6fe40d6",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=YzE6MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA6MQ\n1790000036\n87bec70a9bd34cb989d817a0b6fe40d6\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIHaiY7M86lDGnPoSAxaXyAT1MmNIalY0+HEQ0uVtUgzHAiAOvAtOgmYRHuxn7Fecf4G3OK66faYIhZWiJgKOnjdDuA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 410,
+        "error_code": "cursor_reset",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "error": "cursor_reset",
+          "message": "the server's data was reset; resync from scratch"
+        }
+      }
+    },
+    {
+      "name": "pull_bad_limit",
+      "doc": "NEGATIVE: limit must be a positive integer. 400 bad_request.",
+      "server_clock_unix": 1790000036,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=0",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000036\",nonce=\"3d20c90dcb6881b5243c5afaebdad1fb\",sig=\"MEUCIQDHh8kgZbJfpOU7HAhzjNCN9l3NMzBAV/1QSTIAK1bueAIgHEqj6bUPz19NBAB+m7cWP2AuPalX+kJMscjAiCpf7s4=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000036",
+        "nonce": "3d20c90dcb6881b5243c5afaebdad1fb",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=0\n1790000036\n3d20c90dcb6881b5243c5afaebdad1fb\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDHh8kgZbJfpOU7HAhzjNCN9l3NMzBAV/1QSTIAK1bueAIgHEqj6bUPz19NBAB+m7cWP2AuPalX+kJMscjAiCpf7s4=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "limit must be a positive integer"
+        }
+      }
+    },
+    {
+      "name": "ack_accepted",
+      "doc": "Acknowledge the cursor durably applied; the server reports the sequence it now holds.",
+      "server_clock_unix": 1790000040,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/ack",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000040\",nonce=\"becc0c4621ed1dc623386341d13f4ec2\",sig=\"MEUCIQCmuWk7tg6U2NTrHEUaM98uN5J2I3dLG2OdrKrBVjzA1gIgXdeoURtmtun6D49ne3/pPEAWapJf1jkwX8V6dGpZRAA=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22637572736f72223a22597a45364e7a51344d6a4d354e7a566b595455334d6d4d305957597a4d6d46685a574d31595449344d446c6a4f4463364e77227d",
+        "body_text": "{\"cursor\":\"YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw\"}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000040",
+        "nonce": "becc0c4621ed1dc623386341d13f4ec2",
+        "body_sha256": "cb843cacc3e0ad0e3a3f832d6f5f22f59d9514f4c9d9222482f6a2283ceb4d31",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/ack\n1790000040\nbecc0c4621ed1dc623386341d13f4ec2\ncb843cacc3e0ad0e3a3f832d6f5f22f59d9514f4c9d9222482f6a2283ceb4d31\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCmuWk7tg6U2NTrHEUaM98uN5J2I3dLG2OdrKrBVjzA1gIgXdeoURtmtun6D49ne3/pPEAWapJf1jkwX8V6dGpZRAA=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "acknowledged": 7
+        }
+      }
+    },
+    {
+      "name": "ack_bad_cursor",
+      "doc": "NEGATIVE: an ack of a cursor the server cannot place. 400 bad_cursor.",
+      "server_clock_unix": 1790000040,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/ack",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000040\",nonce=\"112fb233301f75ed53cdf9abb86aaf5e\",sig=\"MEQCIFMJEfVJqJbsSOcjHggzCEU1fvP3btPUwRvGFPBbEwdcAiB+u6NDwxLTfYlEWe4U/nb7RG1ohOilwp/yKvE9dzsG3Q==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22637572736f72223a22626d39304c5745745933567963323979227d",
+        "body_text": "{\"cursor\":\"bm90LWEtY3Vyc29y\"}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000040",
+        "nonce": "112fb233301f75ed53cdf9abb86aaf5e",
+        "body_sha256": "b6edba9114ef0817a77c2297fa56a1e259fbe602864c0d13cf34badb1e55e029",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/ack\n1790000040\n112fb233301f75ed53cdf9abb86aaf5e\nb6edba9114ef0817a77c2297fa56a1e259fbe602864c0d13cf34badb1e55e029\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIFMJEfVJqJbsSOcjHggzCEU1fvP3btPUwRvGFPBbEwdcAiB+u6NDwxLTfYlEWe4U/nb7RG1ohOilwp/yKvE9dzsG3Q==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_cursor",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_cursor",
+          "message": "cursor is not valid for this server"
+        }
+      }
+    },
+    {
+      "name": "ack_unknown_field",
+      "doc": "NEGATIVE: unknown fields are refused. 400 bad_request.",
+      "server_clock_unix": 1790000040,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/ack",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000040\",nonce=\"ba3e45007257cb256fea1f8a8d9c7a67\",sig=\"MEUCIFk4I5uq78zIA/HcxlesOJV3ovmURb3bl5CmsPeS+/JKAiEAumvWN4fK8XDObojwuGaWgKmkf8HsDMvo4RzJpCSMzLY=\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22637572736f72223a22597a45364e7a51344d6a4d354e7a566b595455334d6d4d305957597a4d6d46685a574d31595449344d446c6a4f4463364e77222c226578747261223a317d",
+        "body_text": "{\"cursor\":\"YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw\",\"extra\":1}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000040",
+        "nonce": "ba3e45007257cb256fea1f8a8d9c7a67",
+        "body_sha256": "61b602b4038396e629c139f2ff63025197ef82bd2571ef2aff3806e6aeb1d3c3",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/ack\n1790000040\nba3e45007257cb256fea1f8a8d9c7a67\n61b602b4038396e629c139f2ff63025197ef82bd2571ef2aff3806e6aeb1d3c3\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIFk4I5uq78zIA/HcxlesOJV3ovmURb3bl5CmsPeS+/JKAiEAumvWN4fK8XDObojwuGaWgKmkf8HsDMvo4RzJpCSMzLY=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "malformed ack"
+        }
+      }
+    },
+    {
+      "name": "snapshot_scoped_client_must_name_a_vehicle",
+      "doc": "VEHICLE SCOPING: a client scoped to specific vehicles must name one. 403 vehicle_required.",
+      "server_clock_unix": 1790000045,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/snapshot",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000045\",nonce=\"3509be448258728e253e2cde71a5d70c\",sig=\"MEYCIQD/hddB526z6dpaEjkE4+hUZZk1P8tmCIlNsIFZfdupzQIhAMglUZQPcwVIH9COELEqLyPCR6OhKmYR9K9ex9K1dO/P\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000045",
+        "nonce": "3509be448258728e253e2cde71a5d70c",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/snapshot\n1790000045\n3509be448258728e253e2cde71a5d70c\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEYCIQD/hddB526z6dpaEjkE4+hUZZk1P8tmCIlNsIFZfdupzQIhAMglUZQPcwVIH9COELEqLyPCR6OhKmYR9K9ex9K1dO/P",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "vehicle_required",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "vehicle_required",
+          "message": "this client is scoped to specific vehicles; name one with ?vehicle=\u003cid\u003e"
+        }
+      }
+    },
+    {
+      "name": "snapshot_other_vehicle",
+      "doc": "VEHICLE SCOPING, wrong scope: alpha asks for v2. 403 scope.",
+      "server_clock_unix": 1790000045,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/snapshot?vehicle=404142434445464748494a4b4c4d4e4f",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000045\",nonce=\"c7f559279ab01c963310fddbf020b31d\",sig=\"MEYCIQDnIyVdtwMioKSf2J/rLWNBx7ITAK4vzI+85SrMavVA7AIhAPmjb4mPgxUaUViUoh59plt13Ep0LzR9qFc6RFtT1qE3\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000045",
+        "nonce": "c7f559279ab01c963310fddbf020b31d",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/snapshot?vehicle=404142434445464748494a4b4c4d4e4f\n1790000045\nc7f559279ab01c963310fddbf020b31d\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDnIyVdtwMioKSf2J/rLWNBx7ITAK4vzI+85SrMavVA7AIhAPmjb4mPgxUaUViUoh59plt13Ep0LzR9qFc6RFtT1qE3",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "snapshot_unknown_vehicle",
+      "doc": "VEHICLE SCOPING, unknown vehicle: the same 403 scope as a real car outside the scope, so the endpoint cannot be used to probe for cars.",
+      "server_clock_unix": 1790000045,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/snapshot?vehicle=99999999999999999999999999999999",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000045\",nonce=\"0a0a82cd207442b647e2df0b354cd580\",sig=\"MEQCICxZdJMKiJ/KS9pnr89yHvFZi6TKF9ZF04GMqHuFtrc9AiA+c/RVG0Vh+x5g2BmWCPt5pzMRIyy9hosXFqgv5j7ivA==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000045",
+        "nonce": "0a0a82cd207442b647e2df0b354cd580",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/snapshot?vehicle=99999999999999999999999999999999\n1790000045\n0a0a82cd207442b647e2df0b354cd580\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCICxZdJMKiJ/KS9pnr89yHvFZi6TKF9ZF04GMqHuFtrc9AiA+c/RVG0Vh+x5g2BmWCPt5pzMRIyy9hosXFqgv5j7ivA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "snapshot_malformed_vehicle",
+      "doc": "NEGATIVE: vehicle is not 32 lowercase hex. 400 bad_request.",
+      "server_clock_unix": 1790000045,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/snapshot?vehicle=not-hex",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000045\",nonce=\"48cd5fbeef45b5cba1e810f2b92c8dfb\",sig=\"MEUCIAZKp4t/mNZQvkNiCl7/8Jgri2BcAS7ZqSNqeuFMHQaEAiEApC1Pa+rk6bNT86Xmm8BCTApd31nOXX2dlvyEcYpRtLc=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000045",
+        "nonce": "48cd5fbeef45b5cba1e810f2b92c8dfb",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/snapshot?vehicle=not-hex\n1790000045\n48cd5fbeef45b5cba1e810f2b92c8dfb\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIAZKp4t/mNZQvkNiCl7/8Jgri2BcAS7ZqSNqeuFMHQaEAiEApC1Pa+rk6bNT86Xmm8BCTApd31nOXX2dlvyEcYpRtLc=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "vehicle must be 32 hex characters"
+        }
+      }
+    },
+    {
+      "name": "admin_route_as_user",
+      "doc": "NEGATIVE: authenticated but not an admin. 403 admin_required.",
+      "server_clock_unix": 1790000050,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/clients",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000050\",nonce=\"1249166e9ec05b7a9043e6db2aac1297\",sig=\"MEQCICqHiogl29R6pS6lbkcSfKqSKuGe3Iic/evk5cMe8fC6AiBbwRH1j6vJpRyzhjlFdIlt54qYylKGXsPkOq6BPY7Wlw==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000050",
+        "nonce": "1249166e9ec05b7a9043e6db2aac1297",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/clients\n1790000050\n1249166e9ec05b7a9043e6db2aac1297\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCICqHiogl29R6pS6lbkcSfKqSKuGe3Iic/evk5cMe8fC6AiBbwRH1j6vJpRyzhjlFdIlt54qYylKGXsPkOq6BPY7Wlw==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "admin_required",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "admin_required",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "relay_offer_out_of_scope",
+      "doc": "NEGATIVE, wrong scope: bravo (v2) offers a bundle whose manifest names v1. 403 scope, before any state is written.",
+      "server_clock_unix": 1790000060,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/offer",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000060\",nonce=\"15cb937dc13a602ac3e538571ad25855\",sig=\"MEUCIGAx5aPg2PBdZADYpDxqpBkzfQ/74M9CABLT7ll09OJvAiEAqY71bMiYw8dVPWvdU1V9+6O9WAESmsT3Hv2ZAiaEveY=\"",
+          "Content-Type": "application/cbor",
+          "X-Cairn-Signature": "f2d9e7e633c5c205395efa44f14fe5853d63a22ce05bb54cab940f1d31fc46936c0c1c83eca4b5d43f1f735bf92abb789959d5cfe7372c27442b417e0c96c400"
+        },
+        "body_hex": "b81b01030250091aa87d2d7d4f0f574a25a47580cb490350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858202fadda2057b334943f23decf6c023134dff6a2ba5dd5e9452ed8bcb9ba4a938283707365672d30303030303030302e73656719014858204d07789cba5e4c5ead0a624bf39bbe51bbc89454aaef86b3f07a123f2f966c4d83707365672d30303030303030312e73656718dc5820044cae176a4b7fa58312b80de76a8984ba51e7830fef2be563eab88513c7ec181083830019010058202cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680830119010058205c47a7d4183f58e02e181443016e31796be9a9f2cf7fb753970a493aa99163d5830218fc5820092e48e6a50e2c7e03db92b067e923aa8cff8b8a76aa4413e44598b283e8abff11582004663b407c72c99fb3fbd0c00e88dd1e3f92ae7ef7585cb0dc5359304efaf52912f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a02181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631"
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000060",
+        "nonce": "15cb937dc13a602ac3e538571ad25855",
+        "body_sha256": "4648f094c10798daf69c60d5353f5032bcb816031bf838a187f85bb09b6848cb",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/offer\n1790000060\n15cb937dc13a602ac3e538571ad25855\n4648f094c10798daf69c60d5353f5032bcb816031bf838a187f85bb09b6848cb\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEUCIGAx5aPg2PBdZADYpDxqpBkzfQ/74M9CABLT7ll09OJvAiEAqY71bMiYw8dVPWvdU1V9+6O9WAESmsT3Hv2ZAiaEveY=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_after_refused_offer",
+      "doc": "The refused offer left nothing behind: there is no offer to upload against. 404 unknown_bundle.",
+      "server_clock_unix": 1790000060,
+      "auth": "signed",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/091aa87d2d7d4f0f574a25a47580cb49/chunks/2cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000060\",nonce=\"fad73046e47f7c8deb1d202524d0d9b4\",sig=\"MEUCICiXMMTrtryGaeuygZeMcFajcS6ZwlQ5Te2/O8ujQJYQAiEA55+dE93HZFf2oAIIyWK5LXuMVaD12wT4pUIJ5BGb2gA=\"",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5fffffffff0000000040420f000000000001000000020000000000000000000000000000000000000000000000000000000000000011051726580007010000000000000000000000000000000000000000c7c58912bebd67b3b18474bd583d2464261235d2c6d8aca1cc8aad58013c4bf356eea75e3f71e6bdfe11d2ae37e587e181f3a7763e416652df81582850e8652e43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000060",
+        "nonce": "fad73046e47f7c8deb1d202524d0d9b4",
+        "body_sha256": "2cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680",
+        "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/091aa87d2d7d4f0f574a25a47580cb49/chunks/2cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680\n1790000060\nfad73046e47f7c8deb1d202524d0d9b4\n2cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCICiXMMTrtryGaeuygZeMcFajcS6ZwlQ5Te2/O8ujQJYQAiEA55+dE93HZFf2oAIIyWK5LXuMVaD12wT4pUIJ5BGb2gA=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 404,
+        "error_code": "unknown_bundle",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "unknown_bundle",
+          "message": "no offer on record for this bundle; offer it first"
+        }
+      }
+    },
+    {
+      "name": "relay_offer_without_signature_header",
+      "doc": "NEGATIVE: X-Cairn-Signature is required (128 hex). 400 bad_request.",
+      "server_clock_unix": 1790000060,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/offer",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000060\",nonce=\"fb1eeb468194995618a88c8c8d81f329\",sig=\"MEQCIBJf9g/u6+QwSDqozofdYFuFC0d12kAhUeuvE2IueDd4AiBpPbEk78m7FONrJ4hy38L5B3dwg2jBOA0+f+BKqhLdSA==\"",
+          "Content-Type": "application/cbor"
+        },
+        "body_hex": "b81b01030250364ba7c8cb59ab8f74c09a8f78aeef350350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858204d5b6e87abdd63245cac83bd993915efc8f27bcdcfa4b0ce6f56b98c069cde2483707365672d30303030303030302e73656719014858201cc93137d8a720b8752eba2bce38396ccfa45afbb48530db1cf1f2f13bbef6c683707365672d30303030303030312e73656718dc58203ef42ebd204c09f9db476720536200ca08371173756661722c8b2b3e44b4c50910838300190100582084791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82830119010058204266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def830218fc5820d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe5111582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d808512f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a01181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000060",
+        "nonce": "fb1eeb468194995618a88c8c8d81f329",
+        "body_sha256": "e7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/offer\n1790000060\nfb1eeb468194995618a88c8c8d81f329\ne7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIBJf9g/u6+QwSDqozofdYFuFC0d12kAhUeuvE2IueDd4AiBpPbEk78m7FONrJ4hy38L5B3dwg2jBOA0+f+BKqhLdSA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 400,
+        "error_code": "bad_request",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_request",
+          "message": "X-Cairn-Signature must be 128 hex characters"
+        }
+      }
+    },
+    {
+      "name": "relay_offer_bad_manifest_signature",
+      "doc": "NEGATIVE: the manifest's device signature does not verify (one bit flipped). 401 bad_manifest_signature. Distinct from a bad REQUEST signature: this authenticates the data, not the caller.",
+      "server_clock_unix": 1790000060,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/offer",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000060\",nonce=\"eb266c6a3f07646c24f49bc91e8f8e3f\",sig=\"MEYCIQDkXVUSNYAQDHHqjTA60MaaZiE5Rsf2ELwsnhNDYC0PNAIhALa5ZzQ+akUQjqbjHyY2TxqzH5uIEZWCr7sCJj6Di9Ef\"",
+          "Content-Type": "application/cbor",
+          "X-Cairn-Signature": "f3d9e7e633c5c205395efa44f14fe5853d63a22ce05bb54cab940f1d31fc46936c0c1c83eca4b5d43f1f735bf92abb789959d5cfe7372c27442b417e0c96c400"
+        },
+        "body_hex": "b81b01030250091aa87d2d7d4f0f574a25a47580cb490350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858202fadda2057b334943f23decf6c023134dff6a2ba5dd5e9452ed8bcb9ba4a938283707365672d30303030303030302e73656719014858204d07789cba5e4c5ead0a624bf39bbe51bbc89454aaef86b3f07a123f2f966c4d83707365672d30303030303030312e73656718dc5820044cae176a4b7fa58312b80de76a8984ba51e7830fef2be563eab88513c7ec181083830019010058202cb8ad604dba4dc568342fced82083fef5379859ae054e79bd0ff5d13a345680830119010058205c47a7d4183f58e02e181443016e31796be9a9f2cf7fb753970a493aa99163d5830218fc5820092e48e6a50e2c7e03db92b067e923aa8cff8b8a76aa4413e44598b283e8abff11582004663b407c72c99fb3fbd0c00e88dd1e3f92ae7ef7585cb0dc5359304efaf52912f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a02181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000060",
+        "nonce": "eb266c6a3f07646c24f49bc91e8f8e3f",
+        "body_sha256": "4648f094c10798daf69c60d5353f5032bcb816031bf838a187f85bb09b6848cb",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/offer\n1790000060\neb266c6a3f07646c24f49bc91e8f8e3f\n4648f094c10798daf69c60d5353f5032bcb816031bf838a187f85bb09b6848cb\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDkXVUSNYAQDHHqjTA60MaaZiE5Rsf2ELwsnhNDYC0PNAIhALa5ZzQ+akUQjqbjHyY2TxqzH5uIEZWCr7sCJj6Di9Ef",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 401,
+        "error_code": "bad_manifest_signature",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "bad_manifest_signature",
+          "message": "manifest signature verification failed"
+        }
+      }
+    },
+    {
+      "name": "relay_offer",
+      "doc": "OFFER: the manifest verbatim, its device signature in X-Cairn-Signature. The answer lists every missing chunk with its offset and length in the bundle byte stream and its SHA-256, so the phone needs no CBOR parser.",
+      "server_clock_unix": 1790000061,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/offer",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000061\",nonce=\"d58b775354c7323641aaa4b2f818f180\",sig=\"MEYCIQDxwwORM4eiudr0MoxXL017+us3kS/FZMVkRBqUBGhq5AIhAN7ALjyXv+DPZsX4GuvG8qtBqPR5hQvxHiASVBnWd1Xu\"",
+          "Content-Type": "application/cbor",
+          "X-Cairn-Signature": "7296c06b5f724b2f2e969e1b6e95a34360eaea73327610eadf70b65ffff00acaa2a23abd07f1bee9e26e1827654f682e2b531f336d315ba64eea3588f483c406"
+        },
+        "body_hex": "b81b01030250364ba7c8cb59ab8f74c09a8f78aeef350350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858204d5b6e87abdd63245cac83bd993915efc8f27bcdcfa4b0ce6f56b98c069cde2483707365672d30303030303030302e73656719014858201cc93137d8a720b8752eba2bce38396ccfa45afbb48530db1cf1f2f13bbef6c683707365672d30303030303030312e73656718dc58203ef42ebd204c09f9db476720536200ca08371173756661722c8b2b3e44b4c50910838300190100582084791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82830119010058204266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def830218fc5820d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe5111582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d808512f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a01181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000061",
+        "nonce": "d58b775354c7323641aaa4b2f818f180",
+        "body_sha256": "e7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/offer\n1790000061\nd58b775354c7323641aaa4b2f818f180\ne7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDxwwORM4eiudr0MoxXL017+us3kS/FZMVkRBqUBGhq5AIhAN7ALjyXv+DPZsX4GuvG8qtBqPR5hQvxHiASVBnWd1Xu",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "bundle_id": "364ba7c8cb59ab8f74c09a8f78aeef35",
+          "missing_chunks": [
+            {
+              "index": 0,
+              "offset": 0,
+              "length": 256,
+              "sha256": "84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82"
+            },
+            {
+              "index": 1,
+              "offset": 256,
+              "length": 256,
+              "sha256": "4266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def"
+            },
+            {
+              "index": 2,
+              "offset": 512,
+              "length": 252,
+              "sha256": "d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe51"
+            }
+          ],
+          "total_chunks": 3,
+          "bytes_expected": 764,
+          "bytes_outstanding": 764,
+          "receipt_available": false
+        }
+      }
+    },
+    {
+      "name": "relay_receipt_before_commit",
+      "doc": "NEGATIVE: no receipt exists yet. 404 no_receipt.",
+      "server_clock_unix": 1790000062,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000062\",nonce=\"06a269d99a909e2a6ed1373ac5be1001\",sig=\"MEYCIQCbpyZ9MCV1TrCCEolHovZRQXgSS2FfR7RQ7mHO6ONoHwIhAPWEDXMm0EkJQRcODWjCGpZpH/Xx6G872Bkgx9uAyThV\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000062",
+        "nonce": "06a269d99a909e2a6ed1373ac5be1001",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt\n1790000062\n06a269d99a909e2a6ed1373ac5be1001\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQCbpyZ9MCV1TrCCEolHovZRQXgSS2FfR7RQ7mHO6ONoHwIhAPWEDXMm0EkJQRcODWjCGpZpH/Xx6G872Bkgx9uAyThV",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 404,
+        "error_code": "no_receipt",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "no_receipt",
+          "message": "this bundle has no receipt yet"
+        }
+      }
+    },
+    {
+      "name": "relay_commit_with_chunks_missing",
+      "doc": "NEGATIVE: commit before every chunk is uploaded. 409 chunks_missing.",
+      "server_clock_unix": 1790000062,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000062\",nonce=\"8cfd7bd0ae5c60cb0fba6c5b3311c459\",sig=\"MEQCIHFCvebqn/A/pu+cx7Luz6QzVtzB4iZTgu3M0jTHVJRUAiBistVIHiX3reEqEogRnUY/gH/VGQLDsi4+vMUGlSnmzg==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000062",
+        "nonce": "8cfd7bd0ae5c60cb0fba6c5b3311c459",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit\n1790000062\n8cfd7bd0ae5c60cb0fba6c5b3311c459\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIHFCvebqn/A/pu+cx7Luz6QzVtzB4iZTgu3M0jTHVJRUAiBistVIHiX3reEqEogRnUY/gH/VGQLDsi4+vMUGlSnmzg==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 409,
+        "error_code": "chunks_missing",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "chunks_missing",
+          "message": "chunks are still missing"
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_wrong_bytes",
+      "doc": "NEGATIVE: the bytes do not hash to the digest in the URL. 409 chunk_mismatch.",
+      "server_clock_unix": 1790000062,
+      "auth": "signed",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000062\",nonce=\"70a6a449aecc787afd95de0f51db2c9e\",sig=\"MEUCIEW5fzu13Mw6HfZeKZQmiK/wHc9XQv4X4OGUV6N+d1ZpAiEA23ZSSpXaPQPTZCMRdXsaP//qPryjLJiLPbhWXd7Egmk=\"",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "ff524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5fffffffff0000000040420f0000000000010000000100000000000000000000000000000000000000000000000000000000000000ae0d08ef5800070100000000000000000000000000000000000000002dffc7ef7f459efdffab309e98af0b40b2727a5497ed09822d6132946ae87aedc71bd657b3cc65e445fd5cb4adad92e34638d3be70a72bfee6dfd867cc96277f43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000062",
+        "nonce": "70a6a449aecc787afd95de0f51db2c9e",
+        "body_sha256": "572b8d98fa3e179f30a4620fb14bef0b4384395e4af3993b7f1354ec1c1be8eb",
+        "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82\n1790000062\n70a6a449aecc787afd95de0f51db2c9e\n572b8d98fa3e179f30a4620fb14bef0b4384395e4af3993b7f1354ec1c1be8eb\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIEW5fzu13Mw6HfZeKZQmiK/wHc9XQv4X4OGUV6N+d1ZpAiEA23ZSSpXaPQPTZCMRdXsaP//qPryjLJiLPbhWXd7Egmk=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 409,
+        "error_code": "chunk_mismatch",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "chunk_mismatch",
+          "message": "data does not match its declared digest"
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_0",
+      "doc": "CHUNK: PUT the exact range the offer named; 200 when the bytes hash to the URL digest and match the manifest's descriptor. Chunks are idempotent.",
+      "server_clock_unix": 1790000063,
+      "auth": "signed",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000063\",nonce=\"9ec82c70cb4ad183aae9685dc44508df\",sig=\"MEYCIQDv2L3X1vAgJeYbchXUsKXk/dZQnL+PO2q0bMwx+PEsxAIhAO1605c/Uuq8bKRNPOrAFy7te0rbopIKTuEV5cwmtvhm\"",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5fffffffff0000000040420f0000000000010000000100000000000000000000000000000000000000000000000000000000000000ae0d08ef5800070100000000000000000000000000000000000000002dffc7ef7f459efdffab309e98af0b40b2727a5497ed09822d6132946ae87aedc71bd657b3cc65e445fd5cb4adad92e34638d3be70a72bfee6dfd867cc96277f43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000063",
+        "nonce": "9ec82c70cb4ad183aae9685dc44508df",
+        "body_sha256": "84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82",
+        "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82\n1790000063\n9ec82c70cb4ad183aae9685dc44508df\n84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQDv2L3X1vAgJeYbchXUsKXk/dZQnL+PO2q0bMwx+PEsxAIhAO1605c/Uuq8bKRNPOrAFy7te0rbopIKTuEV5cwmtvhm",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "accepted": true,
+          "missing_chunks": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_1",
+      "doc": "CHUNK: PUT the exact range the offer named; 200 when the bytes hash to the URL digest and match the manifest's descriptor. Chunks are idempotent.",
+      "server_clock_unix": 1790000063,
+      "auth": "signed",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/4266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000063\",nonce=\"275b866236bb402c79c518fb90e7ffcf\",sig=\"MEUCIQCW/5hHiCuoU12mVQDCvpWMRQULI8shnvE4bQc2Vh1PIQIge9P+SJHH1+LhSZ1z+3Q+CBWncPnsW/TBkRr1EoGqbq0=\"",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5f000000000000000040420f0000000000010000000100000000000000000000000000000000000000000000000000000000000000e1fddcdc6400010100000000000000000000000000000000000000007eeb7f6637353615555a77c45609aec27f44e5aa2ca5fe0db31fbd614c07d3838f41433f2d27f42c7dcc3cc9ce91171fa82b4afa4eb872c2479c6b057252b081551a82ee91535f4a7ff0b120640001010000000001000000e80300007ff0b1200000000047f9b9853ea652ee600f42db2cfb6e37a3190c032e2480320fd37c1ba23616bb47a2204f9cce87cef8d81329"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000063",
+        "nonce": "275b866236bb402c79c518fb90e7ffcf",
+        "body_sha256": "4266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def",
+        "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/4266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def\n1790000063\n275b866236bb402c79c518fb90e7ffcf\n4266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCW/5hHiCuoU12mVQDCvpWMRQULI8shnvE4bQc2Vh1PIQIge9P+SJHH1+LhSZ1z+3Q+CBWncPnsW/TBkRr1EoGqbq0=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "accepted": true,
+          "missing_chunks": [
+            2
+          ]
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_2_bearer",
+      "doc": "CHUNK: the last chunk is uploaded with the bearer token, as a background URLSession would. 200 when the bytes hash to the URL digest and match the manifest's descriptor.",
+      "server_clock_unix": 1790000063,
+      "auth": "bearer",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe51",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "50052b919e5f9bae1d84e7be70538b92b3ea0ceaa45244379fe66ef2783f852a43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5f010000000200000040420f000000000001000000010000000000000000000000000000000000000000000000000000000000000054d873ce5c0004010000000002000000e02e0000783f852a00000000dbd524b087a99eb6c8054a6c85bc79ab5391f6c242371665a2596b207f14cc1ad15facc3b12509845f21f27049fb9f1b903941946f0ad8929af5084cda1a85b634ea8969"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "accepted": true,
+          "missing_chunks": []
+        }
+      }
+    },
+    {
+      "name": "relay_chunk_out_of_scope",
+      "doc": "NEGATIVE, wrong scope: bravo learned the bundle id and tries to upload to it. 403 scope: scope is checked on every step, not only the offer.",
+      "server_clock_unix": 1790000064,
+      "auth": "signed",
+      "request": {
+        "method": "PUT",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000064\",nonce=\"c9e5d2bcbf4abf8de90fff4feb9c33c6\",sig=\"MEQCIDXf34IjO6M+7zNB++Hc738EuPxLYWvwbyomQPBulvEbAiBt3sFOdY8x4LT+QmxVKwNcju6rwpyeBZYG4DtnyrO6gA==\"",
+          "Content-Type": "application/octet-stream"
+        },
+        "body_hex": "43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf303132333435363738393a3b3c3d3e3f505152535455565758595a5b5c5d5e5fffffffff0000000040420f0000000000010000000100000000000000000000000000000000000000000000000000000000000000ae0d08ef5800070100000000000000000000000000000000000000002dffc7ef7f459efdffab309e98af0b40b2727a5497ed09822d6132946ae87aedc71bd657b3cc65e445fd5cb4adad92e34638d3be70a72bfee6dfd867cc96277f43524e3303008000101112131415161718191a1b1c1d1e1fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000064",
+        "nonce": "c9e5d2bcbf4abf8de90fff4feb9c33c6",
+        "body_sha256": "84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82",
+        "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/chunks/84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82\n1790000064\nc9e5d2bcbf4abf8de90fff4feb9c33c6\n84791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEQCIDXf34IjO6M+7zNB++Hc738EuPxLYWvwbyomQPBulvEbAiBt3sFOdY8x4LT+QmxVKwNcju6rwpyeBZYG4DtnyrO6gA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "relay_commit_out_of_scope",
+      "doc": "NEGATIVE, wrong scope: bravo cannot commit it either. 403 scope.",
+      "server_clock_unix": 1790000064,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000064\",nonce=\"0642e30fbefa26d52042cd51fd85b936\",sig=\"MEUCIQC3PW/2kNL7gb8DNShmZkAWjkA7z5Iyrz9JmcZsMuC4LQIgdVrg1AmpoFS2oc9+WITb7UuyGWmBkHELx5FMbFw4oDw=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000064",
+        "nonce": "0642e30fbefa26d52042cd51fd85b936",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit\n1790000064\n0642e30fbefa26d52042cd51fd85b936\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEUCIQC3PW/2kNL7gb8DNShmZkAWjkA7z5Iyrz9JmcZsMuC4LQIgdVrg1AmpoFS2oc9+WITb7UuyGWmBkHELx5FMbFw4oDw=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "relay_commit",
+      "doc": "COMMIT (empty body): the signed receipt, CBOR, taken verbatim; its signature covers exactly those bytes. Verify with fixture.receipt_signing_public_key_ed25519_hex; it names this bundle's content root.",
+      "server_clock_unix": 1790000065,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000065\",nonce=\"c05d2c0c323966b590b8f0d890e5bbdf\",sig=\"MEYCIQC9RgcpwJmq7HYQmPNf3b+kxhCPuHqYpM0NzoGr4IoHGAIhAPZqoLg2ohQaJ4xjwOPVkmkepyAr4kdyLIH5GEMfBMg0\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000065",
+        "nonce": "c05d2c0c323966b590b8f0d890e5bbdf",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit\n1790000065\nc05d2c0c323966b590b8f0d890e5bbdf\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQC9RgcpwJmq7HYQmPNf3b+kxhCPuHqYpM0NzoGr4IoHGAIhAPZqoLg2ohQaJ4xjwOPVkmkepyAr4kdyLIH5GEMfBMg0",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/cbor",
+          "X-Cairn-Receipt-Id": "a9d4c9de2ff93855ab4838471a13bc4c"
+        },
+        "body_hex": "ab01020250a9d4c9de2ff93855ab4838471a13bc4c0350101112131415161718191a1b1c1d1e1f0450364ba7c8cb59ab8f74c09a8f78aeef3505582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d8085061b000001a0c45169e807484bf614edc6eab4070801098578476361732f34642f3464356236653837616264643633323435636163383362643939333931356566633866323762636463666134623063653666353662393863303639636465323478476361732f31632f3163633933313337643861373230623837353265626132626365333833393663636661343561666262343835333064623163663166326631336262656636633678476361732f33652f3365663432656264323034633039663964623437363732303533363230306361303833373131373337353636363137323263386232623365343462346335303978476361732f65372f6537653031613238633030353737353064366339343730353165646330663332333134663864393966653535353433653763303737363836353431313566343478476361732f61612f616134633432656339313562666166323231333463313137323362613464636131613461326335386430383333643861383534666362303538653831616662330a67656432353531390b584009a625dff80111b4cbe1d7339d899e82626855170410a2bb73aff17bf37c47df309361a97562096e3dec1f27a456b0157fceaaf481f404f8e33b641bcdec1707"
+      }
+    },
+    {
+      "name": "relay_commit_again",
+      "doc": "Committing again returns the same receipt bytes, flagged X-Cairn-Already-Committed.",
+      "server_clock_unix": 1790000066,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000066\",nonce=\"93c5bfb16c4a91f7e03a93b15cd7e10c\",sig=\"MEYCIQCzO01h6Ek9qOFdq7+RYgEfV10cMHMt6tKZNKBdjmcd1AIhAIqWVozpvB9PjSfJSwwcPw4quLLe8269AlKp79Rqcaf1\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000066",
+        "nonce": "93c5bfb16c4a91f7e03a93b15cd7e10c",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/commit\n1790000066\n93c5bfb16c4a91f7e03a93b15cd7e10c\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQCzO01h6Ek9qOFdq7+RYgEfV10cMHMt6tKZNKBdjmcd1AIhAIqWVozpvB9PjSfJSwwcPw4quLLe8269AlKp79Rqcaf1",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/cbor",
+          "X-Cairn-Already-Committed": "1",
+          "X-Cairn-Receipt-Id": "a9d4c9de2ff93855ab4838471a13bc4c"
+        },
+        "body_hex": "ab01020250a9d4c9de2ff93855ab4838471a13bc4c0350101112131415161718191a1b1c1d1e1f0450364ba7c8cb59ab8f74c09a8f78aeef3505582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d8085061b000001a0c45169e807484bf614edc6eab4070801098578476361732f34642f3464356236653837616264643633323435636163383362643939333931356566633866323762636463666134623063653666353662393863303639636465323478476361732f31632f3163633933313337643861373230623837353265626132626365333833393663636661343561666262343835333064623163663166326631336262656636633678476361732f33652f3365663432656264323034633039663964623437363732303533363230306361303833373131373337353636363137323263386232623365343462346335303978476361732f65372f6537653031613238633030353737353064366339343730353165646330663332333134663864393966653535353433653763303737363836353431313566343478476361732f61612f616134633432656339313562666166323231333463313137323362613464636131613461326335386430383333643861383534666362303538653831616662330a67656432353531390b584009a625dff80111b4cbe1d7339d899e82626855170410a2bb73aff17bf37c47df309361a97562096e3dec1f27a456b0157fceaaf481f404f8e33b641bcdec1707"
+      }
+    },
+    {
+      "name": "relay_receipt",
+      "doc": "RECEIPT: fetched on its own, byte-identical to the commit's.",
+      "server_clock_unix": 1790000066,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000066\",nonce=\"30d7898fd8fd2dc3e58c56a24345ea43\",sig=\"MEQCIGhEus6HbD7/rcEZn/BQBPI1tOGoKI1IECiUBbkaslddAiBjSo/rMwNtVSNAgA15j81YfckM8Iaqj+8VXfD0OFVe8Q==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000066",
+        "nonce": "30d7898fd8fd2dc3e58c56a24345ea43",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt\n1790000066\n30d7898fd8fd2dc3e58c56a24345ea43\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIGhEus6HbD7/rcEZn/BQBPI1tOGoKI1IECiUBbkaslddAiBjSo/rMwNtVSNAgA15j81YfckM8Iaqj+8VXfD0OFVe8Q==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/cbor",
+          "X-Cairn-Already-Committed": "1",
+          "X-Cairn-Receipt-Id": "a9d4c9de2ff93855ab4838471a13bc4c"
+        },
+        "body_hex": "ab01020250a9d4c9de2ff93855ab4838471a13bc4c0350101112131415161718191a1b1c1d1e1f0450364ba7c8cb59ab8f74c09a8f78aeef3505582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d8085061b000001a0c45169e807484bf614edc6eab4070801098578476361732f34642f3464356236653837616264643633323435636163383362643939333931356566633866323762636463666134623063653666353662393863303639636465323478476361732f31632f3163633933313337643861373230623837353265626132626365333833393663636661343561666262343835333064623163663166326631336262656636633678476361732f33652f3365663432656264323034633039663964623437363732303533363230306361303833373131373337353636363137323263386232623365343462346335303978476361732f65372f6537653031613238633030353737353064366339343730353165646330663332333134663864393966653535353433653763303737363836353431313566343478476361732f61612f616134633432656339313562666166323231333463313137323362613464636131613461326335386430383333643861383534666362303538653831616662330a67656432353531390b584009a625dff80111b4cbe1d7339d899e82626855170410a2bb73aff17bf37c47df309361a97562096e3dec1f27a456b0157fceaaf481f404f8e33b641bcdec1707"
+      }
+    },
+    {
+      "name": "relay_receipt_out_of_scope",
+      "doc": "NEGATIVE, wrong scope: bravo cannot read it. 403 scope.",
+      "server_clock_unix": 1790000066,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a03\",ts=\"1790000066\",nonce=\"967f727fc426002014e15e56869d7f34\",sig=\"MEYCIQDiKOdCU3GyoFjALSZHR5ZiXZvBAoLZ9X0WheFoQgCP8AIhAL6fPKA7IngO+FpcWdzfGCl/E8e6cgxuTtLso9Qy/Xmx\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a03",
+        "ts": "1790000066",
+        "nonce": "967f727fc426002014e15e56869d7f34",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/relay/bundles/364ba7c8cb59ab8f74c09a8f78aeef35/receipt\n1790000066\n967f727fc426002014e15e56869d7f34\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a03",
+        "signature_der_base64": "MEYCIQDiKOdCU3GyoFjALSZHR5ZiXZvBAoLZ9X0WheFoQgCP8AIhAL6fPKA7IngO+FpcWdzfGCl/E8e6cgxuTtLso9Qy/Xmx",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 403,
+        "error_code": "scope",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "error": "scope",
+          "message": "that vehicle is outside this client's scope"
+        }
+      }
+    },
+    {
+      "name": "relay_reoffer_after_commit",
+      "doc": "Offering a delivered bundle again asks for nothing and says a receipt exists.",
+      "server_clock_unix": 1790000066,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/relay/bundles/offer",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000066\",nonce=\"d5c0a838cef670760a2346ef9d2ffda8\",sig=\"MEQCICSucsv4YJ7WgrsZu/NbcckZKSblJYNCkf6OBirexlUUAiBD/HOXvsYwyqhRwf0AR3EmBqNydYxUIz4O1NCXGWjy6Q==\"",
+          "Content-Type": "application/cbor",
+          "X-Cairn-Signature": "7296c06b5f724b2f2e969e1b6e95a34360eaea73327610eadf70b65ffff00acaa2a23abd07f1bee9e26e1827654f682e2b531f336d315ba64eea3588f483c406"
+        },
+        "body_hex": "b81b01030250364ba7c8cb59ab8f74c09a8f78aeef350350101112131415161718191a1b1c1d1e1f04483b5879efe97348470550a0a1a2a3a4a5a6a7a8a9aaabacadaeaf0671636169726e2d76332e302e302d746573740701081a000f4240091a01312d000a1b000001a0c4506c000b18fa0c000d020ea30102040107010f83836b6a6f75726e616c2e73656718d858204d5b6e87abdd63245cac83bd993915efc8f27bcdcfa4b0ce6f56b98c069cde2483707365672d30303030303030302e73656719014858201cc93137d8a720b8752eba2bce38396ccfa45afbb48530db1cf1f2f13bbef6c683707365672d30303030303030312e73656718dc58203ef42ebd204c09f9db476720536200ca08371173756661722c8b2b3e44b4c50910838300190100582084791ee5f44c5d0f0877cb6a89cacf5c8c5e42a1fbda3c8581e317203cfe5b82830119010058204266823c205a14c9222918e4b44af0b606c4bc124b1eb9a661f27d78b8609def830218fc5820d444f07fa07d0e2616425fe43cb80039875de4143bfc36f516d45a69bea9fe5111582067ed375c63dd3fe10f87838fc7974da88b0c609b92208b932464b6c06e9d808512f6130114001500166765643235353139181850303132333435363738393a3b3c3d3e3f181950505152535455565758595a5b5c5d5e5f181a01181b01181c7820786368616368613230706f6c79313330352b686b64662d7368613235362f7631"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000066",
+        "nonce": "d5c0a838cef670760a2346ef9d2ffda8",
+        "body_sha256": "e7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/relay/bundles/offer\n1790000066\nd5c0a838cef670760a2346ef9d2ffda8\ne7e01a28c0057750d6c947051edc0f32314f8d99fe55543e7c07768654115f44\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCICSucsv4YJ7WgrsZu/NbcckZKSblJYNCkf6OBirexlUUAiBD/HOXvsYwyqhRwf0AR3EmBqNydYxUIz4O1NCXGWjy6Q==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "bundle_id": "364ba7c8cb59ab8f74c09a8f78aeef35",
+          "missing_chunks": [],
+          "total_chunks": 3,
+          "bytes_expected": 0,
+          "bytes_outstanding": 0,
+          "receipt_available": true
+        }
+      }
+    },
+    {
+      "name": "auth_baseline",
+      "doc": "A correctly signed request. Every authentication negative below is this request with one thing wrong.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"64408228f6a33a675d70a711b905f2ec\",sig=\"MEUCIQDFXlPRvlVZ34du9TGyYx5XzMlNF8cUsuajJMXL3xIOswIgFGjGlXBHKkwbWCgm6kh3zgKp80RY+yLRmS7wm+Q/AlM=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "64408228f6a33a675d70a711b905f2ec",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\n64408228f6a33a675d70a711b905f2ec\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDFXlPRvlVZ34du9TGyYx5XzMlNF8cUsuajJMXL3xIOswIgFGjGlXBHKkwbWCgm6kh3zgKp80RY+yLRmS7wm+Q/AlM=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "auth_replay_same_header",
+      "doc": "NEGATIVE, replay: the identical Authorization header again. A nonce is accepted once per client. 401 unauthenticated. Never retry with the same header.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"64408228f6a33a675d70a711b905f2ec\",sig=\"MEUCIQDFXlPRvlVZ34du9TGyYx5XzMlNF8cUsuajJMXL3xIOswIgFGjGlXBHKkwbWCgm6kh3zgKp80RY+yLRmS7wm+Q/AlM=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "64408228f6a33a675d70a711b905f2ec",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\n64408228f6a33a675d70a711b905f2ec\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDFXlPRvlVZ34du9TGyYx5XzMlNF8cUsuajJMXL3xIOswIgFGjGlXBHKkwbWCgm6kh3zgKp80RY+yLRmS7wm+Q/AlM=",
+        "matches_request": true,
+        "signature_valid": true,
+        "mutation": "replay: the Authorization header of auth_baseline, byte for byte"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_bad_signature",
+      "doc": "NEGATIVE, bad signature: one bit of the DER signature flipped. 401 unauthenticated, the same body as every other authentication failure.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"8b3617edad90b18cfbd1370aeec90260\",sig=\"MEQCIDT2hASM/G7mcuFGtml8RExlPCwIXYlENmuPMPeHrbbpAiBM+GELivkkM9n2lDlobsmovIMPRYsKU67W7dt8Zyk0SA==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "8b3617edad90b18cfbd1370aeec90260",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\n8b3617edad90b18cfbd1370aeec90260\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIDT2hASM/G7mcuFGtml8RExlPCwIXYlENmuPMPeHrbbpAiBM+GELivkkM9n2lDlobsmovIMPRYsKU67W7dt8Zyk0SA==",
+        "matches_request": true,
+        "signature_valid": false,
+        "mutation": "last byte of the DER signature XOR 0x01"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_signed_with_another_key",
+      "doc": "NEGATIVE: signed correctly, but by bravo's key while claiming to be alpha. 401.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"b98675978a4f4464af78785ed2e31845\",sig=\"MEQCIC+lk9iNCUd+uUJFNBRFBLtNVeQUd5yv+EaCJ5CVv+6JAiBz4Mg1WY5rBbqZ5fC9WZxFwNPNg14QmxFgAnm3TDMsLQ==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "bravo",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "b98675978a4f4464af78785ed2e31845",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\nb98675978a4f4464af78785ed2e31845\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIC+lk9iNCUd+uUJFNBRFBLtNVeQUd5yv+EaCJ5CVv+6JAiBz4Mg1WY5rBbqZ5fC9WZxFwNPNg14QmxFgAnm3TDMsLQ==",
+        "matches_request": true,
+        "signature_valid": false,
+        "mutation": "signed with bravo's key"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_target_changed_after_signing",
+      "doc": "NEGATIVE: the request target sent (limit=2) is not the one signed (limit=1). 401: the target is covered byte for byte.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=2",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"044e221206c8c14e95e00e2ff3d3944c\",sig=\"MEUCIQDgNcRixknzuRdwR+3MSuLL3Q6oUOnviPI525hFATzbHAIgLa35vFa+E8oG1tNuhO3rR//5PJ4hZYMZ3nxU67XIOJs=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "044e221206c8c14e95e00e2ff3d3944c",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\n044e221206c8c14e95e00e2ff3d3944c\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDgNcRixknzuRdwR+3MSuLL3Q6oUOnviPI525hFATzbHAIgLa35vFa+E8oG1tNuhO3rR//5PJ4hZYMZ3nxU67XIOJs=",
+        "matches_request": false,
+        "signature_valid": true,
+        "mutation": "target signed as /v1/sync/pull?limit=1"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_body_changed_after_signing",
+      "doc": "NEGATIVE: the body sent is not the one whose hash was signed. 401.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/sync/ack",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000100\",nonce=\"4186457a45f84db9e38e37b68b5e5711\",sig=\"MEQCIFN7m0jJozqsKQZD3m8oh5vJr/UrXOLt2NFj++AcBV/7AiAkqdWW/WdUclkgHRGBKr8exI0H0ctUisEe85VypHGK1g==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22637572736f72223a22597a45364e7a51344d6a4d354e7a566b595455334d6d4d305957597a4d6d46685a574d31595449344d446c6a4f4463364e77227d",
+        "body_text": "{\"cursor\":\"YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6Nw\"}"
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000100",
+        "nonce": "4186457a45f84db9e38e37b68b5e5711",
+        "body_sha256": "264ef7813246976045be09d319d4cecdbb620331ca551f04d0e8e07f25946468",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/ack\n1790000100\n4186457a45f84db9e38e37b68b5e5711\n264ef7813246976045be09d319d4cecdbb620331ca551f04d0e8e07f25946468\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIFN7m0jJozqsKQZD3m8oh5vJr/UrXOLt2NFj++AcBV/7AiAkqdWW/WdUclkgHRGBKr8exI0H0ctUisEe85VypHGK1g==",
+        "matches_request": false,
+        "signature_valid": true,
+        "mutation": "body signed as {\"cursor\":\"AAAA\"}"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_unknown_client",
+      "doc": "NEGATIVE, unknown client: well-formed and signed, but the client id is not enrolled. 401, indistinguishable from a bad signature.",
+      "server_clock_unix": 1790000100,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de0000700080000000000000ff\",ts=\"1790000100\",nonce=\"13ca783aca324095015743ac5cbd661b\",sig=\"MEUCIQDJhz6AcQo9Vqpfmg2IDD01SNavEG0lEty3IH2qFmTrXgIgUhBdj7nHk8dBrz620jEz5tRFYUHK8APCDZHGEmIoDpg=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de0000700080000000000000ff",
+        "ts": "1790000100",
+        "nonce": "13ca783aca324095015743ac5cbd661b",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000100\n13ca783aca324095015743ac5cbd661b\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de0000700080000000000000ff",
+        "signature_der_base64": "MEUCIQDJhz6AcQo9Vqpfmg2IDD01SNavEG0lEty3IH2qFmTrXgIgUhBdj7nHk8dBrz620jEz5tRFYUHK8APCDZHGEmIoDpg=",
+        "matches_request": true,
+        "signature_valid": false,
+        "mutation": "client id not enrolled"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_skew_120s_behind_is_accepted",
+      "doc": "The window is +/-120 s: a timestamp exactly 120 s behind the server is accepted.",
+      "server_clock_unix": 1790000101,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1789999981\",nonce=\"97d6a63029b73813e8052aacda7db4c5\",sig=\"MEUCIQDGzxFxwiOtBXlVjfamQlp6MpOPRTE5L8WhR8vA+XUYIgIgS7vezPWcyx+KBZJyDaSxKqCiN69S/jFfW2Rw8/MH0V8=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1789999981",
+        "nonce": "97d6a63029b73813e8052aacda7db4c5",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1789999981\n97d6a63029b73813e8052aacda7db4c5\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQDGzxFxwiOtBXlVjfamQlp6MpOPRTE5L8WhR8vA+XUYIgIgS7vezPWcyx+KBZJyDaSxKqCiN69S/jFfW2Rw8/MH0V8=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "auth_skew_120s_ahead_is_accepted",
+      "doc": "A timestamp exactly 120 s ahead is accepted.",
+      "server_clock_unix": 1790000101,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000221\",nonce=\"8270bc42a42f67421adc535edbb511a4\",sig=\"MEUCIQCwrWyGyE1C0eO46tr8KdQFosKRoCtcZPQ822IVbGRtFAIgJYpdr9rUvpBnmp2fEy1SD8UYrjTKNTz3w/1jFhYCI6E=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000221",
+        "nonce": "8270bc42a42f67421adc535edbb511a4",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000221\n8270bc42a42f67421adc535edbb511a4\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCwrWyGyE1C0eO46tr8KdQFosKRoCtcZPQ822IVbGRtFAIgJYpdr9rUvpBnmp2fEy1SD8UYrjTKNTz3w/1jFhYCI6E=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "auth_skew_121s_behind",
+      "doc": "NEGATIVE, clock skew: 121 s behind. 401. (GET /v1/health returns server_time for diagnosing this.)",
+      "server_clock_unix": 1790000101,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1789999980\",nonce=\"70146d24dd28c257880ce3cc82a81f2f\",sig=\"MEYCIQCDxgeV0apxs3sukZQRmlm8+RpoIVrK1TVPDdXbTKiNrQIhALSOnHFDJIOU+7RrujXMrJI6bDBIP37ibL1SYw+/Oj79\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1789999980",
+        "nonce": "70146d24dd28c257880ce3cc82a81f2f",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1789999980\n70146d24dd28c257880ce3cc82a81f2f\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEYCIQCDxgeV0apxs3sukZQRmlm8+RpoIVrK1TVPDdXbTKiNrQIhALSOnHFDJIOU+7RrujXMrJI6bDBIP37ibL1SYw+/Oj79",
+        "matches_request": true,
+        "signature_valid": true,
+        "mutation": "ts = server clock - 121"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_skew_121s_ahead",
+      "doc": "NEGATIVE, clock skew: 121 s ahead. 401.",
+      "server_clock_unix": 1790000101,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000222\",nonce=\"c81ee4a305b50beff61c414824dd8f83\",sig=\"MEUCIQCCBvVrDPtlWXiapY+3EdSAFj7UoptpyM/eaID7oC072gIgJNYcMlB92ARMF2gMP8cEPHPdTGaol/mByxHHUKzWr6o=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000222",
+        "nonce": "c81ee4a305b50beff61c414824dd8f83",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000222\nc81ee4a305b50beff61c414824dd8f83\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCCBvVrDPtlWXiapY+3EdSAFj7UoptpyM/eaID7oC072gIgJNYcMlB92ARMF2gMP8cEPHPdTGaol/mByxHHUKzWr6o=",
+        "matches_request": true,
+        "signature_valid": true,
+        "mutation": "ts = server clock + 121"
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_nonce_too_short",
+      "doc": "NEGATIVE: nonce is 16 to 64 characters; this one has 8. 401.",
+      "server_clock_unix": 1790000101,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000101\",nonce=\"00112233\",sig=\"MEUCIQCOQ1Qa+QieEEeLUmpC17FN/Kj8uvSRQyvhxkfaFarv9AIgcP9YMWURyUMT8/DQA0LQNQYVmnKGUcjhXnBE1JsPZps=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790000101",
+        "nonce": "00112233",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000101\n00112233\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEUCIQCOQ1Qa+QieEEeLUmpC17FN/Kj8uvSRQyvhxkfaFarv9AIgcP9YMWURyUMT8/DQA0LQNQYVmnKGUcjhXnBE1JsPZps=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_missing_header",
+      "doc": "NEGATIVE: no Authorization header. 401, with `WWW-Authenticate: Cairn-Sig`.",
+      "server_clock_unix": 1790000101,
+      "auth": "none",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_unknown_scheme",
+      "doc": "NEGATIVE: an Authorization scheme the server does not speak. 401.",
+      "server_clock_unix": 1790000101,
+      "auth": "none",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Basic YWxwaGE6eA=="
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_header_missing_signature",
+      "doc": "NEGATIVE: a Cairn-Sig header with no sig parameter. 401.",
+      "server_clock_unix": 1790000101,
+      "auth": "none",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790000101\",nonce=\"d490c50c402baf66774f483a59fa5380\""
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "auth_unknown_bearer_token",
+      "doc": "NEGATIVE: a bearer token the server never issued. 401.",
+      "server_clock_unix": 1790000101,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Bearer not-a-token"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "revoke_charlie_works_before",
+      "doc": "Before revocation charlie's signed request is accepted.",
+      "server_clock_unix": 1790000110,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a04\",ts=\"1790000110\",nonce=\"ce04f260ebd6d9cb4f62e5f904c76029\",sig=\"MEUCIQDVmed8XrYbMyAAozOefLGZ5/m80ZT1GnB+Wt17vPqMEwIgIShcH1KZbNe32TB6MqD+v+PBFkuvwZMWEUNWl1FPNuU=\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "charlie",
+        "client_id": "0190c0de000070008000000000000a04",
+        "ts": "1790000110",
+        "nonce": "ce04f260ebd6d9cb4f62e5f904c76029",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000110\nce04f260ebd6d9cb4f62e5f904c76029\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a04",
+        "signature_der_base64": "MEUCIQDVmed8XrYbMyAAozOefLGZ5/m80ZT1GnB+Wt17vPqMEwIgIShcH1KZbNe32TB6MqD+v+PBFkuvwZMWEUNWl1FPNuU=",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "revoke_charlie_token_works_before",
+      "doc": "...and so is charlie's bearer token.",
+      "server_clock_unix": 1790000110,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Bearer HXVU4TAmbYjWL-OzCn8tRyi4KHLiO06zjAHgfAHD3lQ"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "revoke_charlie",
+      "doc": "An admin revokes charlie; effective on charlie's next request.",
+      "server_clock_unix": 1790000110,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/clients/0190c0de000070008000000000000a04/revoke",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a01\",ts=\"1790000110\",nonce=\"4fde9b7a312715f420346b1504a9cb4c\",sig=\"MEQCIAzfOgJLnV04PGeXZxxm9hdNpSpbC0/p6VzSK4SuCPmcAiBSjLTwtMYQEzV4MTWl2fMyFeBA4T76g2ifScehuWkI4A==\"",
+          "Content-Type": "application/json"
+        },
+        "body_hex": "7b22726561736f6e223a226c6f73742070686f6e65227d",
+        "body_text": "{\"reason\":\"lost phone\"}"
+      },
+      "signing": {
+        "signer": "admin",
+        "client_id": "0190c0de000070008000000000000a01",
+        "ts": "1790000110",
+        "nonce": "4fde9b7a312715f420346b1504a9cb4c",
+        "body_sha256": "b7ffa066fa30cff525659dcd2f4558bb7ebc80705b430fb72a8c37ffd1718118",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/clients/0190c0de000070008000000000000a04/revoke\n1790000110\n4fde9b7a312715f420346b1504a9cb4c\nb7ffa066fa30cff525659dcd2f4558bb7ebc80705b430fb72a8c37ffd1718118\n0190c0de000070008000000000000a01",
+        "signature_der_base64": "MEQCIAzfOgJLnV04PGeXZxxm9hdNpSpbC0/p6VzSK4SuCPmcAiBSjLTwtMYQEzV4MTWl2fMyFeBA4T76g2ifScehuWkI4A==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "revoked": "0190c0de000070008000000000000a04"
+        }
+      }
+    },
+    {
+      "name": "revoked_client_signed_request",
+      "doc": "NEGATIVE, revoked: a correctly signed request from a revoked client. 401, the same uniform body.",
+      "server_clock_unix": 1790000111,
+      "auth": "signed",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a04\",ts=\"1790000111\",nonce=\"b076c9bfd09b5818486929548522e5d9\",sig=\"MEYCIQDDoSLe92X+l2CGbX6rjV0EjhC9J+2N9CyPWI2otZh2rAIhAIyo6e7VgZhk2Zv/cLMKPfYeLRUPkccVcA85QhwEPJXL\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "charlie",
+        "client_id": "0190c0de000070008000000000000a04",
+        "ts": "1790000111",
+        "nonce": "b076c9bfd09b5818486929548522e5d9",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?limit=1\n1790000111\nb076c9bfd09b5818486929548522e5d9\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a04",
+        "signature_der_base64": "MEYCIQDDoSLe92X+l2CGbX6rjV0EjhC9J+2N9CyPWI2otZh2rAIhAIyo6e7VgZhk2Zv/cLMKPfYeLRUPkccVcA85QhwEPJXL",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "revoked_client_bearer_token",
+      "doc": "NEGATIVE, revoked: the bearer token minted before the revocation stops working with the client (re-checked on every use). 401.",
+      "server_clock_unix": 1790000111,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Bearer HXVU4TAmbYjWL-OzCn8tRyi4KHLiO06zjAHgfAHD3lQ"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "token_valid_at_exactly_one_hour",
+      "doc": "A token minted at server clock T is still accepted at T+3600 s.",
+      "server_clock_unix": 1790003610,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "changes": [
+            {
+              "server_sequence": 1,
+              "at": 1790000020000,
+              "type": "operation",
+              "operation": {
+                "operation_id": "0190a1b2-c3d4-7e5f-8a6b-7c8d9e0f1a01",
+                "client_id": "0190c0de000070008000000000000a02",
+                "vehicle_id": "303132333435363738393a3b3c3d3e3f",
+                "kind": "maintenance_event",
+                "created_at": "2026-09-21T13:33:20Z",
+                "payload_version": 1,
+                "payload": {
+                  "kind": "oil",
+                  "odometer_km": 45210
+                },
+                "content_hash": "f381423e512870001f6ce15889f136c8851fb48acddf55fb6c40b0227e624d6f"
+              }
+            }
+          ],
+          "cursor": "YzE6NzQ4MjM5NzVkYTU3MmM0YWYzMmFhZWM1YTI4MDljODc6MQ",
+          "epoch": "74823975da572c4af32aaec5a2809c87",
+          "has_more": true
+        }
+      }
+    },
+    {
+      "name": "token_expired",
+      "doc": "NEGATIVE, expired token: one second later it is not. 401. Mint a new one (signed) and retry.",
+      "server_clock_unix": 1790003611,
+      "auth": "bearer",
+      "request": {
+        "method": "GET",
+        "request_target": "/v1/sync/pull?limit=1",
+        "headers": {
+          "Authorization": "Bearer mnVkQKy4qsM8AtVzeABkucLQreIT0MY-Z3m952gHKds"
+        },
+        "body_hex": ""
+      },
+      "response": {
+        "status": 401,
+        "error_code": "unauthenticated",
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Cairn-Sig"
+        },
+        "body_json": {
+          "error": "unauthenticated",
+          "message": "authentication failed"
+        }
+      }
+    },
+    {
+      "name": "token_mint_after_expiry",
+      "doc": "Minting again, signed, works: expiry costs one request, not the enrolment.",
+      "server_clock_unix": 1790003611,
+      "auth": "signed",
+      "request": {
+        "method": "POST",
+        "request_target": "/v1/auth/token",
+        "headers": {
+          "Authorization": "Cairn-Sig client=\"0190c0de000070008000000000000a02\",ts=\"1790003611\",nonce=\"bdeb45673a5ae63196455f1482fe7d86\",sig=\"MEQCIBJOaVo1GcTY3uV8Ls+8JfSjyeiDb+ive5fIUl9K9PspAiBB1oZ3Xh6tOf+4bNJDgBXjhIIbOO7iotstzOrz6hLnwA==\""
+        },
+        "body_hex": ""
+      },
+      "signing": {
+        "signer": "alpha",
+        "client_id": "0190c0de000070008000000000000a02",
+        "ts": "1790003611",
+        "nonce": "bdeb45673a5ae63196455f1482fe7d86",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/auth/token\n1790003611\nbdeb45673a5ae63196455f1482fe7d86\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190c0de000070008000000000000a02",
+        "signature_der_base64": "MEQCIBJOaVo1GcTY3uV8Ls+8JfSjyeiDb+ive5fIUl9K9PspAiBB1oZ3Xh6tOf+4bNJDgBXjhIIbOO7iotstzOrz6hLnwA==",
+        "matches_request": true,
+        "signature_valid": true
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "body_json": {
+          "expires_at": "2026-09-21T16:13:31Z",
+          "scope": "sync",
+          "token": "HHlnK3yJlF_-PMQ3h5lRUjrZoxa-rOU5x75746b59NI"
+        }
+      }
+    }
+  ]
+}

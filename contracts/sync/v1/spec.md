@@ -120,10 +120,24 @@ query string and no body, a POST with no body, a PUT with binary bytes, and an e
 proof. Each has the exact signing string and a signature that verifies over it with the test
 key above. They are pinned by `go test ./internal/syncapi -run AppSyncVectors`.
 
+Whole request/response exchanges, in `contracts/sync/v1/vectors/exchanges.json`: signed and
+bearer push, pull, ack, vehicle scoping, the bundle relay (offer, chunk, commit, receipt),
+and the negatives (bad signature, replay, wrong scope, expired token, unknown vehicle, clock
+skew, revocation). Each step carries its inputs (method, request target, headers, body, the
+server's clock, the nonce) and the exact status, error code and body the server answered
+with. [`vectors/README.md`](vectors/README.md) lists the cases and how to use them.
+
 ### 2.5 Failures
 
 Every authentication failure is `401` with `{"error":"unauthenticated","message":"authentication failed"}` — deliberately uniform, so a probe cannot tell an unknown
-client from a bad signature from a replay. `403 admin_required` means authenticated
+client from a bad signature from a replay. (One exception: a bearer token sent to a route that
+accepts signatures only, `/v1/auth/token` and administration, is `401 signature_required`, since
+the client knows which credential it sent. The server decides this from the `Bearer` scheme and
+the route alone, before any token is looked up, so every bearer string gets the same answer and it
+says nothing about whether a token exists or is valid. Do not branch on the cause of any other
+401, with one more exception about the data rather than the caller: `401 bad_manifest_signature`
+on the relay, below.)
+`403 admin_required` means authenticated
 but not an admin. `403 funnel_refused` / `403 tailnet_identity_required` are
 network-policy refusals. `429 rate_limited`: back off.
 
@@ -434,11 +448,22 @@ client's scope, or the answer is `403 scope`. An `*` client may relay for any ca
 
 ### Errors
 
-`401` unauthenticated (§2.5) · `403 scope` · `403 assignment_refused` (the
-manifest names an assignment the server did not issue) · `403 no_storage_key` (the
-device's root was never escrowed) · `422 quarantined` (a counter reused with
-different content) · `409` chunk does not match the descriptor · `429` back off.
+`401` unauthenticated (§2.5) · `401 bad_manifest_signature` (the device's signature over
+the manifest does not verify; unlike the rest of §2.5 this is about the data, not the caller) ·
+`400 bad_request` (a missing or malformed `X-Cairn-Signature`) · `403 scope` · `403
+assignment_refused` (the manifest names an assignment the server did not issue) · `403
+no_storage_key` (the device's root was never escrowed) · `404 unknown_bundle` (no offer on
+record, including after an out-of-scope offer, which writes nothing) · `404 no_receipt` ·
+`422 quarantined` (a counter reused with different content) · `409 chunk_mismatch` (the
+bytes do not hash to `{sha256}`, or do not match the descriptor) · `409 chunks_missing`
+(commit before every chunk is uploaded) · `429` back off.
 A refused or quarantined bundle is **never** receipted, so it stays on the dongle.
+
+**Check for `bad_manifest_signature` before applying any rule that reads a `401` as "this
+installation was revoked, replaced or has a wrong clock"** (§2.2, §3.1). It means the dongle's
+manifest is wrong, not that the caller is unknown, so a client must not offer re-enrolment or
+suggest a clock fix because of it, and retrying the same bundle will not help; surface it as a
+problem with that bundle. Every other `401` keeps the uniform meaning of §2.5.
 
 ### What must never be logged
 
