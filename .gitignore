@@ -13,10 +13,10 @@ ui/.output/
 ui/.data/
 .nimbalyst/
 nimbalyst-local/
-firmware/freematics-base/.pio/
+firmware/cairn-v2/third_party/freematics-base/.pio/
 
 # Local credentials — never commit. Template: src/secrets.h.example
-firmware/freematics-base/src/secrets.h
+firmware/cairn-v2/third_party/freematics-base/src/secrets.h
 
 # Agent worktrees and local scratch
 .claude/

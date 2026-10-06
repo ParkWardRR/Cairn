@@ -1,7 +1,7 @@
 # Cairn app sync protocol (v1)
 
 For the iOS companion. Precise enough to implement without reading the server.
-Design rationale and threat model: [trust-model-v3.md](trust-model-v3.md).
+Design rationale and threat model: [trust-model-v3.md](../../../docs/trust-model-v3.md).
 Server code: `server/internal/{clients,syncapi,audit}`; the signing vector in §2.4
 is checked by a server test, so it cannot drift from this page.
 
@@ -115,7 +115,7 @@ key handling agree with the server's):
 MEUCIDZQYt9QDF5PJ43nMAA9D5/HNm+d+QwpABTSQyLdxMVdAiEAjMSDavgvRW6dg2vGSPelsKCoBezOsZMvDuC770JXZ+0=
 ```
 
-More vectors, in `fixtures/app-sync-v1/vectors.json`: a POST with a JSON body, a GET with a
+More vectors, in `contracts/sync/v1/vectors/vectors.json`: a POST with a JSON body, a GET with a
 query string and no body, a POST with no body, a PUT with binary bytes, and an enrolment
 proof. Each has the exact signing string and a signature that verifies over it with the test
 key above. They are pinned by `go test ./internal/syncapi -run AppSyncVectors`.
@@ -368,7 +368,7 @@ as the truth; do not merge.
 
 ## 13. Bundle relay (the phone uploads on the dongle's behalf)
 
-The dongle has no network ([ble-offload.md](ble-offload.md)); the enrolled phone
+The dongle has no network ([ble-offload.md](../../ble/v1/offload.md)); the enrolled phone
 carries its sealed bundles to the server. These endpoints are the same
 offer → chunk → commit exchange the dongle used to make itself, now authenticated
 as **the phone** (§2) instead of by a device client certificate. They accept signed

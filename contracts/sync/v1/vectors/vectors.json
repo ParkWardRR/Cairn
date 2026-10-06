@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "spec": "docs/app-sync-protocol.md section 2",
+  "spec": "contracts/sync/v1/spec.md section 2",
   "notes": [
     "ECDSA is randomised: signatures cannot be reproduced, only verified. Build the signing_string yourself from the other fields and check it equals the one given; then verify signature_der_base64 over SHA-256(signing_string) with test_key.public_key_x963_hex. Do both: agreeing on the string and on verification is what proves compatibility with the server.",
     "signature_der_base64 is the ASN.1 DER ECDSA-P256-SHA256 signature, standard base64 with padding. CryptoKit: signature.derRepresentation.",

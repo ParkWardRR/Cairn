@@ -63,39 +63,37 @@ jobs:
           CAIRN_OFFLOAD_SIM: ${{ github.workspace }}/firmware/cairn-v2/test/host/build/offload-sim
         run: go test ./...
 
+      # cairn-fsq is its own Go module (it is the web layer's tool, and imports nothing
+      # from the server), so the server's `go test ./...` no longer covers it.
+      - name: cairn-fsq (the web layer's own Go module)
+        working-directory: ui/tools/cairn-fsq
+        run: go vet ./... && go test ./...
+
       - name: Conformance vectors are reproducible
         working-directory: server
         run: |
-          go run ./cmd/mkvectors -out ../fixtures/format-v3
-          git diff --exit-code -- ../fixtures/format-v3 || {
+          go run ./cmd/mkvectors
+          git diff --exit-code -- ../contracts/format/v3/vectors || {
             echo "Regenerating the vectors produced a diff."
             echo "If the format change is intended, commit the regenerated vectors."
             exit 1
           }
 
-  # The v2 schema and decode pipeline, against a real PostGIS.
+  # The decode pipeline, against a real PostgreSQL + PostGIS.
   #
   # No mock here: partitioning, geography columns, generated columns and
   # ON CONFLICT behaviour are exactly the things a fake would get wrong while
   # reporting success.
+  #
+  # The database runs INSIDE the job (tests/ci/postgis.sh), not as a GitHub Actions
+  # service container. A service container needs a Docker socket, the runner is a
+  # container with none on purpose (a job that can reach a container socket can reach
+  # the host that also serves production), and so that form of this job could never
+  # start: it failed at "Initialize containers" on every run.
   decode-pipeline:
     runs-on: [self-hosted, cairn]
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     needs: [build-server]
-
-    services:
-      postgres:
-        image: imresamu/postgis:16-3.4
-        env:
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: cairn
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
 
     steps:
       - uses: actions/checkout@v4
@@ -105,42 +103,18 @@ jobs:
         with:
           go-version: '1.27'
 
-      - name: Apply the migrations
-        env:
-          PGPASSWORD: test
+      - name: Start PostgreSQL + PostGIS and apply the migrations
         run: |
           set -euo pipefail
-          for f in deploy/migrations/*.sql; do
-            echo "applying $f"
-            psql -h 127.0.0.1 -U postgres -d cairn -v ON_ERROR_STOP=1 -q -f "$f"
-          done
+          echo "CAIRN_TEST_DSN=$(tests/ci/postgis.sh start)" >> "$GITHUB_ENV"
 
       - name: Decode pipeline tests
-        env:
-          CAIRN_TEST_DSN: postgres://postgres:test@127.0.0.1:5432/cairn
         working-directory: server
         run: go test ./internal/store/ -count=1 -v
 
-  # The emulator's independent Rust implementation of bundle format v2, checked
-  # against the same committed vectors the Go reference passes. The vectors are
-  # bytes and expected verdicts, not code, so neither implementation can quietly
-  # drag the other along.
-  format-conformance:
-    runs-on: [self-hosted, cairn]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Unit tests
-        working-directory: emulator
-        run: cargo test
-
-      - name: Conformance against the committed vectors
-        working-directory: emulator
-        run: cargo run --release -- conformance --vectors ../fixtures/format-v3
+      - name: Stop the database
+        if: always()
+        run: tests/ci/postgis.sh stop
 
   # The vectors are generated deterministically, which is what makes them usable
   # as a shared input rather than one implementation's output. Regenerating must
@@ -160,16 +134,16 @@ jobs:
 
       - name: Regenerate the vectors
         working-directory: server
-        run: go run ./cmd/mkvectors -out ../fixtures/format-v3
+        run: go run ./cmd/mkvectors
 
       - name: The committed vectors must be unchanged
         run: |
-          if ! git diff --quiet -- fixtures/format-v3; then
+          if ! git diff --quiet -- contracts/format/v3/vectors; then
             echo "Regenerating the vectors changed committed files."
             echo "Either the generator is not deterministic, or a change to it"
             echo "was committed without regenerating. Run:"
-            echo "  cd server && go run ./cmd/mkvectors -out ../fixtures/format-v3"
-            git diff --stat -- fixtures/format-v3
+            echo "  cd server && go run ./cmd/mkvectors"
+            git diff --stat -- contracts/format/v3/vectors
             exit 1
           fi
 

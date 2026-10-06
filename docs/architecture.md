@@ -58,7 +58,7 @@ flowchart LR
 Classic ESP32 WROVER. Captures GNSS, IMU and OBD into append-only,
 CRC-chained, **AEAD-encrypted** segments; seals them into Ed25519-signed
 bundles; **has no Wi-Fi and no network credentials**: the enrolled phone pulls
-sealed bundles over BLE and uploads them for it ([ble-offload.md](ble-offload.md)).
+sealed bundles over BLE and uploads them for it ([ble-offload.md](../contracts/ble/v1/offload.md)).
 It prunes a bundle only after verifying a signed server receipt (handed back by the
 phone) against a key pinned in firmware. The BLE service also accepts phone GNSS
 fixes. No LTE. Tailscale does not run here.

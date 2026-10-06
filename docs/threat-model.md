@@ -181,7 +181,7 @@ database access, host-validated outputs, and no ability to alter raw data.
 ### Transport Security
 
 - **Dongle ↔ phone:** BLE with bonding and encryption. Bulk data is already AEAD ciphertext.
-- **Phone ↔ server:** HTTPS to the server's app listener (LAN) or `tailscale serve` (Tailnet), with the server's leaf pinned on the LAN path, and a **per-request P-256 signature** on every call. See [app-sync-protocol.md](app-sync-protocol.md).
+- **Phone ↔ server:** HTTPS to the server's app listener (LAN) or `tailscale serve` (Tailnet), with the server's leaf pinned on the LAN path, and a **per-request P-256 signature** on every call. See [app-sync-protocol.md](../contracts/sync/v1/spec.md).
 - **The dongle has no network credential and no network stack.** Nothing to rotate, nothing to extract.
 - **Legacy:** the `:8443` mTLS device listener and its private CA remain deployed only until the relay is proven on hardware; they are then removed (Cairn #7).
 

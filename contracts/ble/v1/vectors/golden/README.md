@@ -1,6 +1,6 @@
 # BLE protocol v1: golden vectors
 
-Byte-exact frames for the BLE companion protocol (`docs/ble-companion-protocol.md`),
+Byte-exact frames for the BLE companion protocol (`contracts/ble/v1/spec.md`),
 replayed by the firmware's host test (`make -C firmware/cairn-v2/test/host ble-vectors`)
 and by the iOS app's tests.
 

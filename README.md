@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/assets/cairn-banner.svg" alt="Cairn" width="600">
-</p>
-
 <h1 align="center">Cairn</h1>
 <p align="center"><strong>Offline-first car journal for your homelab</strong></p>
 <p align="center"><em>Your drives. Your data. Your server. No cloud required.</em></p>
@@ -91,10 +87,10 @@ data). One trust model instead of three features:
 - **Encrypted storage.** Every frame on the SD card is sealed with
   XChaCha20-Poly1305 under keys derived per segment and per vehicle. The card
   alone is ciphertext; torn tails, CRCs, the chain and the Merkle root still
-  verify without a key. ([Format v3](docs/bundle-format-v3.md))
+  verify without a key. ([Format v3](contracts/format/v3/spec.md))
 - **An enrolled iPhone.** The app is its own client with a Secure-Enclave key and
   signed requests, reachable on the LAN or over **Tailscale** (reachability, not
-  authorisation; never Funnel). ([Protocol](docs/app-sync-protocol.md),
+  authorisation; never Funnel). ([Protocol](contracts/sync/v1/spec.md),
   [Tailscale setup](docs/tailscale-deployment.md))
 - **More than one car.** Vehicles and device assignments are first-class; every
   bundle carries its vehicle, assignment and a monotonic device counter, so a
@@ -130,7 +126,7 @@ analysis views, BLE companion, and the Nuxt 3 dashboard have shipped since. See
 
 What is verified:
 
-- the [bundle format specification](docs/bundle-format-v3.md), with **three
+- the [bundle format specification](contracts/format/v3/spec.md), with **three
   independent implementations** — Go, Rust and the firmware's portable C — that
   agree byte-for-byte across **25** committed conformance vectors;
 - the **v2 ingest server** (`server/`), running as a hardened systemd unit with
@@ -147,7 +143,7 @@ What is verified:
   — DuckDB rebuilt from the CAS and the SD card, reproducibility-gated, with
   Parquet snapshot export;
 - the **BLE companion** — phone GPS reinforcement via NimBLE GATT, golden-vector
-  validated; bundle offload is specified ([docs/ble-offload.md](docs/ble-offload.md)), not yet written;
+  validated; bundle offload is specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), not yet written;
 - the local CLI tooling and the web UI.
 
 ### What first contact with hardware actually found
@@ -287,14 +283,14 @@ v2 rebuild is complete and running on hardware per [ROADMAP.md](ROADMAP.md).
 
 The foundation of the v2 rebuild. Three implementations — firmware (C), server
 (Go) and emulator (Rust) — must agree byte-for-byte, so the format ships as a
-[normative specification](docs/bundle-format-v3.md) with a reference
+[normative specification](contracts/format/v3/spec.md) with a reference
 implementation and committed conformance vectors rather than prose.
 
 | Component | Details |
 |---|---|
-| **Spec** | [`docs/bundle-format-v3.md`](docs/bundle-format-v3.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
+| **Spec** | [`contracts/format/v3/spec.md`](contracts/format/v3/spec.md) — byte layouts for the segment header, frame envelope, nine payload schemas, manifest, receipt and transfer protocol |
 | **Reference impl** | `server/format/` — recovery scanner, domain-separated Merkle tree, strict deterministic-CBOR codec, manifest and receipt sign/verify |
-| **Vectors** | `fixtures/format-v3/` — 33 vectors with machine-readable structural and keyed verdicts, generated deterministically by `server/cmd/mkvectors`. Go, Rust and C all run all 33 |
+| **Vectors** | `contracts/format/v3/vectors/` — 33 vectors with machine-readable structural and keyed verdicts, generated deterministically by `server/cmd/mkvectors`. Go, Rust and C all run all 33 |
 
 ### v2 Device Firmware (`firmware/cairn-v2/`)
 
@@ -537,7 +533,7 @@ against stdout.
 cd emulator
 
 # Does this implementation agree with the specification?
-cargo run --release -- conformance --vectors ../fixtures/format-v3
+cargo run --release -- conformance
 
 # Local durability rows need no server
 cargo run --release -- fault-matrix --verbose
@@ -593,7 +589,10 @@ Every language in this stack was chosen for deterministic resources, strong stat
 
 ```
 Cairn/
-├── docs/bundle-format-v3.md     # Normative bundle format spec (v3)
+├── contracts/                   # Cairn Vehicle Data Protocols: specs and vectors shared by every part
+│   ├── format/v3/               #   bundle format: spec.md + 33 vectors
+│   ├── enrolment/v1/  sync/v1/  ble/v1/   #   enrolment, app sync + bundle relay, BLE + offload
+│   └── store/v1/  share/v1/     #   drafts
 ├── server/                      # Go server
 │   ├── Makefile                 #   make build / build-tsdb / test / vet (GOAMD64 baseline)
 │   ├── format/                  #   Bundle format reference implementation
@@ -616,23 +615,22 @@ Cairn/
 │   ├── cmd/cairn-verify/        #   Verify bundles straight off an SD card
 │   ├── cmd/cairn-push/          #   SD card bundle ingestion via mTLS
 │   ├── cmd/cairn-signfw/        #   Offline firmware signing
-│   ├── cmd/cairn-fsq/           #   Foursquare OS Places slice for the UI (place naming)
 │   ├── cmd/cairn-syncdemo/      #   Reference sync client for verification
 │   └── cmd/mkvectors/           #   Deterministic conformance vector generator
-├── fixtures/format-v3/          # 33 conformance vectors (structural + keyed verdicts)
 ├── firmware/
 │   ├── cairn-v2/                #   ESP32 firmware (PlatformIO, C/C++)
 │   │   ├── lib/                 #     cairn_format, _store, _prune, _sync, _fs, _log, _ota, _power, _prov
 │   │   ├── src/                 #     Lifecycle, sensors, BLE companion, provisioning console
 │   │   ├── include/             #     Board config; secrets.h.example (copy to untracked secrets.h)
 │   │   └── test/host/           #     Native conformance, fault-matrix and ASan/UBSan suites
-│   └── freematics-base/lib/     #   Vendored FreematicsPlus drivers (BSD) and TinyGPS, via lib_extra_dirs
+│   │   └── third_party/freematics-base/lib/   #   Vendored FreematicsPlus drivers (BSD) and TinyGPS, via lib_extra_dirs
 ├── emulator/                    # Rust emulator: independent format-v3 impl + fault matrix
 │   └── src/
 │       ├── format/              #   Independent Rust implementation of the format
 │       ├── conformance.rs       #   Runner against the committed vectors
 │       └── v2/                  #   Device lifecycle, fault injection, matrix
 ├── ui/                          # Nuxt 3 + Vue 3 telemetry dashboard
+│   ├── tools/cairn-fsq/         #   Foursquare OS Places slice for place naming (its own small Go module)
 │   ├── app/pages/               #   Dashboard, trips, boost, fuel, economy, analytics, etc.
 │   ├── server/                  #   API routes proxying to cairn-tsdb
 │   ├── scripts/                 #   Screenshot automation
@@ -668,7 +666,7 @@ never blends two cars.
 
 **v1 is dead.** No code reads it, nothing migrates it, and the tools that wrote
 it are gone. The `trips/` directories on an SD card are v1 leftovers that every
-current tool ignores. See [Bundle Format v3](docs/bundle-format-v3.md).
+current tool ignores. See [Bundle Format v3](contracts/format/v3/spec.md).
 
 ---
 
@@ -702,7 +700,7 @@ cairn/vehicle/{id}/sync_completed    # trip count, total bytes
 The device-facing ingest API is `/api/v2/*`, served by `cairn-server` on port
 8443 with mutual TLS; the endpoint table is under [v2 Ingest
 Server](#v2-ingest-server-server) above. The enrolled iOS app's API is specified
-in [docs/app-sync-protocol.md](docs/app-sync-protocol.md). The web UI's own
+in [contracts/sync/v1/spec.md](contracts/sync/v1/spec.md). The web UI's own
 routes (`ui/server/`) proxy to `cairn-tsdb` and are not a public API.
 
 ---
@@ -736,7 +734,7 @@ pio run -e cairn
 ```
 
 The project reuses the vendored FreematicsPlus drivers from
-`firmware/freematics-base/lib` (`lib_extra_dirs`). Flash `pio run -e
+`firmware/cairn-v2/third_party/freematics-base/lib` (`lib_extra_dirs`). Flash `pio run -e
 cairn-selftest -t upload` first: it runs the boot self-test and a storage/format
 smoke check, prints the result over serial and to the SD log, then stops. See
 [docs/v2-firmware-testing.md](docs/v2-firmware-testing.md) for the bench
@@ -787,7 +785,7 @@ cd server && make test
 make -C firmware/cairn-v2/test/host
 
 # Does the Rust implementation agree with the committed vectors?
-cd emulator && cargo run --release -- conformance --vectors ../fixtures/format-v3
+cd emulator && cargo run --release -- conformance
 
 # Fault-injection matrix (local durability rows need no server)
 cd emulator && cargo run --release -- fault-matrix --verbose
@@ -831,7 +829,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on the self-hosted `cairn` runn
 | `build-server` | Go server: build, vet, gofmt, tests, and a check that regenerating the conformance vectors produces no diff |
 | `decode-pipeline` | The SQL migrations and decode store against a real PostGIS service container |
 | `format-conformance` | The emulator's Rust format implementation (unit tests, then `conformance`) against the same committed vectors |
-| `vector-determinism` | Regenerating `fixtures/format-v3` with `mkvectors` must leave the committed files unchanged |
+| `vector-determinism` | Regenerating `contracts/format/v3/vectors` with `mkvectors` must leave the committed files unchanged |
 | `firmware-conformance` | The firmware's portable C against the vectors and the storage fault matrix, natively, then under ASan and UBSan |
 | `firmware-build` | PlatformIO builds for the ESP32: capture image, self-test image, and a build with OTA enabled |
 | `fault-matrix` | The emulator's local durability rows, the protocol rows against a dev-mode server with an enrolled device, vehicle and assignment, and the server-crash-during-commit test |
@@ -849,11 +847,11 @@ The [CI workflow](.github/workflows/ci.yml) runs on the self-hosted `cairn` runn
 | [Secure OTA](docs/ota.md) | Update descriptor format, the four preconditions, and the ordering argument |
 | [v2 Hardware Mapping Audit](docs/v2-hardware-mapping-audit.md) | Firmware checked against the vendor guide, the vendored library and measured values — what matched, what was wrong, and what is deliberately left alone |
 | **[Trust Model v3](docs/trust-model-v3.md)** | **Encrypted storage, enrolled app, Tailscale, vehicles — one trust model, with the threat table** |
-| **[Bundle Format v3](docs/bundle-format-v3.md)** | **Normative spec — byte layouts, AEAD frames, manifest, receipt, transfer protocol** |
+| **[Bundle Format v3](contracts/format/v3/spec.md)** | **Normative spec — byte layouts, AEAD frames, manifest, receipt, transfer protocol** |
 | **[Device Provisioning](docs/device-provisioning.md)** | **The sealed enrolment blob, the USB console protocol and its rules, the operator procedure** |
 | [Hardware Round Trip](docs/hardware-roundtrip.md) | Runbook for the one check the host suites cannot make |
-| **[BLE Bundle Offload](docs/ble-offload.md)** | **How sealed bundles leave a dongle with no network: phone pulls over BLE, relays, returns the receipt** |
-| **[App Sync Protocol](docs/app-sync-protocol.md)** | **The iOS client's contract: signing, enrolment, operations, cursor — with test vectors** |
+| **[BLE Bundle Offload](contracts/ble/v1/offload.md)** | **How sealed bundles leave a dongle with no network: phone pulls over BLE, relays, returns the receipt** |
+| **[App Sync Protocol](contracts/sync/v1/spec.md)** | **The iOS client's contract: signing, enrolment, operations, cursor — with test vectors** |
 | [Tailscale Deployment](docs/tailscale-deployment.md) | Host install, Serve, ACLs, Funnel off |
 | [ESP32 Hardening](docs/esp32-hardening.md) | Flash encryption, secure boot, irreversibility, what the chip can and cannot do |
 | [Architecture](docs/architecture.md) | Component map, listeners, data flow (updated for v3) |

@@ -2,7 +2,7 @@
 
 > **Amendment 2026-10-05 — the dongle has no Wi-Fi.** All server sync goes through the
 > enrolled iOS app: the phone pulls sealed bundles over BLE and uploads them on the
-> dongle's behalf ([ble-offload.md](ble-offload.md), [app-sync-protocol.md](app-sync-protocol.md) §13).
+> dongle's behalf ([ble-offload.md](../contracts/ble/v1/offload.md), [app-sync-protocol.md](../contracts/sync/v1/spec.md) §13).
 > Wherever this document says the dongle talks to the server over mTLS, read: the
 > **phone** talks to the server over signed requests, and the dongle's integrity
 > evidence is unchanged (Ed25519 manifest, server-signed receipt verified against a
@@ -42,14 +42,14 @@ model covering three things that were previously designed separately:
 | What a stolen or hostile phone can do | n/a | Fail to upload. It cannot read a trip, forge a receipt, or make the dongle delete anything |
 | Secrets on the chip beyond the storage root | Wi-Fi password, client key | **None in use.** A unit that ran earlier firmware may still hold a *residual* Wi-Fi password in flash (the key and certificate were overwritten; see device-provisioning.md). Flash encryption (Phase 24) removes the exposure |
 | What the BLE bond protects | Live phone GNSS and status | Also the **metadata** of what is stored (counts, sizes, times in the manifest). Not the data |
-| Cost | n/a | Trips reach the server only when the phone offloads them; the dongle must be awake and in range. See [ble-offload.md](ble-offload.md) §5 |
+| Cost | n/a | Trips reach the server only when the phone offloads them; the dongle must be awake and in range. See [ble-offload.md](../contracts/ble/v1/offload.md) §5 |
 
 ## 1. Actors, paths and what authenticates each
 
 | Path | Transport | Authentication | Role | Exposure |
 |---|---|---|---|---|
 | ~~Dongle → server (home Wi-Fi)~~ | **Removed 2026-10-05.** The dongle has no network stack | n/a | n/a | n/a |
-| iPhone → dongle | BLE only | BLE bonding + passkey (the access control); a receipt, not the link, is what authorises a deletion | Live GPS assist, diagnostics, **bundle offload** ([ble-offload.md](ble-offload.md)) | Physical proximity |
+| iPhone → dongle | BLE only | BLE bonding + passkey (the access control); a receipt, not the link, is what authorises a deletion | Live GPS assist, diagnostics, **bundle offload** ([ble-offload.md](../contracts/ble/v1/offload.md)) | Physical proximity |
 | iPhone → server, carrying the dongle's bundles | Signed requests / bearer tokens on `/v1/relay/*` | The phone's enrolled P-256 key; the bundle's own device signature is verified by the server | Upload of encrypted sealed bundles on the dongle's behalf | LAN or Tailnet |
 | iPhone → server, LAN | HTTPS, `:8444` | **Signed requests** from an enrolled app identity (P-256) | Browse trips, sync metadata, manage vehicles | LAN |
 | iPhone → server, remote | **Tailscale** → `tailscale serve` → loopback HTTP | The same signed requests, **plus** Tailnet reachability | Same API as LAN | Tailnet only |
@@ -148,7 +148,7 @@ spent values.
 
 ## 3. Storage encryption (bundle format v3)
 
-Normative layout: [bundle-format-v3.md](bundle-format-v3.md). Summary of the
+Normative layout: [bundle-format-v3.md](../contracts/format/v3/spec.md). Summary of the
 decisions and why:
 
 | Decision | Reason |
@@ -247,7 +247,7 @@ Two enrolments, both human-approved. No unauthenticated endpoint creates trust.
 3. The server returns the client id and its own identity (instance id, TLS
    SPKI pin). The app pins it.
 
-Every app request thereafter is signed (`docs/app-sync-protocol.md`): ±120 s
+Every app request thereafter is signed (`contracts/sync/v1/spec.md`): ±120 s
 timestamp window, nonce cache against replay, body hash in the signed string.
 Background `URLSession` tasks, which are created ahead of time and may run
 later, use a short-lived (1 h) opaque bearer token minted by a signed request.
@@ -258,7 +258,7 @@ later, use a short-lived (1 h) opaque bearer token minted by a signed request.
 
 The app is a first-class client: local encrypted store, durable outbox,
 idempotent protocol. Full wire protocol in
-[app-sync-protocol.md](app-sync-protocol.md); the invariants:
+[app-sync-protocol.md](../contracts/sync/v1/spec.md); the invariants:
 
 | Requirement | Behaviour |
 |---|---|

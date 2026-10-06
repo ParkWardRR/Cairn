@@ -8,7 +8,7 @@ bug.
 **Supersedes:** bundle format v2 (and v1 before it). There is no v2 read path,
 no migration and no compatibility requirement: v2 recordings were test data and
 v3 tooling does not read them. What changed and why is in §3.6 and
-[trust-model-v3.md](trust-model-v3.md); the short version is that **every frame
+[trust-model-v3.md](../../../docs/trust-model-v3.md); the short version is that **every frame
 is now AEAD-encrypted** and every segment and manifest is **bound to a vehicle,
 an assignment and a monotonic device counter**.
 
@@ -370,7 +370,7 @@ escrowed root and derives the same keys from the segment header alone — the
 header, not the caller, says which key applies. A copied card has ciphertext and
 no root. Details, threat table and the ESP32 specifics (the eFuse flash key is
 not usable as an HKDF input on a classic ESP32) are in
-[trust-model-v3.md](trust-model-v3.md) §3 and [esp32-hardening.md](esp32-hardening.md).
+[trust-model-v3.md](../../../docs/trust-model-v3.md) §3 and [esp32-hardening.md](../../../docs/esp32-hardening.md).
 
 ---
 
@@ -847,7 +847,7 @@ unless, for **every** segment header (journal included):
   own key derivation.
 
 The server additionally applies rules that need state (see
-[trust-model-v3.md](trust-model-v3.md) §2): the assignment must be one it issued
+[trust-model-v3.md](../../../docs/trust-model-v3.md) §2): the assignment must be one it issued
 for that device and vehicle and must not have been superseded by a newer
 assignment seen at a lower counter; the counter must not already be bound to
 different content (the same pair is an idempotent duplicate, a different content
@@ -936,8 +936,8 @@ SHA-256, then recompute `content_root` and compare it to the signed value.
   reboot resumes rather than rediscovers.
 - **Transport (amended 2026-10-05).** The dongle has no network. The offer,
   chunks, commit and receipt below are carried by the enrolled phone
-  ([app-sync-protocol.md](app-sync-protocol.md) §13) and the bytes reach the phone over
-  BLE ([ble-offload.md](ble-offload.md)). The server authenticates the **phone**
+  ([app-sync-protocol.md](../../sync/v1/spec.md) §13) and the bytes reach the phone over
+  BLE ([ble-offload.md](../../ble/v1/offload.md)). The server authenticates the **phone**
   (signed request) and the **device** (the manifest's Ed25519 signature against the
   enrolled key, plus a denylist). The legacy `:8443` mTLS path, where a device
   certificate's CommonName identified the device, is retired.
@@ -970,7 +970,7 @@ this one.
 ## 7. Conformance
 
 An implementation is conformant when it passes every vector in
-`fixtures/format-v3/` (see its README for the **public test keys**). The vectors
+`contracts/format/v3/vectors/` (see its README for the **public test keys**). The vectors
 are the executable form of this document. Every segment vector states two
 verdicts: *structural* (no key) and *keyed* (with the vector's root).
 

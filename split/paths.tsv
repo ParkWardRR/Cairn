@@ -23,24 +23,18 @@
 
 # ── the Go server ────────────────────────────────────────────────────────────
 server/	server	.
-server/cmd/cairn-fsq/	web	tools/cairn-fsq/	own small Go module: stdlib + DuckDB only, consumed only by the web layer
 
 # ── the web dashboard ────────────────────────────────────────────────────────
 ui/	web	.
 
 # ── the device firmware, its emulator and research ──────────────────────────
 firmware/cairn-v2/	firmware	.
-firmware/freematics-base/	firmware	third_party/freematics-base/	vendored FreematicsPlus drivers; platformio.ini's lib_extra_dirs is rewritten after extraction
 emulator/	firmware	emulator/
 research_notes/	firmware	research/research_notes/
 reports/	firmware	research/reports/
 
-# ── protocol vectors (become contracts/ in the front door in phase 1) ───────
-fixtures/format-v3/	door	contracts/format/v3/vectors/
-fixtures/enroll-v1/	door	contracts/enrolment/v1/vectors/
-fixtures/app-sync-v1/	door	contracts/sync/v1/vectors/
-fixtures/ble-offload-v1/	door	contracts/ble/v1/vectors/offload/
-fixtures/ble-v1/	door	contracts/ble/v1/vectors/golden/	vendored from the iOS repo so the firmware test is self-contained
+# ── the protocols: specs and vectors, collected in contracts/ in phase 1 ───────
+contracts/	door	contracts/	Cairn Vehicle Data Protocols; extracted nowhere: they stay in the front door and are fetched by pin
 
 # ── deploy: server side ──────────────────────────────────────────────────────
 deploy/migrations/	server	deploy/migrations/
@@ -60,12 +54,7 @@ deploy/systemd/cairn-ui-places.conf	web	deploy/systemd/cairn-ui-places.conf
 deploy/systemd/ui.env.example	web	deploy/systemd/ui.env.example
 
 # ── docs ─────────────────────────────────────────────────────────────────────
-# protocol specs: become contracts/ in the front door
-docs/bundle-format-v3.md	door	contracts/format/v3/spec.md
-docs/app-sync-protocol.md	door	contracts/sync/v1/spec.md
-docs/ble-companion-protocol.md	door	contracts/ble/v1/spec.md
-docs/ble-offload.md	door	contracts/ble/v1/offload.md
-docs/device-provisioning.md	door	contracts/enrolment/v1/spec.md	wire parts; the operator how-to is split into the server repo in phase 1
+docs/device-provisioning.md	server	docs/device-provisioning.md	operator how-to; the wire format is contracts/enrolment/v1/spec.md
 # system docs stay in the front door
 docs/architecture.md	door	docs/architecture.md
 docs/threat-model.md	door	docs/threat-model.md
@@ -95,6 +84,7 @@ docs/v2-hardware-mapping-audit.md	firmware	docs/v2-hardware-mapping-audit.md
 .github/	door	.github/	the front door's own workflows are rewritten in phase 4
 tests/check-runners.sh	server	tests/check-runners.sh	copied into every repo with CI in the rewrite step
 tests/check-runners-selftest.sh	server	tests/check-runners-selftest.sh	copied with it
+tests/ci/	server	tests/ci/	the in-job PostGIS for the decode-pipeline tests
 tests/server-crash-during-commit.sh	server	tests/interop/server-crash-during-commit.sh	interop: needs the firmware repo's emulator, pinned
 .gitignore	door	.gitignore	split per repository in the rewrite step
 LICENSE	door	LICENSE	copied into every repository in the rewrite step

@@ -18,14 +18,14 @@ any diff — so "the vectors are deterministic" is enforced rather than asserted
 | Suite | Command | Count |
 |---|---|---|
 | Format conformance (Go) | `go test ./format/` | 25 vectors |
-| Format conformance (Rust) | `cargo run -- conformance --vectors ../fixtures/format-v3` | 33 vectors, none skipped |
+| Format conformance (Rust) | `cargo run -- conformance` | 33 vectors, none skipped |
 | Format conformance (C) | `make -C firmware/cairn-v2/test/host conformance` | 25 vectors |
 | Firmware storage matrix (C) | `make -C firmware/cairn-v2/test/host faults` | 28 rows |
 | Fault-injection matrix (Rust) | `cargo run -- matrix` | 9 rows |
 | Server unit and integration | `go test ./...` | — |
 | Decode pipeline (needs PostGIS) | `CAIRN_TEST_DSN=… go test ./internal/store/` | 11 rows |
 | Firmware target build | `pio run` in `firmware/cairn-v2` | 3 configurations |
-| Vector determinism | regenerate, then `git diff --exit-code -- fixtures/` | — |
+| Vector determinism | regenerate, then `git diff --exit-code -- contracts/` | — |
 
 ## The four invariants
 
@@ -172,7 +172,7 @@ row is aspirational.
 
 | Guarantee | Verified by | Mutation-checked |
 |---|---|---|
-| Torn tails, CRCs, the chain and the Merkle root verify **without a key** | `fixtures/format-v3` structural verdicts (Go, Rust, C); emulator `torn-tail-under-encryption`; C matrix "encrypted torn tail recovers with no key" | yes |
+| Torn tails, CRCs, the chain and the Merkle root verify **without a key** | `contracts/format/v3/vectors` structural verdicts (Go, Rust, C); emulator `torn-tail-under-encryption`; C matrix "encrypted torn tail recovers with no key" | yes |
 | A flipped ciphertext bit with a repaired CRC is rejected | vector `auth-tag-tampered`; C matrix "a repaired CRC is AUTH_FAILED, never truncated" | yes (drop AAD) |
 | A frame cannot be moved between segments, vehicles or devices | vectors `frame-moved-between-segments`, `wrong-vehicle-key`; Rust write-side transplant test | yes |
 | Wrong key version is reported as such, not as tampering | vector `wrong-key-version` | yes |

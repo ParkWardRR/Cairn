@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "spec": "docs/ble-offload.md",
+  "spec": "contracts/ble/v1/offload.md",
   "att_mtu": 247,
   "notes": [
     "All frames are hex. Control writes go to OFFLOAD_CONTROL; the dongle's indications come back on it. Data notifications come on OFFLOAD_DATA; receipt frames are written to it.",

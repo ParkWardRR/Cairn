@@ -23,7 +23,7 @@ Last reviewed 2026-10-05.
 | Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
 | Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), with a vehicle selector; analysis pages are single-vehicle and never blend two cars. Deployed |
 | iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; **the BLE bundle offload (#14) is now the critical path**, because the phone is the dongle's only uplink |
-| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([docs/ble-offload.md](docs/ble-offload.md)), not implemented |
+| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), not implemented |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
 
 ### The v3 target
@@ -328,7 +328,7 @@ Breaking changes are authorised. There is no migration.
 ## Phase 20 — App identity and the sync API — **done and deployed on the LAN; Tailnet awaiting login**
 
 `server/internal/{clients,syncapi,audit}`, `server/cmd/{cairn-admin,cairn-server}`,
-[docs/app-sync-protocol.md](docs/app-sync-protocol.md). 27 test functions, with the
+[contracts/sync/v1/spec.md](contracts/sync/v1/spec.md). 27 test functions, with the
 security-critical ones mutation-checked (replay cache, signature check, timestamp
 window, revoked-client check, scope filter, Funnel refusal, bearer-on-admin,
 admin check).
@@ -364,7 +364,7 @@ admin check).
 - [x] `trip_summary` entities are published from tsdb's `v_trip_summary` by a
       publisher inside cairn-server (the sync log is single-writer, so the decode
       worker cannot write it). Integers only, idempotent by content digest,
-      scoped per vehicle; schema in `docs/app-sync-protocol.md`
+      scoped per vehicle; schema in `contracts/sync/v1/spec.md`
 - [x] A loopback-only local listener serves vehicle display names to the UI. It
       has no authentication of its own (the loopback bind is the control) and
       refuses anything carrying Tailscale or Funnel headers
@@ -381,8 +381,8 @@ admin check).
 
 ## Phase 21 — Bundle format v3: encrypted segments — **done on the host; hardware round trip open**
 
-[docs/bundle-format-v3.md](docs/bundle-format-v3.md), `server/format`,
-`fixtures/format-v3/` (33 deterministic vectors, regenerate-to-empty-diff
+[contracts/format/v3/spec.md](contracts/format/v3/spec.md), `server/format`,
+`contracts/format/v3/vectors/` (33 deterministic vectors, regenerate-to-empty-diff
 verified).
 
 - [x] `CRN3` segment header (128 bytes) carrying `vehicle_id`, `assignment_id`,
@@ -496,7 +496,7 @@ verified).
 - [x] 2026-10-05: repo cleanup. Removed the retired Zig, Gleam, MoonBit, Odin, Mojo and
       Rust trajectory tooling, the v1 Go ingest and its `/api/v1` API, the Compose/Podman stack
       and its smoke test, the emulator's v1 capture path and its v1 fixtures, the v1
-      firmware sources (the vendored `firmware/freematics-base/lib` drivers stay),
+      firmware sources (the vendored `firmware/cairn-v2/third_party/freematics-base/lib` drivers stay),
       and the v1 roadmap archive; flattened the migrations to
       `deploy/migrations/001_raw.sql` … `005_vehicle.sql`. What remains: C firmware, Go
       server, Rust emulator, Nuxt UI, SQL and shell/systemd deploy
@@ -523,7 +523,7 @@ Tracked in the companion repository
 ([ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble)):
 tracking issue [#13](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/issues/13)
 and work items #1–#12, each filed against the contracts in this repo
-([app-sync-protocol](docs/app-sync-protocol.md) carries the published test vectors). The BLE
+([app-sync-protocol](contracts/sync/v1/spec.md) carries the published test vectors). The BLE
 authentication item (#9) is blocked on Phase 22.
 
 - [ ] Replace the unauthenticated snapshot URL with an enrolled client
@@ -539,7 +539,7 @@ credentials. Every byte that reaches the server goes through the enrolled iOS ap
 the phone pulls sealed bundles over BLE, uploads them, and hands the server's signed
 receipt back. Why it is safe: the phone carries ciphertext only and can fail to
 upload but cannot read a trip, forge a receipt or make the dongle delete anything
-([docs/ble-offload.md](docs/ble-offload.md) §1, [trust-model-v3](docs/trust-model-v3.md) §0.1).
+([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md) §1, [trust-model-v3](docs/trust-model-v3.md) §0.1).
 What it costs: trips reach the server only when the phone offloads them, so the dongle
 must be awake and in range after a drive.
 
@@ -553,13 +553,13 @@ Firmware ([Cairn #6](https://github.com/ParkWardRR/Cairn/issues/6)):
 - [x] Host suite green: storage matrix 41/41, format vectors 33/33, provisioning 12/12
 - [x] Flashed on the real dongle: the key and certificate were physically overwritten in flash; a residual Wi-Fi password survived (documented in device-provisioning.md; flash encryption is the real fix)
 - [x] BLE offload (`lib/cairn_offload` + NimBLE shim): `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone works. 22 host rows, ASan clean, nine mutations of the receipt gate and checks caught. **Host-tested only: the offload firmware has not yet been flashed or run over the air**
-- [x] Golden vectors `fixtures/ble-offload-v1/`, generated from the firmware's own module; a test fails if they drift
+- [x] Golden vectors `contracts/ble/v1/vectors/offload/`, generated from the firmware's own module; a test fails if they drift
 - [ ] Flash the offload build and run `cairn-phone offload` against the dongle (the unit was unplugged when this was written)
 - [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
 
 Server ([Cairn #5](https://github.com/ParkWardRR/Cairn/issues/5), [#7](https://github.com/ParkWardRR/Cairn/issues/7)):
 
-- [x] Relay contract specified ([app-sync-protocol](docs/app-sync-protocol.md) §13)
+- [x] Relay contract specified ([app-sync-protocol](contracts/sync/v1/spec.md) §13)
 - [x] `/v1/relay/bundles/*` on the app API: offer returns offset/length per missing chunk; signed or bearer; scoped by the manifest's vehicle on every step; reuses the intake core. **Deployed to the VM**
 - [x] End-to-end test with no radio: the phone client, the firmware's own protocol module (host-built as `offload-sim`) and the server's real relay, including lost and corrupted notifications, a wrongly pinned dongle, an out-of-scope phone and SD bit rot
 - [ ] Emulator matrix drives the relay path
@@ -615,7 +615,7 @@ against the fault matrix.
 
 ### Phase 1 — Bundle format v2 — **complete**
 
-- [x] `docs/bundle-format-v2.md` (since superseded by [bundle-format-v3.md](docs/bundle-format-v3.md)) as a normative spec with byte layouts
+- [x] `docs/bundle-format-v2.md` (since superseded by [bundle-format-v3.md](contracts/format/v3/spec.md)) as a normative spec with byte layouts
 - [x] Go reference implementation (`server/format/`): encode, decode, verify, recover
 - [x] Framed records: `boot_id`, monotonic `seq`, CRC-32, `prev_crc32` chain
 - [x] Deterministic-CBOR manifest, Ed25519-signed over a specified encoding

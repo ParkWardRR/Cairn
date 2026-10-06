@@ -3,10 +3,10 @@
 The dongle has **no Wi-Fi and no network stack**. Sealed bundles leave it one way:
 the enrolled phone pulls them over BLE, uploads them to the Cairn server on the
 dongle's behalf, and hands the server's signed receipt back. This document is the
-contract for that hand-off. It extends [ble-companion-protocol.md](ble-companion-protocol.md)
+contract for that hand-off. It extends [ble-companion-protocol.md](spec.md)
 (same service, same bonding, little-endian, fixed binary layouts) and builds on
-[bundle-format-v3.md](bundle-format-v3.md) §6 (the upload protocol) and
-[trust-model-v3.md](trust-model-v3.md).
+[bundle-format-v3.md](../../format/v3/spec.md) §6 (the upload protocol) and
+[trust-model-v3.md](../../../docs/trust-model-v3.md).
 
 ## 1. Who is trusted with what
 
@@ -88,7 +88,7 @@ phone cannot hold the dongle. `ABORT` is always honoured.
 
 `READ` offsets and lengths address the **bundle byte stream**: the concatenation of
 the member files' contents in the manifest's canonical member order
-([bundle-format-v3.md](bundle-format-v3.md) §6.1). It is exactly the byte string the
+([bundle-format-v3.md](../../format/v3/spec.md) §6.1). It is exactly the byte string the
 server's chunk upload carries. `length` is at most **65 536**; the phone issues
 several reads per chunk and concatenates. `offset + length` past the end of the
 stream is `BAD_ARGUMENT`.
@@ -159,7 +159,7 @@ already holds, the phone re-reads only those, and a receipt re-fetched with
 `GET /v1/relay/bundles/{id}/receipt` is byte-identical. Nothing is ever deleted
 on the dongle until `PUT_RECEIPT` succeeds.
 
-The server half is specified in [app-sync-protocol.md](app-sync-protocol.md) §13.
+The server half is specified in [app-sync-protocol.md](../../sync/v1/spec.md) §13.
 
 ## 5. When the dongle is reachable
 

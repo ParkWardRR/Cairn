@@ -2,7 +2,7 @@
 
 Custom GATT service between the iPhone (central) and the Cairn ESP32 dongle (peripheral). Typed characteristics, fixed binary layouts, little-endian, no CBOR/JSON/strings on the wire.
 
-The firmware-side copy of this spec will live at `docs/ble-companion-protocol.md` in [ParkWardRR/Cairn](https://github.com/ParkWardRR/Cairn). Protocol changes must update both repos; golden byte vectors are shared as test fixtures in [golden-vectors.json](golden-vectors.json). They come from an independent Python implementation of this spec, and the iOS tests replay them.
+This spec is normative here, in the Cairn contracts (`contracts/ble/v1/`). The iOS app tracks it; a protocol change updates this file and the vectors together. Golden byte vectors are in [vectors/golden/golden-vectors.json](vectors/golden/golden-vectors.json). They come from an independent Python implementation of this spec, and the iOS tests replay them.
 
 ## Discovery
 
