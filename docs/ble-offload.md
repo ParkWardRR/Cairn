@@ -37,6 +37,13 @@ Both require an encrypted, authenticated (bonded) link, like every other
 characteristic. Request an MTU of 247 and a 15–30 ms connection interval; expect
 roughly 10–25 KB/s. A 1 MB drive offloads in about a minute.
 
+**The MTU must be at least 43** (a 40-byte payload: enough for one `LIST` entry).
+Below that the dongle answers every request `IO_ERROR` rather than half working, so
+negotiate the MTU before the first request. Messages are sized to the negotiated MTU
+minus 3, up to 244 bytes.
+
+**Capability bit 2 is set only when the dongle's offload task actually started.**
+
 ## 3. Framing
 
 ### Control messages
@@ -64,8 +71,18 @@ pending. Only **sealed** bundles are listed; the capture in progress never is.
 ### 3.1 Why `TRIP_ACTIVE`
 
 Offload competes with capture for the card's SPI bus, so the dongle refuses
-`LIST`, `GET_MANIFEST` and `READ` while a trip is in progress and the phone simply
-tries again after the drive. Capture is never degraded to serve a transfer.
+`LIST`, `GET_MANIFEST`, `READ` **and `PUT_RECEIPT`** while a trip is in progress and
+the phone simply tries again after the drive. Capture is never degraded to serve a
+transfer. "In progress" means any capture state but idle: a suspected start, the
+drive itself, and the trailing dwell before the trip is sealed. **A trip's bundle only
+exists to offload once it is sealed**, which happens after that dwell, so a phone that
+asks the moment the engine stops will see `TRIP_ACTIVE`, then an empty list, then the
+new bundle. A trip that starts *during* a transfer ends it with `TRIP_ACTIVE` in the
+done indication.
+
+An operation that stops making progress for 8 seconds is abandoned (`IO_ERROR` in the
+done indication for transfers, `NO_TRANSFER` for a receipt upload) so a vanished
+phone cannot hold the dongle. `ABORT` is always honoured.
 
 ### 3.2 The bundle byte stream
 
@@ -105,9 +122,19 @@ to be bad.)
 | `outcome` | Meaning | Phone should |
 |---:|---|---|
 | `0` | Verified and pruned | Mark the bundle done |
-| `1` | Verified, stored, not pruned (no key pinned or the delete faltered) | Mark done; the dongle retries the prune at boot |
-| `2` | **Rejected: signature does not verify** | Stop and surface it: the server key and the firmware's pinned key disagree. Never retry blindly |
+| `1` | Verified and stored, but the delete did not complete | Mark done; the dongle finishes the prune at boot |
+| `2` | **Rejected: malformed, or the signature does not verify** | Stop and surface it: the server key and the firmware's pinned key disagree. Never retry blindly |
 | `3` | **Rejected: receipt names a different content root** | Same as 2 |
+| `4` | **No receipt key is pinned in this firmware**, so the receipt could not be verified; **nothing was stored or deleted** | Surface it: the dongle will never free space until a build with the server's key is flashed. The bundle is safe |
+
+A receipt is verified **before anything is written to the card**: a forged receipt
+cannot overwrite a genuine one already stored, and does not leave a file that makes
+the bundle look receipted.
+
+If the upload itself goes wrong (a frame out of sequence, more bytes than announced,
+a stall, a trip starting), the dongle ends it with `0x84 request_id status` and a
+**non-zero status and no outcome byte** (`BAD_ARGUMENT`, `BAD_RECEIPT_LENGTH`,
+`NO_TRANSFER`, `TRIP_ACTIVE`). Nothing was stored or deleted; start again.
 
 A receipt is verified on the dongle against a key **pinned in firmware**, never
 against a key the phone supplies. That is the whole guarantee: the phone cannot
