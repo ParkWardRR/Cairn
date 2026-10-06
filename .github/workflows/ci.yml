@@ -6,22 +6,31 @@ on:
   pull_request:
     branches: [main]
 
+# Self-hosted jobs run only for pushes and for pull requests from branches of THIS
+# repository. A fork's pull request would otherwise run its own code on the machine
+# that also serves production. tests/check-runners.sh fails the build if a job loses
+# its guard, or if a workflow uses pull_request_target or workflow_run.
 jobs:
   # CI runs on the self-hosted `cairn` runner only, never a GitHub-hosted one.
   # GitHub offers no setting to forbid hosted runners, so this is the guard.
   runner-policy:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
       - name: Every job is on the self-hosted runner
         run: tests/check-runners.sh
 
+      - name: The policy check can actually fail
+        run: tests/check-runners-selftest.sh
+
   # Server. Gates the bundle format reference implementation against the
   # committed conformance vectors, so an accidental format change fails CI
   # instead of silently diverging from the firmware and emulator.
   build-server:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
@@ -71,6 +80,7 @@ jobs:
   # reporting success.
   decode-pipeline:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     needs: [build-server]
 
     services:
@@ -117,6 +127,7 @@ jobs:
   # drag the other along.
   format-conformance:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
@@ -138,6 +149,7 @@ jobs:
   # file instead of with each other.
   vector-determinism:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
@@ -173,6 +185,7 @@ jobs:
   #                which neither compiling nor a good drive tests.
   firmware-conformance:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
@@ -196,6 +209,7 @@ jobs:
   # never compiled.
   firmware-build:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
@@ -235,6 +249,7 @@ jobs:
   # before it closes.
   fault-matrix:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     needs: [build-server, format-conformance]
     steps:
       - uses: actions/checkout@v4
@@ -300,6 +315,7 @@ jobs:
 
   build-rust:
     runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
