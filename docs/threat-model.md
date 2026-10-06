@@ -245,8 +245,8 @@ table.
 **No network credential is provisioned onto a unit until flash encryption and NVS encryption are
 enabled on that unit** ([firmware issue 18](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/18)).
 This is a **gate**, not an accepted risk, for the Wi-Fi password, the LTE APN and SIM PIN, and
-the pinned server keys. A unit without it keeps working over BLE only. (Proposed rule; the owner
-confirms it.) What an attacker gets:
+the pinned server keys. A unit without it keeps working over BLE only. (Rule confirmed by the
+owner on 2026-10-05.) What an attacker gets:
 
 | Attacker | Before flash and NVS encryption | After |
 |---|---|---|
