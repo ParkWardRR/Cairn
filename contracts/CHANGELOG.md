@@ -17,7 +17,15 @@ publishes. Protocol directories are versioned independently of the collection ta
 - `store/v1/schema.json`: the first machine-readable store contract, 8 tables and 10 views
   generated from the server's own native schema (`store/v1.0`). Read as a compatible range
   (see `store/v1/README.md`). Content change: needs a tagged release before a server can pin it.
-
+- `sync/v1/vectors/exchanges.json` (added, with `vectors/README.md`): 83 request/response
+  exchanges generated from the server, covering signed and bearer push, pull, ack, vehicle
+  scoping, the bundle relay, and negatives (bad signature, replay, wrong scope, expired token,
+  unknown vehicle, clock skew, revocation). New vectors, no change to any existing byte;
+  `sync/v1` stays `draft` until the iOS app passes them. A release must be tagged for the
+  server's CI to check against them.
+- `sync/v1/spec.md`: clarified, not changed: a bearer token on a signed-only route is
+  `401 signature_required` (what the server has always sent; §2.5 said every 401 is
+  `unauthenticated`), and the relay's stable error codes are named (§13).
 - `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
   repository. Documentation only; no protocol or vector changed, so nothing is released for it.
 
