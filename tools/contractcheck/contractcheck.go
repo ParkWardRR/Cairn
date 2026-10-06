@@ -18,6 +18,8 @@ import (
 	"strings"
 )
 
+var storeContractRe = regexp.MustCompile(`^store/v1\.\d+$`)
+
 var statusRe = regexp.MustCompile(`(?i)status[^a-z]{0,6}.*?\b(stable|draft|reserved|deprecated)\b`)
 
 // Problem is one thing wrong, with where.
@@ -153,6 +155,78 @@ func checkVersion(root, rel, rootReadme string) []Problem {
 		if !strings.Contains(string(vr), "PUBLIC TEST KEYS") {
 			add("/vectors/README.md", "must carry the warning that the keys in the vectors are public test keys")
 		}
+	}
+	if rel == "store/v1" {
+		out = append(out, checkStoreSchema(rel, filepath.Join(dir, "schema.json"))...)
+	}
+	return out
+}
+
+type storeColumns struct {
+	Columns []struct{ Name, Type string } `json:"columns"`
+}
+
+// checkStoreSchema validates the shape of store/v1/schema.json: not whether the server
+// still produces it (the server's CI compares its native schema with this file), only that
+// the file is something such a comparison can be run against.
+func checkStoreSchema(rel, path string) []Problem {
+	var out []Problem
+	add := func(m string) { out = append(out, Problem{rel + "/schema.json", m}) }
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		add("missing: store/v1 is described by a machine-checked schema")
+		return out
+	}
+	var s struct {
+		Contract      string                  `json:"contract"`
+		StoreContract string                  `json:"store_contract"`
+		Tables        map[string]storeColumns `json:"tables"`
+		Views         map[string]storeColumns `json:"views"`
+	}
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&s); err != nil {
+		add("does not have the schema.json shape: " + err.Error())
+		return out
+	}
+	if s.Contract != "store/v1" {
+		add(fmt.Sprintf("contract is %q, want \"store/v1\"", s.Contract))
+	}
+	if !storeContractRe.MatchString(s.StoreContract) {
+		add(fmt.Sprintf("store_contract %q is not store/v1.N", s.StoreContract))
+	}
+	if len(s.Tables) == 0 || len(s.Views) == 0 {
+		add("must list tables and views: a schema that requires nothing cannot fail")
+	}
+	check := func(kind, name string, o storeColumns) {
+		if len(o.Columns) == 0 {
+			add(kind + " " + name + " has no columns")
+		}
+		seen := map[string]bool{}
+		for _, c := range o.Columns {
+			if c.Name == "" || c.Type == "" {
+				add(kind + " " + name + " has a column with no name or no type")
+			}
+			if seen[strings.ToLower(c.Name)] {
+				add(kind + " " + name + " lists column " + c.Name + " twice")
+			}
+			seen[strings.ToLower(c.Name)] = true
+		}
+		// the README's rule: every table and view carries vehicle_id, so no query can
+		// reach one vehicle's rows through another's
+		if !seen["vehicle_id"] {
+			add(kind + " " + name + " has no vehicle_id column")
+		}
+	}
+	for n, t := range s.Tables {
+		if _, dup := s.Views[n]; dup {
+			add(n + " is listed as both a table and a view")
+		}
+		check("table", n, t)
+	}
+	for n, v := range s.Views {
+		check("view", n, v)
 	}
 	return out
 }
