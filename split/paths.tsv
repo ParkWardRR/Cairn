@@ -1,0 +1,102 @@
+# Cairn repo split: where every tracked path goes.
+#
+# Columns (tab-separated): source <TAB> repo <TAB> destination [<TAB> note]
+#
+#   source       a file, or a directory when it ends with "/". The LONGEST matching
+#                source wins, so a directory can be mapped wholesale and one of its
+#                children sent elsewhere.
+#   repo         server | web | firmware | door | archive
+#                  door     stays in the front door (the existing Cairn repository,
+#                           renamed at the end); it is not extracted
+#                  archive  not carried to any component; survives in the archive and
+#                           in the front door's history
+#   destination  the path in that repository ("." is the root). Ignored for door/archive.
+#
+# This file describes the monorepo at the commit named by split-check --ref. It is
+# updated, in the same commit, by every phase that moves a file. The coverage check
+# (split-check) fails if any tracked path matches no row, so a new file cannot slip
+# through the split unrouted.
+#
+# Paths that existed only in HISTORY (the old Gleam/Zig/Odin/... stack, deploy/migrations/v2,
+# the old compose files) have no row on purpose: git filter-repo keeps only mapped paths, so
+# they are dropped from the component repos and remain in the archive.
+
+# ── the Go server ────────────────────────────────────────────────────────────
+server/	server	.
+server/cmd/cairn-fsq/	web	tools/cairn-fsq/	own small Go module: stdlib + DuckDB only, consumed only by the web layer
+
+# ── the web dashboard ────────────────────────────────────────────────────────
+ui/	web	.
+
+# ── the device firmware, its emulator and research ──────────────────────────
+firmware/cairn-v2/	firmware	.
+firmware/freematics-base/	firmware	third_party/freematics-base/	vendored FreematicsPlus drivers; platformio.ini's lib_extra_dirs is rewritten after extraction
+emulator/	firmware	emulator/
+research_notes/	firmware	research/research_notes/
+reports/	firmware	research/reports/
+
+# ── protocol vectors (become contracts/ in the front door in phase 1) ───────
+fixtures/format-v3/	door	contracts/format/v3/vectors/
+fixtures/enroll-v1/	door	contracts/enrolment/v1/vectors/
+fixtures/app-sync-v1/	door	contracts/sync/v1/vectors/
+fixtures/ble-offload-v1/	door	contracts/ble/v1/vectors/offload/
+
+# ── deploy: server side ──────────────────────────────────────────────────────
+deploy/migrations/	server	deploy/migrations/
+deploy/systemd/cairn-server.service	server	deploy/systemd/cairn-server.service
+deploy/systemd/cairn-tsdb.service	server	deploy/systemd/cairn-tsdb.service
+deploy/systemd/server.env.example	server	deploy/systemd/server.env.example
+deploy/deploy-v3.sh	server	deploy/deploy-v3.sh
+deploy/make-certs.sh	server	deploy/make-certs.sh
+deploy/tsdb-mirror.sh	server	deploy/tsdb-mirror.sh
+
+# ── deploy: web side ─────────────────────────────────────────────────────────
+deploy/deploy-ui.sh	web	deploy/deploy-ui.sh
+deploy/backup-places.sh	web	deploy/backup-places.sh
+deploy/caddy/	web	deploy/caddy/
+deploy/systemd/cairn-ui.service	web	deploy/systemd/cairn-ui.service
+deploy/systemd/cairn-ui-places.conf	web	deploy/systemd/cairn-ui-places.conf
+deploy/systemd/ui.env.example	web	deploy/systemd/ui.env.example
+
+# ── docs ─────────────────────────────────────────────────────────────────────
+# protocol specs: become contracts/ in the front door
+docs/bundle-format-v3.md	door	contracts/format/v3/spec.md
+docs/app-sync-protocol.md	door	contracts/sync/v1/spec.md
+docs/ble-companion-protocol.md	door	contracts/ble/v1/spec.md
+docs/ble-offload.md	door	contracts/ble/v1/offload.md
+docs/device-provisioning.md	door	contracts/enrolment/v1/spec.md	wire parts; the operator how-to is split into the server repo in phase 1
+# system docs stay in the front door
+docs/architecture.md	door	docs/architecture.md
+docs/threat-model.md	door	docs/threat-model.md
+docs/trust-model-v3.md	door	docs/trust-model-v3.md
+docs/guarantee-audit.md	door	docs/guarantee-audit.md
+# web
+docs/places.md	web	docs/places.md
+docs/screenshots/	web	docs/screenshots/
+# server
+docs/deploying.md	server	docs/deploying.md
+docs/tailscale-deployment.md	server	docs/tailscale-deployment.md
+docs/retention-and-backup.md	server	docs/retention-and-backup.md
+# firmware and hardware
+docs/esp32-hardening.md	firmware	docs/esp32-hardening.md
+docs/flashing-and-testing.md	firmware	docs/flashing-and-testing.md
+docs/freematics-emulation-spec.md	firmware	docs/freematics-emulation-spec.md
+docs/hardware-roundtrip.md	firmware	docs/hardware-roundtrip.md
+docs/manual-transmission-probe.md	firmware	docs/manual-transmission-probe.md
+docs/ota.md	firmware	docs/ota.md
+docs/rtos-evaluation.md	firmware	docs/rtos-evaluation.md
+docs/v2-firmware-testing.md	firmware	docs/v2-firmware-testing.md
+docs/v2-hardware-mapping-audit.md	firmware	docs/v2-hardware-mapping-audit.md
+
+# ── repository plumbing ──────────────────────────────────────────────────────
+# Workflows are split by job and rewritten per repository after extraction, not carried
+# with history: each component writes its own, and the front door keeps its own.
+.github/	door	.github/	the front door's own workflows are rewritten in phase 4
+tests/check-runners.sh	server	tests/check-runners.sh	copied into every repo with CI in the rewrite step
+tests/server-crash-during-commit.sh	server	tests/interop/server-crash-during-commit.sh	interop: needs the firmware repo's emulator, pinned
+.gitignore	door	.gitignore	split per repository in the rewrite step
+LICENSE	door	LICENSE	copied into every repository in the rewrite step
+INSTALL.md	door	INSTALL.md	split by component in the rewrite step
+README.md	door	README.md
+ROADMAP.md	door	ROADMAP.md
+split/	door	split/	this tooling
