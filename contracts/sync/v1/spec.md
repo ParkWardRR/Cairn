@@ -162,6 +162,36 @@ Store `client_id`, `instance_id` and `spki_sha256` (the pin for the LAN TLS
 leaf; empty when the listener is plain HTTP behind Tailscale Serve). `403
 enrolment_refused` covers wrong, expired and used codes alike.
 
+### 3.1 Replacing a client (key rotation, a restored or replaced phone)
+
+An invitation may name one existing client that it **replaces**. An administrator creates it
+with `cairn-admin client invite -replaces <client_id>`; the role, vehicles and name default
+to the old client's, so rotating a key does not change what the phone may do (flags
+override). There is no HTTP endpoint for creating invitations, so this is administrator-side
+only. The app's part is unchanged: it enrols exactly as in §3, with a fresh key, and the
+invitation code is the only thing that differs.
+
+Accepting such an invitation is **one write on the server**: the new client is created and
+the named client is revoked together. There is no moment at which two keys work, or none.
+The new client keeps the old client's owner.
+
+What the app can observe:
+
+- The enrolment response (`201`) is exactly the one in §3. It has no field saying that a
+  client was replaced, deliberately, so a probe learns nothing from it.
+- After it, a request signed by the **old** key gets the uniform `401` of §2.5. The app
+  should treat that as "this installation was replaced", not as a clock problem, only after
+  its own enrolment under the new key has succeeded.
+- A bad `proof` neither consumes the invitation nor revokes anything, as in §3. The old key
+  keeps working until the replacing enrolment succeeds.
+- A named client that does not exist is refused when the invitation is created, not when it
+  is used. A named client that is already revoked keeps its original revocation reason.
+
+Recovering a restored phone is therefore: the administrator mints a replacing invitation,
+reads out the code, the app enrols with a new key, and the old key is dead. This replaces a
+three-step recovery (enrol a new client, revoke the old one, move the owner), which left a
+window with two working keys and could be interrupted part way.
+
 ## 4. Operations (push)
 
 `POST /v1/sync/push`:
@@ -288,7 +318,12 @@ and `GET /v1/clients` return status and key ids only — never key material.
 
 ## 8. Health and endpoint selection
 
-`GET /v1/health` (no auth) → `{"status":"ok","protocol_version":1,"instance_id":"…","server_time":"…"}`.
+`GET /v1/health` (no auth) → `{"status":"ok","protocol_version":1,"instance_id":"…","server_time":"…","build":{"version":"v0.3.1-4-gabc123","commit":"<40 hex>"}}`.
+
+`build` says which server build answered; `modified` is added (as `true`) only when the
+server was built from a tree with uncommitted changes. It is additive: a client that does
+not know `build` ignores it. It is informational and must not be used to choose a route or
+to decide that two answers come from the same server; `instance_id` does that.
 
 Use it to choose a route:
 
