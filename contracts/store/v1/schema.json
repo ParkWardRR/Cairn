@@ -1,6 +1,6 @@
 {
   "contract": "store/v1",
-  "store_contract": "store/v1.0",
+  "store_contract": "store/v1.2",
   "tables": {
     "boost": {
       "columns": [
@@ -163,6 +163,22 @@
         {
           "name": "warnings",
           "type": "VARCHAR"
+        },
+        {
+          "name": "path",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "size_bytes",
+          "type": "UBIGINT"
+        },
+        {
+          "name": "duration_ms",
+          "type": "UINTEGER"
+        },
+        {
+          "name": "received_at",
+          "type": "TIMESTAMP"
         }
       ]
     },
@@ -561,6 +577,26 @@
           "type": "UINTEGER"
         }
       ]
+    },
+    "tune": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "tune_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "tuned_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "note",
+          "type": "VARCHAR"
+        }
+      ]
     }
   },
   "views": {
@@ -597,6 +633,22 @@
         {
           "name": "boost_age_ms",
           "type": "UINTEGER"
+        }
+      ]
+    },
+    "v_boot_start": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "started_at",
+          "type": "TIMESTAMP"
         }
       ]
     },
@@ -709,6 +761,66 @@
         {
           "name": "time_offset_ms",
           "type": "UINTEGER"
+        }
+      ]
+    },
+    "v_health_stats": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "metric",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "recent_median",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "recent_n",
+          "type": "BIGINT"
+        },
+        {
+          "name": "baseline_median",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "baseline_n",
+          "type": "BIGINT"
+        },
+        {
+          "name": "last_observed_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "tuned_at",
+          "type": "TIMESTAMP"
+        }
+      ]
+    },
+    "v_metric_samples": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "metric",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "value",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "started_at",
+          "type": "TIMESTAMP"
         }
       ]
     },
@@ -996,6 +1108,62 @@
         }
       ]
     },
+    "v_trip_period": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "started_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "ended_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "started_on",
+          "type": "DATE"
+        },
+        {
+          "name": "week_start",
+          "type": "DATE"
+        },
+        {
+          "name": "month_start",
+          "type": "DATE"
+        },
+        {
+          "name": "quarter_start",
+          "type": "DATE"
+        },
+        {
+          "name": "year_start",
+          "type": "DATE"
+        },
+        {
+          "name": "duration_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "distance_m",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "max_obd_speed_kph",
+          "type": "SMALLINT"
+        },
+        {
+          "name": "max_gnss_speed_kph",
+          "type": "DOUBLE"
+        }
+      ]
+    },
     "v_trip_summary": {
       "columns": [
         {
@@ -1076,6 +1244,38 @@
         }
       ]
     },
+    "v_tune_effect": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "tune_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "metric",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "before_median",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "after_median",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "before_n",
+          "type": "BIGINT"
+        },
+        {
+          "name": "after_n",
+          "type": "BIGINT"
+        }
+      ]
+    },
     "v_vehicles": {
       "columns": [
         {
@@ -1097,6 +1297,40 @@
         {
           "name": "last_observed_at",
           "type": "TIMESTAMP"
+        }
+      ]
+    }
+  },
+  "macros": {
+    "period_summary": {
+      "parameters": [
+        "from_day",
+        "to_day"
+      ],
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "trips",
+          "type": "BIGINT"
+        },
+        {
+          "name": "duration_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "distance_m",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "max_obd_speed_kph",
+          "type": "SMALLINT"
+        },
+        {
+          "name": "max_gnss_speed_kph",
+          "type": "DOUBLE"
         }
       ]
     }

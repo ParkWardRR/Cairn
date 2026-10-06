@@ -34,7 +34,8 @@ func good(t *testing.T) string {
 
 const goodSchema = `{"contract":"store/v1","store_contract":"store/v1.0",
  "tables":{"gap":{"columns":[{"name":"vehicle_id","type":"VARCHAR"},{"name":"n","type":"INTEGER"}]}},
- "views":{"v_gap":{"columns":[{"name":"vehicle_id","type":"VARCHAR"}]}}}`
+ "views":{"v_gap":{"columns":[{"name":"vehicle_id","type":"VARCHAR"}]}},
+ "macros":{"m":{"parameters":["a","b"],"columns":[{"name":"vehicle_id","type":"VARCHAR"}]}}}`
 
 // schema writes goodSchema with one replacement applied, so each case names its one fault
 func schema(t *testing.T, root, old, repl string) {
@@ -90,6 +91,13 @@ func TestEachRuleCanFire(t *testing.T) {
 			schema(t, r, `{"name":"n","type":"INTEGER"}`, `{"name":"VEHICLE_ID","type":"INTEGER"}`)
 		}, "lists column VEHICLE_ID twice"},
 		{"an object that is a table and a view", func(r string) { schema(t, r, `"v_gap"`, `"gap"`) }, "both a table and a view"},
+		{"a macro that is also a view", func(r string) { schema(t, r, `"m":`, `"v_gap":`) }, "both a view and a macro"},
+		{"a macro that is also a table", func(r string) { schema(t, r, `"m":`, `"gap":`) }, "both a table and a macro"},
+		{"a macro with no parameters", func(r string) { schema(t, r, `"parameters":["a","b"]`, `"parameters":[]`) }, "macro m has no parameters"},
+		{"a macro with a repeated parameter", func(r string) { schema(t, r, `"parameters":["a","b"]`, `"parameters":["a","A"]`) }, "empty or repeated parameter"},
+		{"a macro without vehicle_id", func(r string) {
+			schema(t, r, `{"name":"vehicle_id","type":"VARCHAR"}]}}}`, `{"name":"n","type":"INTEGER"}]}}}`)
+		}, "macro m has no vehicle_id"},
 		{"no README for a version", func(r string) { os.Remove(filepath.Join(r, "store/v1/README.md")) }, "README.md"},
 	}
 	for _, c := range cases {

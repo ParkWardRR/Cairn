@@ -9,6 +9,16 @@ publishes. Protocol directories are versioned independently of the collection ta
   server's limit of offered-but-uncommitted bundles (per client, re-offers and receipted bundles never count; the
   limit's value is not part of the contract). Additive on an existing endpoint, so `sync/v1` stays compatible; a
   documentation change to the spec, no vector changed, so nothing is released for it.
+- `store/v1.2` (additive; needs a tagged release before a server can pin it). `schema.json` moves from `store/v1.0` to
+  `store/v1.2`; `store/v1.1` was never released on its own, so this release carries both minors.
+  - `store/v1.1`: the `bundles` columns `path`, `size_bytes`, `duration_ms` and `received_at`; the `tune` table; the
+    views `v_boot_start`, `v_metric_samples`, `v_tune_effect` and `v_health_stats`.
+  - `store/v1.2`: the period views. `v_trip_period` (one row per trip with its week, month, quarter and year start) and
+    the table macro `period_summary(from_day, to_day)` (per-vehicle trips, duration, distance and maximum speeds over a
+    half-open date range). A trip belongs to the UTC period it started in. `schema.json` gains an optional `macros`
+    object, which the server's compatible-range check reads (a pinned macro must exist with the same parameters and
+    columns); a `store/v1.0` file is still satisfied. Nothing existing changed. See `store/v1/README.md`. Refs
+    ParkWardRR/cairn-vehicle-server#14.
 - `store/v1/README.md`: documents the `GET /healthz` JSON (`status`, `build`, `store_contract`), the
   `GET /capabilities` response (tables, views, columns, endpoints) and the minor-version rule (a minor
   increments on any additive change; removing, renaming or repurposing is `store/v2`), taken from the
