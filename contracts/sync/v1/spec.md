@@ -132,7 +132,11 @@ with. [`vectors/README.md`](vectors/README.md) lists the cases and how to use th
 Every authentication failure is `401` with `{"error":"unauthenticated","message":"authentication failed"}` — deliberately uniform, so a probe cannot tell an unknown
 client from a bad signature from a replay. (One exception: a bearer token sent to a route that
 accepts signatures only, `/v1/auth/token` and administration, is `401 signature_required`, since
-the client knows which credential it sent. Do not branch on the cause of any other 401.)
+the client knows which credential it sent. The server decides this from the `Bearer` scheme and
+the route alone, before any token is looked up, so every bearer string gets the same answer and it
+says nothing about whether a token exists or is valid. Do not branch on the cause of any other
+401, with one more exception about the data rather than the caller: `401 bad_manifest_signature`
+on the relay, below.)
 `403 admin_required` means authenticated
 but not an admin. `403 funnel_refused` / `403 tailnet_identity_required` are
 network-policy refusals. `429 rate_limited`: back off.
@@ -454,6 +458,12 @@ record, including after an out-of-scope offer, which writes nothing) · `404 no_
 bytes do not hash to `{sha256}`, or do not match the descriptor) · `409 chunks_missing`
 (commit before every chunk is uploaded) · `429` back off.
 A refused or quarantined bundle is **never** receipted, so it stays on the dongle.
+
+**Check for `bad_manifest_signature` before applying any rule that reads a `401` as "this
+installation was revoked, replaced or has a wrong clock"** (§2.2, §3.1). It means the dongle's
+manifest is wrong, not that the caller is unknown, so a client must not offer re-enrolment or
+suggest a clock fix because of it, and retrying the same bundle will not help; surface it as a
+problem with that bundle. Every other `401` keeps the uniform meaning of §2.5.
 
 ### What must never be logged
 
