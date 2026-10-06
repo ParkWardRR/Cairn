@@ -43,6 +43,11 @@ release that removed a view the dashboard queries. The response is `200` with a 
 | `build.modified` | boolean | Present, and `true`, only when the tree the binary was built from had uncommitted changes (so the commit alone cannot reproduce it). **Omitted when false** |
 | `store_contract` | string | `store/v<major>.<minor>`: the store contract this server implements (see the rule below) |
 
+When the store did not reproduce from the bundles (and the server was not started to serve
+unreproduced data anyway), or no store is loaded, `/healthz` is `503` with a plain-text body
+(`not reproducible`), not JSON. A consumer reads the status code first and parses the body
+only on `200`.
+
 Before this field set existed the body was the bare text `ok`. A consumer that compared the
 whole body to `ok` must instead parse the JSON and read `status`. Consumers must ignore
 fields they do not know.
