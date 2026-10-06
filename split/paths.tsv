@@ -92,3 +92,4 @@ INSTALL.md	door	INSTALL.md	split by component in the rewrite step
 README.md	door	README.md
 ROADMAP.md	door	ROADMAP.md
 split/	door	split/	this tooling
+docs/repo-split-plan.md	door	docs/repo-split-plan.md	the plan, its executed status and the follow-up issue index
