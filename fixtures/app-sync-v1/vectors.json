@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "spec": "docs/app-sync-protocol.md section 2",
+  "notes": [
+    "ECDSA is randomised: signatures cannot be reproduced, only verified. Build the signing_string yourself from the other fields and check it equals the one given; then verify signature_der_base64 over SHA-256(signing_string) with test_key.public_key_x963_hex. Do both: agreeing on the string and on verification is what proves compatibility with the server.",
+    "signature_der_base64 is the ASN.1 DER ECDSA-P256-SHA256 signature, standard base64 with padding. CryptoKit: signature.derRepresentation.",
+    "signing_string lines are separated by a single LF with no trailing newline: CAIRN-SIG-V1, METHOD, request target exactly as sent (path plus ?query, not re-encoded), ts, nonce, lowercase hex SHA-256 of the body (of the empty string when there is none), client id.",
+    "The test key is public and protects nothing."
+  ],
+  "test_key": {
+    "private_scalar_hex": "11065c969d488e9a896d78d3fcc6d3b831da4d22df873d6f3668b4c55b28b889",
+    "public_key_x963_hex": "049865616d17bd8336564c615ad4076c347938be436834bae774437ab3530e216b21025bb8042070ee6c9276fa4dd857e2525a8a2915aba1e45761cedfd8aada39",
+    "client_id": "0190a1b2c3d47e5f8a6b7c8d9e0f1a2b"
+  },
+  "signing": [
+    {
+      "name": "post_with_json_body",
+      "doc": "A POST carrying a JSON body: the body hash is of the exact bytes sent.",
+      "method": "POST",
+      "request_target": "/v1/sync/ack",
+      "body_hex": "7b22637572736f72223a2241414141227d",
+      "body_text": "{\"cursor\":\"AAAA\"}",
+      "ts": "1790000000",
+      "nonce": "00112233445566778899aabbccddeeff",
+      "body_sha256": "264ef7813246976045be09d319d4cecdbb620331ca551f04d0e8e07f25946468",
+      "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/sync/ack\n1790000000\n00112233445566778899aabbccddeeff\n264ef7813246976045be09d319d4cecdbb620331ca551f04d0e8e07f25946468\n0190a1b2c3d47e5f8a6b7c8d9e0f1a2b",
+      "signature_der_base64": "MEQCIEv+3cvI3UcI+O0nHpT/7U47QMIKK/p4UrYIZ6C4d2adAiA/C7dpRiXizU76YV27IeS6uL09OJH0h2uNa27/QFw1BQ==",
+      "authorization_header": "Cairn-Sig client=\"0190a1b2c3d47e5f8a6b7c8d9e0f1a2b\",ts=\"1790000000\",nonce=\"00112233445566778899aabbccddeeff\",sig=\"MEQCIEv+3cvI3UcI+O0nHpT/7U47QMIKK/p4UrYIZ6C4d2adAiA/C7dpRiXizU76YV27IeS6uL09OJH0h2uNa27/QFw1BQ==\""
+    },
+    {
+      "name": "get_with_query_and_no_body",
+      "doc": "A GET with a query string and no body: the target includes the query exactly as sent, and the body hash is that of the empty string (e3b0c442...).",
+      "method": "GET",
+      "request_target": "/v1/sync/pull?cursor=AAAA\u0026limit=100",
+      "body_hex": "",
+      "ts": "1790000060",
+      "nonce": "ffeeddccbbaa99887766554433221100",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signing_string": "CAIRN-SIG-V1\nGET\n/v1/sync/pull?cursor=AAAA\u0026limit=100\n1790000060\nffeeddccbbaa99887766554433221100\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190a1b2c3d47e5f8a6b7c8d9e0f1a2b",
+      "signature_der_base64": "MEYCIQCk9a2lDeab0/88SDxKJ7ZvXRz44Cj4hyYjt2w8vCCA5QIhAIdnd68YiCoc+QPYXq7nlu+5a2WtXtREKddWiJOnhiju",
+      "authorization_header": "Cairn-Sig client=\"0190a1b2c3d47e5f8a6b7c8d9e0f1a2b\",ts=\"1790000060\",nonce=\"ffeeddccbbaa99887766554433221100\",sig=\"MEYCIQCk9a2lDeab0/88SDxKJ7ZvXRz44Cj4hyYjt2w8vCCA5QIhAIdnd68YiCoc+QPYXq7nlu+5a2WtXtREKddWiJOnhiju\""
+    },
+    {
+      "name": "post_with_empty_body",
+      "doc": "A POST with no body (token minting): same empty-body hash.",
+      "method": "POST",
+      "request_target": "/v1/auth/token",
+      "body_hex": "",
+      "ts": "1790000120",
+      "nonce": "0123456789abcdef0123456789abcdef",
+      "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "signing_string": "CAIRN-SIG-V1\nPOST\n/v1/auth/token\n1790000120\n0123456789abcdef0123456789abcdef\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n0190a1b2c3d47e5f8a6b7c8d9e0f1a2b",
+      "signature_der_base64": "MEUCIQDLbhIpqrA96k7yyRgdq5BplnK41HukXI7XNyEj0Xd2rAIgDUUJIVxtmF4urY9ymDdXEFaXJOzO3lA4S7JnLazhFbs=",
+      "authorization_header": "Cairn-Sig client=\"0190a1b2c3d47e5f8a6b7c8d9e0f1a2b\",ts=\"1790000120\",nonce=\"0123456789abcdef0123456789abcdef\",sig=\"MEUCIQDLbhIpqrA96k7yyRgdq5BplnK41HukXI7XNyEj0Xd2rAIgDUUJIVxtmF4urY9ymDdXEFaXJOzO3lA4S7JnLazhFbs=\""
+    },
+    {
+      "name": "put_with_binary_body",
+      "doc": "A PUT carrying binary bytes (a relay chunk): the hash covers raw bytes, not any text form.",
+      "method": "PUT",
+      "request_target": "/v1/relay/bundles/0190a1b2c3d47e5f8a6b7c8d9e0f1a2b/chunks/949fabd3ca6ec0c475dfba1d815764e879a8f2c87d60dd7510d646a3027647df",
+      "body_hex": "00010203fffe",
+      "ts": "1790000180",
+      "nonce": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+      "body_sha256": "949fabd3ca6ec0c475dfba1d815764e879a8f2c87d60dd7510d646a3027647df",
+      "signing_string": "CAIRN-SIG-V1\nPUT\n/v1/relay/bundles/0190a1b2c3d47e5f8a6b7c8d9e0f1a2b/chunks/949fabd3ca6ec0c475dfba1d815764e879a8f2c87d60dd7510d646a3027647df\n1790000180\na0a1a2a3a4a5a6a7a8a9aaabacadaeaf\n949fabd3ca6ec0c475dfba1d815764e879a8f2c87d60dd7510d646a3027647df\n0190a1b2c3d47e5f8a6b7c8d9e0f1a2b",
+      "signature_der_base64": "MEYCIQDCQsDOt3twcMQV6XW+YWravaM7OwE+jS2OHXjxR1XuSwIhAKeTkLY4PnfR5e3O770fAbMQ9r9xXJN98b54TDF4DSnn",
+      "authorization_header": "Cairn-Sig client=\"0190a1b2c3d47e5f8a6b7c8d9e0f1a2b\",ts=\"1790000180\",nonce=\"a0a1a2a3a4a5a6a7a8a9aaabacadaeaf\",sig=\"MEYCIQDCQsDOt3twcMQV6XW+YWravaM7OwE+jS2OHXjxR1XuSwIhAKeTkLY4PnfR5e3O770fAbMQ9r9xXJN98b54TDF4DSnn\""
+    }
+  ],
+  "enrolment": {
+    "doc": "The enrolment proof: a signature, by the key being enrolled, over `CAIRN-ENROLL-V1\\n\u003ccode: 32 lowercase hex, dashes removed\u003e\\n\u003cpublic key, lowercase hex\u003e` with single LFs and no trailing newline. POST /v1/enroll/app {code, name, public_key, proof}.",
+    "code": "ee026e944c7a389c6f803600648b75aa",
+    "public_key_hex": "049865616d17bd8336564c615ad4076c347938be436834bae774437ab3530e216b21025bb8042070ee6c9276fa4dd857e2525a8a2915aba1e45761cedfd8aada39",
+    "proof_message": "CAIRN-ENROLL-V1\nee026e944c7a389c6f803600648b75aa\n049865616d17bd8336564c615ad4076c347938be436834bae774437ab3530e216b21025bb8042070ee6c9276fa4dd857e2525a8a2915aba1e45761cedfd8aada39",
+    "proof_der_base64": "MEUCIFX4ExBcp7+gh+fD580U9LpFhLU0OjCEpXbn85IwzUV8AiEArOwpP1R2bzaOqzEybPFkaNf4r8+TAzzju2wC9pKl1fs="
+  }
+}

@@ -115,6 +115,11 @@ key handling agree with the server's):
 MEUCIDZQYt9QDF5PJ43nMAA9D5/HNm+d+QwpABTSQyLdxMVdAiEAjMSDavgvRW6dg2vGSPelsKCoBezOsZMvDuC770JXZ+0=
 ```
 
+More vectors, in `fixtures/app-sync-v1/vectors.json`: a POST with a JSON body, a GET with a
+query string and no body, a POST with no body, a PUT with binary bytes, and an enrolment
+proof. Each has the exact signing string and a signature that verifies over it with the test
+key above. They are pinned by `go test ./internal/syncapi -run AppSyncVectors`.
+
 ### 2.5 Failures
 
 Every authentication failure is `401` with `{"error":"unauthenticated","message":"authentication failed"}` — deliberately uniform, so a probe cannot tell an unknown
