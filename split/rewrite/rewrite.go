@@ -63,6 +63,11 @@ type Options struct {
 
 	Author, Email string
 	Log           func(format string, args ...any)
+
+	// The real deployment target ("user@host") and public site name the web deploy scripts
+	// used to hard-code. They are inputs, not constants, so that this repository never
+	// contains them: the rewrite looks for exactly this text and replaces it.
+	DeployTarget, SiteHost string
 }
 
 // errNothingToDo is returned by a step that found, correctly, nothing to change in this
@@ -481,13 +486,16 @@ func relPath(fromDir, to string) (string, error) {
 }
 
 func (r *runner) webDeploy() error {
+	if r.DeployTarget == "" || r.SiteHost == "" {
+		return fmt.Errorf("the web deploy scripts name a real host: pass --deploy-target and --site-host (they are not stored in this repository)")
+	}
 	const hostLoad = `# The target comes from the environment or a gitignored deploy.env. No real host name
 # is stored in this repository.
 [ -f "$ROOT/deploy.env" ] && . "$ROOT/deploy.env"
 HOST="${CAIRN_DEPLOY_HOST:?set CAIRN_DEPLOY_HOST (user@host), or put it in deploy.env}"
 `
 	d := "deploy/deploy-ui.sh"
-	if err := r.edit(d, "HOST=\"alfa@cairn.alpina.casa\"\nUI_DIR=\"/srv/cairn-ui\"\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nROOT=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"\n",
+	if err := r.edit(d, "HOST=\""+r.DeployTarget+"\"\nUI_DIR=\"/srv/cairn-ui\"\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nROOT=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"\n",
 		"UI_DIR=\"/srv/cairn-ui\"\nSCRIPT_DIR=\"$(cd \"$(dirname \"$0\")\" && pwd)\"\nROOT=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"\n"+hostLoad, 1); err != nil {
 		return err
 	}
@@ -500,7 +508,7 @@ HOST="${CAIRN_DEPLOY_HOST:?set CAIRN_DEPLOY_HOST (user@host), or put it in deplo
 			`cp -Rc "$ROOT/node_modules" "$BUILD_DIR/node_modules" 2>/dev/null || cp -R "$ROOT/node_modules" "$BUILD_DIR/node_modules"`},
 		{`if [ -n "$(git -C "$ROOT" status --porcelain -- ui)" ]; then`, `if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then`},
 		{`note: ui/ has uncommitted changes; they are NOT in this deploy`, `note: the working tree has uncommitted changes; they are NOT in this deploy`},
-		{`echo "==> Done. UI available at https://cairn.alpina.casa"`, `echo "==> Done."`},
+		{`echo "==> Done. UI available at https://` + r.SiteHost + `"`, `echo "==> Done."`},
 	} {
 		if err := r.edit(d, e[0], e[1], 1); err != nil {
 			return err
@@ -513,13 +521,13 @@ HOST="${CAIRN_DEPLOY_HOST:?set CAIRN_DEPLOY_HOST (user@host), or put it in deplo
 	}
 
 	b := "deploy/backup-places.sh"
-	if err := r.edit(b, "HOST=\"${CAIRN_HOST:-alfa@cairn.alpina.casa}\"\n",
+	if err := r.edit(b, "HOST=\"${CAIRN_HOST:-"+r.DeployTarget+"}\"\n",
 		"[ -f \"$(dirname \"$0\")/../deploy.env\" ] && . \"$(dirname \"$0\")/../deploy.env\"\nHOST=\"${CAIRN_HOST:-${CAIRN_DEPLOY_HOST:?set CAIRN_HOST (user@host), or CAIRN_DEPLOY_HOST in deploy.env}}\"\n", 1); err != nil {
 		return err
 	}
 
 	// the site address is a placeholder; the real file is the operator's own
-	if err := r.edit("deploy/caddy/Caddyfile", "cairn.alpina.casa {", "cairn.example.lan {", 1); err != nil {
+	if err := r.edit("deploy/caddy/Caddyfile", r.SiteHost+" {", "cairn.example.lan {", 1); err != nil {
 		return err
 	}
 	if _, err := gitOut(r.Dir, "mv", "deploy/caddy/Caddyfile", "deploy/caddy/Caddyfile.example"); err != nil {
@@ -528,7 +536,7 @@ HOST="${CAIRN_DEPLOY_HOST:?set CAIRN_DEPLOY_HOST (user@host), or put it in deplo
 	var left []string
 	_ = r.walk(func(rel string) error {
 		b, _ := os.ReadFile(r.path(rel))
-		if isText(b) && bytes.Contains(b, []byte("alpina.casa")) {
+		if isText(b) && bytes.Contains(b, []byte(r.SiteHost)) {
 			left = append(left, rel)
 		}
 		return nil

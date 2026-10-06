@@ -30,6 +30,8 @@ func main() {
 	tsv := flag.String("paths", "paths.tsv", "the path map")
 	ctag := flag.String("contracts-tag", "", "tag of the contracts release to pin (default: --ref)")
 	author := flag.String("author", "", "commit author name (default: the source repository's user.name)")
+	target := flag.String("deploy-target", os.Getenv("CAIRN_DEPLOY_TARGET"), "web only: the user@host the old deploy scripts hard-coded (or CAIRN_DEPLOY_TARGET)")
+	site := flag.String("site-host", os.Getenv("CAIRN_SITE_HOST"), "web only: the public site name the old scripts hard-coded (or CAIRN_SITE_HOST)")
 	email := flag.String("email", "", "commit author email (default: the source repository's user.email)")
 	flag.Parse()
 
@@ -58,7 +60,7 @@ func main() {
 	abs, _ := filepath.Abs(*dir)
 	err = rewrite.Run(rewrite.Options{
 		Repo: *repo, Dir: abs, Source: *source, Ref: *ref, Map: m,
-		ContractsTag: *ctag, Author: *author, Email: *email,
+		ContractsTag: *ctag, Author: *author, Email: *email, DeployTarget: *target, SiteHost: *site,
 		Log: func(f string, a ...any) { fmt.Printf(f+"\n", a...) },
 	})
 	if err != nil {
