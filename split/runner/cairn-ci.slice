@@ -1,0 +1,19 @@
+# One memory budget for every CI runner container on the shared VM.
+#
+# The VM also serves production (cairn-server, cairn-tsdb, the web layer) and has
+# 7.5 GB of RAM; an uncapped parallel build has wedged it once. Each repository has its
+# own runner (a runner belongs to one repository), so without a shared cap four runners
+# could each take a job at once. Putting them in one slice makes the cap hold for the
+# sum. Measured peaks of a full CI run in one runner: ~1.0 GB for the container, ~2.5 GB
+# used on the host, so 4 GB leaves a job room and the host its headroom.
+#
+# The user manager delegates the cpu, memory and pids controllers (not io), so there are
+# no IO weights. MemoryHigh throttles and reclaims before MemoryMax kills.
+[Unit]
+Description=Cairn CI runners
+
+[Slice]
+MemoryHigh=3G
+MemoryMax=4G
+CPUWeight=50
+TasksMax=8192
