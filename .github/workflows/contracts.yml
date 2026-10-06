@@ -1,0 +1,36 @@
+name: Contracts
+
+# The Cairn Vehicle Data Protocols (contracts/): specs, vectors, schemas. This checks what
+# is objectively checkable about them. Whether a vector is CORRECT is decided by the
+# independent implementations (Go, Rust, C) running it in their own repositories, and the
+# byte-level vectors are regenerated and diffed against the pinned release by the server's CI.
+#
+# Nothing here tags or publishes. A contracts release is a manual act by a maintainer.
+on:
+  push:
+    branches: [main]
+    paths: ['contracts/**', 'split/contractcheck/**', 'split/cmd/contract-check/**', '.github/workflows/contracts.yml']
+  pull_request:
+    branches: [main]
+    paths: ['contracts/**', 'split/contractcheck/**', 'split/cmd/contract-check/**', '.github/workflows/contracts.yml']
+
+jobs:
+  contracts:
+    runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: split/go.mod
+
+      - name: The checker itself passes its tests
+        working-directory: split
+        run: go test ./contractcheck/
+
+      - name: Every protocol version is complete and valid
+        working-directory: split
+        run: go run ./cmd/contract-check ../contracts

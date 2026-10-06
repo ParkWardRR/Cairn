@@ -1,0 +1,29 @@
+name: Docs
+
+# Every relative link in every markdown file must resolve. The repositories were split so
+# that each document can be read on its own; a link that crosses to another repository must
+# be an absolute URL, and this is what notices when one is not.
+on:
+  push:
+    branches: [main]
+    paths: ['**.md', 'split/links/**', 'split/cmd/split-links/**', '.github/workflows/docs.yml']
+  pull_request:
+    branches: [main]
+    paths: ['**.md', 'split/links/**', 'split/cmd/split-links/**', '.github/workflows/docs.yml']
+
+jobs:
+  links:
+    runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: split/go.mod
+
+      - name: No broken relative links
+        working-directory: split
+        run: go run ./cmd/split-links -check -root ..
