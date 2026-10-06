@@ -7,7 +7,7 @@
 > the v3 trust-and-transport refactor**, designed as one coherent model in
 > [docs/trust-model-v3.md](docs/trust-model-v3.md). The v1 plan is dead; its roadmap document was removed on 2026-10-05
 > (it remains in git history) and nothing in it is scheduled. **v2 is now dead too:** v3 breaks the bundle format, the manifest
-> and the one-device-one-car assumption on purpose, with no migration.
+> and the one-device-one-car assumption on purpose. (Originally with no migration; the owner has since decided a one-way v2 to v3 data migration is wanted, see [server #18](https://github.com/ParkWardRR/cairn-vehicle-server/issues/18).)
 
 Last reviewed 2026-10-05.
 
@@ -20,6 +20,14 @@ Last reviewed 2026-10-05.
 > iPhone app has its own. The original is preserved read-only as
 > [cairn-original-monorepo-archive](https://github.com/ParkWardRR/cairn-original-monorepo-archive).
 > The plan, what was executed and the follow-up issues are in [docs/repo-split-plan.md](docs/repo-split-plan.md).
+
+> **Direction changes since the split (owner, 2026-10-05).** These supersede what the phase history below says.
+>
+> - **The dongle gets Wi-Fi and LTE back**, besides BLE, to put boot speed and speed to upload first. Phase 26 ("No Wi-Fi") is superseded; the decision, its security gates and the work are in [#19](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/19), the device uplink protocol [#22](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/22), the threat model update [#23](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/23), firmware [Wi-Fi](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/15), [LTE](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/16), [uplink manager](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/17) and the [credential gate](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/18). Until the firmware ships it, the documents that say "no Wi-Fi" describe the shipped firmware correctly.
+> - **Per-engine YAML profiles** in a folder in the firmware repository; the user compiles in all engines or a chosen few, and the app checks what is installed: [contract #20](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/20), [firmware #13](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/13), [device info #21](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/21), [iOS #27](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/27).
+> - **A v2 to v3 data migration is wanted** (the "no migration" lines below are superseded): [server #18](https://github.com/ParkWardRR/cairn-vehicle-server/issues/18).
+> - **A dedicated Bluetooth page in the iOS Settings** for setup, troubleshooting, BLE info and several dongles: [iOS #25](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/25), [#26](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/26).
+> - **Boot speed and time-to-upload** are measured and budgeted across the system: [#25](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/25). Multipath, torrent-style chunk transfer is an exploration only: [#24](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/24).
 > The phase history below was written against the single repository: a path such as `ui/` or
 > `firmware/cairn-v2/` is now the root of the matching repository.
 
@@ -66,7 +74,7 @@ S3-compatible object store such as Garage on the server for the content-addresse
 | Layer | State |
 |---|---|
 | Bundle format v3 | **Complete on the host.** Every frame AEAD-encrypted, every bundle bound to a vehicle, an assignment and a device counter. Three implementations (Go, Rust, firmware C) agree on 33 conformance vectors, structural and keyed. v2 is retired |
-| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--in-progress)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The Wi-Fi removal is built and host-tested but **not yet flashed** (the unit needs a USB replug). BLE offload not written yet. Secure OTA written, install unexercised |
+| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--superseded)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The Wi-Fi removal is built and host-tested but **not yet flashed** (the unit needs a USB replug). BLE offload not written yet. Secure OTA written, install unexercised |
 | Ingest server | **Deployed v3** on the Cairn VM: a legacy mutual-TLS device listener (no dongle uses it now; retired in Phase 26), a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
 | Decode pipeline | **Complete and per vehicle.** Idempotent and reproducible; PostgreSQL/PostGIS and DuckDB layers both carry `vehicle_id`; non-destructive migration 005 |
 | Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
@@ -114,7 +122,7 @@ S3-compatible object store such as Garage on the server for the content-addresse
 | Analytical store | **In-memory DuckDB**, behind a small Go service. Chosen because the data is tiny (hundreds of KB today) and the useful questions are ASOF joins across streams polled at different rates — OBD against boost against GNSS. InfluxDB 3 was rejected as UTC-keyed and, as far as was checked, without ASOF; QuestDB as a JVM that is memory-mapped rather than in-memory, on a 7.3 GB box shared with the runner and ingest stack |
 | Analytical time key | `(boot_id, mono_ms)`, never UTC. UTC rides along as a column |
 | v1 | **Dead.** No reader, no migration, no compatibility. Tools that scan an SD card ignore `trips/` and load only sealed bundles from `bundles/` |
-| v2 | **Dead as of 2026-10-04.** Replaced by v3 (format `CRN3`, manifest v3). No v2 reader, no migration; recordings made so far were test data |
+| v2 | **Dead as of 2026-10-04.** Replaced by v3 (format `CRN3`, manifest v3). No v2 reader and no v2 compatibility; a one-way **data migration** is now wanted ([server #18](https://github.com/ParkWardRR/cairn-vehicle-server/issues/18)) |
 | Storage encryption | Application-layer AEAD per frame, because the ESP32 has no SD encryption hardware. Random nonce per frame (a seq-derived nonce would be reused after a torn-tail rewrite). Server escrows each device's root; the card alone cannot decrypt |
 | App authentication | **Per-request P-256 signatures**, not mTLS: `tailscale serve` terminates TLS, so a client certificate cannot reach Cairn on the Tailnet path. Separate listener from the device's mTLS port |
 | Assignment validity | Judged by the device's monotonic counter, **not** the clock (invariant 3) |
@@ -319,7 +327,7 @@ eFuse key; `tailscale serve` cannot pass client certificates; the mTLS client ke
 currently lives on the SD card, which contradicts the card-is-not-a-boundary
 rule).
 
-Breaking changes are authorised. There is no migration.
+Breaking changes are authorised. (There was no migration at the time; a one-way v2 to v3 data migration has since been decided, server #18.)
 
 ## Phase 19 — Vehicles, assignments and the device counter — **done**
 
@@ -582,7 +590,9 @@ authentication item (#9) is blocked on Phase 22.
 - [ ] Local-first / Tailnet-fallback endpoint selection
 - [ ] BLE session authentication against the new firmware
 
-## Phase 26 — No Wi-Fi: the phone is the uplink — **in progress**
+## Phase 26 — No Wi-Fi: the phone is the uplink — **superseded**
+
+> **Superseded the same day by the owner's decision that the dongle gets Wi-Fi and LTE back** ([#19](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/19)). The BLE offload below stays as one of three paths. What follows is the record of the decision it replaced.
 
 **Decision, 2026-10-05:** the dongle has no Wi-Fi, no TLS client and no network
 credentials. Every byte that reaches the server goes through the enrolled iOS app:
