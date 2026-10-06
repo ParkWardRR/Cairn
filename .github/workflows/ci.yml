@@ -116,6 +116,27 @@ jobs:
         if: always()
         run: tests/ci/postgis.sh stop
 
+  # The emulator's independent Rust implementation of bundle format v3, checked
+  # against the same committed vectors the Go reference passes. The vectors are
+  # bytes and expected verdicts, not code, so neither implementation can quietly
+  # drag the other along.
+  format-conformance:
+    runs-on: [self-hosted, cairn]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Unit tests
+        working-directory: emulator
+        run: cargo test
+
+      - name: Conformance against the committed vectors
+        working-directory: emulator
+        run: cargo run --release -- conformance
+
   # The vectors are generated deterministically, which is what makes them usable
   # as a shared input rather than one implementation's output. Regenerating must
   # produce no diff — otherwise a vector could drift between the generator and
