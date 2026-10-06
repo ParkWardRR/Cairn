@@ -77,14 +77,14 @@ S3-compatible object store such as Garage on the server for the content-addresse
 | Layer | State |
 |---|---|
 | Bundle format v3 | **Complete on the host.** Every frame AEAD-encrypted, every bundle bound to a vehicle, an assignment and a device counter. Three implementations (Go, Rust, firmware C) agree on 33 conformance vectors, structural and keyed. v2 is retired |
-| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--superseded)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The Wi-Fi removal is built and host-tested but **not yet flashed** (the unit needs a USB replug). BLE offload not written yet. Secure OTA written, install unexercised |
+| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--superseded)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The offload build, with the Wi-Fi removal, was **flashed on 2026-10-06** with the server's receipt key pinned (boot log: `bundle offload ready (receipt key pinned)`); the card holds sealed bundles waiting to be pulled, and the first over-the-air offload has **not yet completed**. Secure OTA written, install unexercised |
 | Ingest server | **Deployed v3** on the Cairn VM: a legacy mutual-TLS device listener (no dongle uses it now; retired in Phase 26), a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
 | Decode pipeline | **Complete and per vehicle.** Idempotent and reproducible; PostgreSQL/PostGIS and DuckDB layers both carry `vehicle_id`; non-destructive migration 005 |
 | Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
 | Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
 | Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), with a vehicle selector; analysis pages are single-vehicle and never blend two cars. Deployed |
-| iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; **the BLE bundle offload (#14) is now the critical path**, because the phone is the dongle's only uplink |
-| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), not implemented |
+| iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; **the BLE bundle offload (#14) is not written in the app** (the issue was closed while `main` held no offload code; PR #32 is the codec only and there is no Mac CI runner yet). `cmd/cairn-phone` in the server repository is the working reference phone and carries the first trip, so the app is not on the critical path to it |
+| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), **implemented in the firmware and flashed on 2026-10-06**; not yet completed over the air |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
 
 ### The v3 target
@@ -617,7 +617,8 @@ Firmware ([firmware #1](https://github.com/ParkWardRR/cairn-esp32-device-firmwar
 - [x] Flashed on the real dongle: the key and certificate were physically overwritten in flash; a residual Wi-Fi password survived (documented in device-provisioning.md; flash encryption is the real fix)
 - [x] BLE offload (`lib/cairn_offload` + NimBLE shim): `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone works. 22 host rows, ASan clean, nine mutations of the receipt gate and checks caught. **Host-tested only: the offload firmware has not yet been flashed or run over the air**
 - [x] Golden vectors `contracts/ble/v1/vectors/offload/`, generated from the firmware's own module; a test fails if they drift
-- [ ] Flash the offload build and run `cairn-phone offload` against the dongle (the unit was unplugged when this was written)
+- [x] Flash the offload build (2026-10-06, receipt key pinned)
+- [ ] Run `cairn-phone offload` against the dongle to completion: it connects and the dongle shows its pairing passkey; the first run waits on the passkey being entered on the Mac
 - [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
 
 Server ([server #4](https://github.com/ParkWardRR/cairn-vehicle-server/issues/4), [#7](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/7)):

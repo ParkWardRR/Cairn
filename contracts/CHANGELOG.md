@@ -5,6 +5,10 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `sync/v1/spec.md`: adds `429 too_many_offers` to the relay's Errors list: a retryable refusal when a client has the
+  server's limit of offered-but-uncommitted bundles (per client, re-offers and receipted bundles never count; the
+  limit's value is not part of the contract). Additive on an existing endpoint, so `sync/v1` stays compatible; a
+  documentation change to the spec, no vector changed, so nothing is released for it.
 - `store/v1/README.md`: documents the `GET /healthz` JSON (`status`, `build`, `store_contract`), the
   `GET /capabilities` response (tables, views, columns, endpoints) and the minor-version rule (a minor
   increments on any additive change; removing, renaming or repurposing is `store/v2`), taken from the

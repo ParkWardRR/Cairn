@@ -139,7 +139,8 @@ says nothing about whether a token exists or is valid. Do not branch on the caus
 on the relay, below.)
 `403 admin_required` means authenticated
 but not an admin. `403 funnel_refused` / `403 tailnet_identity_required` are
-network-policy refusals. `429 rate_limited`: back off.
+network-policy refusals. `429 rate_limited`: back off. On the relay, `429 too_many_offers` is a
+second, retryable 429 with its own meaning (§13 Errors).
 
 ## 3. Enrolment
 
@@ -456,7 +457,15 @@ no_storage_key` (the device's root was never escrowed) · `404 unknown_bundle` (
 record, including after an out-of-scope offer, which writes nothing) · `404 no_receipt` ·
 `422 quarantined` (a counter reused with different content) · `409 chunk_mismatch` (the
 bytes do not hash to `{sha256}`, or do not match the descriptor) · `409 chunks_missing`
-(commit before every chunk is uploaded) · `429` back off.
+(commit before every chunk is uploaded) · `429 too_many_offers` (this client already has the
+server's limit of bundles offered and not yet committed; **retryable**: commit or finish an
+outstanding bundle, back off, then offer again. Nothing is wrong with the data, unlike `403`
+and `422`, which mean stop. The allowance is per authenticated client, so one client cannot use
+up another's. Re-offering a bundle the client already has outstanding, or one that already has a
+receipt (`receipt_available: true`), never counts, and a slot frees when its bundle is committed
+or its offer record is swept. No `Retry-After`, as with `429 rate_limited`. The limit's value is
+the server's choice, not part of the contract: key off the code, not a number) ·
+`429 rate_limited` back off.
 A refused or quarantined bundle is **never** receipted, so it stays on the dongle.
 
 **Check for `bad_manifest_signature` before applying any rule that reads a `401` as "this
