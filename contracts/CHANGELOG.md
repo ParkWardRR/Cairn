@@ -5,6 +5,15 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `store/v1.1` (additive; needs a tagged release before a server can pin it): the period
+  views. `v_trip_period` (one row per trip with its week, month, quarter and year start) and the
+  table macro `period_summary(from_day, to_day)` (per-vehicle trips, duration, distance and
+  maximum speeds over a half-open date range). A trip belongs to the UTC period it started in.
+  `schema.json` gains an optional `macros` object, which the server's compatible-range check
+  reads (a pinned macro must exist with the same parameters and columns); a `store/v1.0` file
+  is still satisfied. Nothing existing changed. See `store/v1/README.md`. Refs
+  ParkWardRR/cairn-vehicle-server#14.
+
 - `format/v3/spec.md`: a link to the firmware hardening notes now points at the firmware
   repository. Documentation only; no protocol or vector changed, so nothing is released for it.
 

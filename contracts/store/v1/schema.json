@@ -1,6 +1,6 @@
 {
   "contract": "store/v1",
-  "store_contract": "store/v1.0",
+  "store_contract": "store/v1.1",
   "tables": {
     "boost": {
       "columns": [
@@ -996,6 +996,62 @@
         }
       ]
     },
+    "v_trip_period": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "started_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "ended_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "started_on",
+          "type": "DATE"
+        },
+        {
+          "name": "week_start",
+          "type": "DATE"
+        },
+        {
+          "name": "month_start",
+          "type": "DATE"
+        },
+        {
+          "name": "quarter_start",
+          "type": "DATE"
+        },
+        {
+          "name": "year_start",
+          "type": "DATE"
+        },
+        {
+          "name": "duration_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "distance_m",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "max_obd_speed_kph",
+          "type": "SMALLINT"
+        },
+        {
+          "name": "max_gnss_speed_kph",
+          "type": "DOUBLE"
+        }
+      ]
+    },
     "v_trip_summary": {
       "columns": [
         {
@@ -1097,6 +1153,40 @@
         {
           "name": "last_observed_at",
           "type": "TIMESTAMP"
+        }
+      ]
+    }
+  },
+  "macros": {
+    "period_summary": {
+      "parameters": [
+        "from_day",
+        "to_day"
+      ],
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "trips",
+          "type": "BIGINT"
+        },
+        {
+          "name": "duration_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "distance_m",
+          "type": "DOUBLE"
+        },
+        {
+          "name": "max_obd_speed_kph",
+          "type": "SMALLINT"
+        },
+        {
+          "name": "max_gnss_speed_kph",
+          "type": "DOUBLE"
         }
       ]
     }
