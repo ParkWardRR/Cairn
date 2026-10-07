@@ -5,11 +5,21 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+## 0.3.0 (2026-10-06)
+
+The store schema moves from `store/v1.0` to `store/v1.2` (additive; a server pinning 0.2.0's `store/v1.0` file is
+still satisfied), and `ble/v1` documents the `ENGINE_DECLARATION` characteristic. The `sync/v1` and `store/v1`
+documentation changes below ship in this tag too. No vector changed.
+
+- `ble/v1/spec.md` (draft, additive): documents `ENGINE_DECLARATION` (suffix `0004`, phone to device, write without
+  response, 1-31 byte UTF-8 engine profile id such as `bmw-n20`), the companion app's declaration in the firmware's
+  engine-discovery chain; and notes that the firmware's 2026-10-06 dev build drops `AUTHEN` while the spec still
+  describes the shipping target.
 - `sync/v1/spec.md`: adds `429 too_many_offers` to the relay's Errors list: a retryable refusal when a client has the
   server's limit of offered-but-uncommitted bundles (per client, re-offers and receipted bundles never count; the
   limit's value is not part of the contract). Additive on an existing endpoint, so `sync/v1` stays compatible; a
   documentation change to the spec, no vector changed, so nothing is released for it.
-- `store/v1.2` (additive; needs a tagged release before a server can pin it). `schema.json` moves from `store/v1.0` to
+- `store/v1.2` (additive). `schema.json` moves from `store/v1.0` to
   `store/v1.2`; `store/v1.1` was never released on its own, so this release carries both minors.
   - `store/v1.1`: the `bundles` columns `path`, `size_bytes`, `duration_ms` and `received_at`; the `tune` table; the
     views `v_boot_start`, `v_metric_samples`, `v_tune_effect` and `v_health_stats`.
