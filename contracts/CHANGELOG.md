@@ -5,6 +5,16 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `ble/v1/device-info.md`: `DEVICE_INFO` (characteristic `0040`) is **out of draft**. Three independent
+  implementations now agree on `vectors/device-info/vectors.json`: the Go reference (`tools/blevectors`),
+  a Python-on-OpenSSL cross-check, the firmware's C
+  ([ParkWardRR/cairn-esp32-device-firmware#14](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/14),
+  72/72 host rows), and the app's Swift
+  ([ParkWardRR/cairn-ios-companion-app#27](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/27),
+  7/7 vector rows). The `UPLINK_EVENT`, `INSTRUCTION`, `INSTRUCTION_RESULT` and `HOME_TRIGGER`
+  characteristics in the same file stay **draft** until they also have cross-implementation agreement.
+  Suggested release: `contracts-v0.3.1` (patch; a documentation status change, no vector or byte changed).
+
 ## 0.3.0 (2026-10-06)
 
 The store schema moves from `store/v1.0` to `store/v1.2` (additive; a server pinning 0.2.0's `store/v1.0` file is

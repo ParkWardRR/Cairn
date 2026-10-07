@@ -1,15 +1,19 @@
-# BLE device information and uplink events (ble/v1, DRAFT)
+# BLE device information and uplink events (ble/v1)
 
 Lets the phone ask a dongle **what it is** before relying on it, and tells the phone when the
 dongle is about to leave BLE for a Wi-Fi slot. It extends [`spec.md`](spec.md) (same service,
 same bonding, little-endian, fixed layouts) and sits beside [`offload.md`](offload.md). The
 instruction channel the phone uses to talk back is [`checkin.md`](checkin.md).
 
-> **Draft.** Nothing implements it. The vectors in
-> [`vectors/device-info/vectors.json`](vectors/device-info/vectors.json) come from a Go
-> reference (`tools/blevectors`); the signatures in them were also reproduced by a second
-> implementation (Python on OpenSSL). The firmware's C and the app's Swift have not reproduced
-> them. Context: [issue 21](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/21).
+> **DEVICE_INFO released 2026-10-07.** Three independent implementations agree on the vectors
+> in [`vectors/device-info/vectors.json`](vectors/device-info/vectors.json): the Go reference
+> (`tools/blevectors`), a Python-on-OpenSSL cross-check, the firmware's C
+> ([firmware #14](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/14),
+> 72/72 host rows), and the app's Swift
+> ([iOS #27](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/27), 7/7 vector
+> rows). `UPLINK_EVENT`, `INSTRUCTION`, `INSTRUCTION_RESULT` and `HOME_TRIGGER` stay **draft**
+> below: no firmware or app implements them yet. Context:
+> [front door #21](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/21).
 
 ## 1. Characteristics
 
