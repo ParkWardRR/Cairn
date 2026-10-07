@@ -418,8 +418,10 @@ as the truth; do not merge.
 
 ## 13. Bundle relay (the phone uploads on the dongle's behalf)
 
-The dongle has no network ([ble-offload.md](../../ble/v1/offload.md)); the enrolled phone
-carries its sealed bundles to the server. These endpoints are the same
+The enrolled phone can carry the dongle's sealed bundles to the server
+([ble-offload.md](../../ble/v1/offload.md)); a dongle with its own Wi-Fi or LTE uplink may deliver
+the same bundles itself, and the endpoints below behave the same for both (offering a bundle the
+server already holds returns no missing chunks and `receipt_available: true`). These endpoints are the same
 offer → chunk → commit exchange the dongle used to make itself, now authenticated
 as **the phone** (§2) instead of by a device client certificate. They accept signed
 requests or bearer tokens, so a background `URLSession` upload works.

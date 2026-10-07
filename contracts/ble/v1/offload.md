@@ -1,9 +1,24 @@
 # BLE bundle offload (protocol v1, Phase 3)
 
-The dongle has **no Wi-Fi and no network stack**. Sealed bundles leave it one way:
-the enrolled phone pulls them over BLE, uploads them to the Cairn server on the
-dongle's behalf, and hands the server's signed receipt back. This document is the
-contract for that hand-off. It extends [ble-companion-protocol.md](spec.md)
+Sealed bundles can leave the dongle by more than one path. **This document is the path
+through the phone**: the enrolled phone pulls them over BLE, uploads them to the Cairn
+server on the dongle's behalf, and hands the server's signed receipt back. A dongle that
+also has Wi-Fi or LTE (a planned direction, see the roadmap) uploads on its own over the
+device uplink; the phone is then one path of several, not the only one.
+
+The two paths are made to agree rather than coordinate. Both end at the same server
+endpoints with the same semantics, every step is idempotent, and the server is the only
+authority on whether a bundle is held:
+
+- A bundle the server already holds comes back from `offer` with **no missing chunks and
+  `receipt_available: true`**. The phone then reads nothing from the dongle and only carries
+  the receipt back with `PUT_RECEIPT`, so the dongle can prune.
+- A bundle the phone is halfway through when the dongle uploads it itself is still correct:
+  chunks are content-addressed and `commit` is idempotent.
+- The dongle never deletes on the word of either path, only on a receipt signed by the
+  server key pinned in its firmware.
+
+This document is the contract for the phone path. It extends [ble-companion-protocol.md](spec.md)
 (same service, same bonding, little-endian, fixed binary layouts) and builds on
 [bundle-format-v3.md](../../format/v3/spec.md) §6 (the upload protocol) and
 [trust-model-v3.md](../../../docs/trust-model-v3.md).
