@@ -77,14 +77,14 @@ S3-compatible object store such as Garage on the server for the content-addresse
 | Layer | State |
 |---|---|
 | Bundle format v3 | **Complete on the host.** Every frame AEAD-encrypted, every bundle bound to a vehicle, an assignment and a device counter. Three implementations (Go, Rust, firmware C) agree on 33 conformance vectors, structural and keyed. v2 is retired |
-| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--superseded)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. The offload build, with the Wi-Fi removal, was **flashed on 2026-10-06** with the server's receipt key pinned (boot log: `bundle offload ready (receipt key pinned)`); the card holds sealed bundles waiting to be pulled, and the first over-the-air offload has **not yet completed**. Secure OTA written, install unexercised |
+| Firmware | **No Wi-Fi (decided 2026-10-05): the dongle holds no network credentials and has no network stack**; all server sync goes through the iOS app over BLE ([Phase 26](#phase-26--no-wi-fi-the-phone-is-the-uplink--superseded)). v3 provisioned and enrolled on the car's dongle (root escrowed, assigned to the 428i); capture, seal and storage checks pass on the real unit with its SD card. **First over-the-air BLE offload completed 2026-10-06**: nine bundles pulled in 62 s, nine receipts verified against the pinned key on the device, nine bundles pruned (dev-pairing build — Just Works, bonds cleared each boot, bench-mode auto-detect; see the firmware README's "Pairing and access" caveat). Secure OTA written, install unexercised |
 | Ingest server | **Deployed v3** on the Cairn VM: a legacy mutual-TLS device listener (no dongle uses it now; retired in Phase 26), a separate app listener (LAN TLS verified end to end from the Mac), enrolment, escrowed keys, vehicle and counter binding. Tailscale installed, login pending |
 | Decode pipeline | **Complete and per vehicle.** Idempotent and reproducible; PostgreSQL/PostGIS and DuckDB layers both carry `vehicle_id`; non-destructive migration 005 |
 | Engine telemetry | **Recording** boost, MAP, mixture, fuel trims and fuel level as `OBD_EXTENDED`; PID support on the real car still being established (Phase 13) |
 | Analytical store | **Deployed.** `cairn-tsdb`, an in-memory DuckDB rebuilt from the CAS and the SD card on every start; Parquet snapshot export via CLI and HTTP (Phase 14) |
 | Web UI | Nuxt 3 + Vue 3 dashboard (`ui/`), with a vehicle selector; analysis pages are single-vehicle and never blend two cars. Deployed |
-| iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; **the BLE bundle offload (#14) is not written in the app** (the issue was closed while `main` held no offload code; PR #32 is the codec only and there is no Mac CI runner yet). `cmd/cairn-phone` in the server repository is the working reference phone and carries the first trip, so the app is not on the critical path to it |
-| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), **implemented in the firmware and flashed on 2026-10-06**; not yet completed over the air |
+| iOS companion | Adopting. Enrolment, signing, encrypted store, vehicles and annotations are in; the **BLE offload codec, session and transfer checks** landed on 2026-10-06 (PR #32), but **CoreBluetooth wiring (#14) is still open** — the app does not yet pair with the dongle, there is still no Mac CI runner. `cmd/cairn-phone` in the server repository is the reference phone and **carried the first real trip on 2026-10-06**, so the iPhone is not on the critical path to it |
+| BLE companion | **Running.** Phone GPS reinforcement via NimBLE GATT. Bundle offload specified ([contracts/ble/v1/offload.md](contracts/ble/v1/offload.md)), **implemented in the firmware, flashed and run over the air 2026-10-06** (9 bundles, 62 s, 9 receipts pruned on the device) |
 | Parked current draw | **Unmeasured.** Needs a meter, not a terminal. Still the single most useful measurement left |
 
 ### The v3 target
@@ -483,7 +483,7 @@ verified).
       finer wherever there is headroom, and that at least one axis has some
       (mutation-checked both ways). Plain `make` runs through to the BLE and
       mtprobe suites again
-- [ ] Hardware round trip: capture → seal → offload → relay → decode with encryption on (stage A passes; stage B is Phase 26) —
+- [x] Hardware round trip: capture → seal → offload → relay → decode with encryption on (stage A passes; **stage B passed 2026-10-06**, dev-pairing build) —
       **blocked: the dongle has no SD card in it** (`GO_IDLE_STATE failed` on every
       mount attempt). Runbook: [docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md)
 - [x] The firmware host Makefile now tracks every header as a dependency, so a
@@ -615,11 +615,12 @@ Firmware ([firmware #1](https://github.com/ParkWardRR/cairn-esp32-device-firmwar
 - [x] `secrets.h` holds trust anchors only (enrolment key, receipt key, BLE passkey)
 - [x] Host suite green: storage matrix 41/41, format vectors 33/33, provisioning 12/12
 - [x] Flashed on the real dongle: the key and certificate were physically overwritten in flash; a residual Wi-Fi password survived (documented in device-provisioning.md; flash encryption is the real fix)
-- [x] BLE offload (`lib/cairn_offload` + NimBLE shim): `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone works. 22 host rows, ASan clean, nine mutations of the receipt gate and checks caught. **Host-tested only: the offload firmware has not yet been flashed or run over the air**
+- [x] BLE offload (`lib/cairn_offload` + NimBLE shim): `LIST`, `GET_MANIFEST`, `READ`, `PUT_RECEIPT`, `ABORT`, `TRIP_ACTIVE` refusal, standby held while a phone works. 22 host rows, ASan clean, nine mutations of the receipt gate and checks caught
 - [x] Golden vectors `contracts/ble/v1/vectors/offload/`, generated from the firmware's own module; a test fails if they drift
 - [x] Flash the offload build (2026-10-06, receipt key pinned)
-- [ ] Run `cairn-phone offload` against the dongle to completion: it connects and the dongle shows its pairing passkey; the first run waits on the passkey being entered on the Mac
+- [x] Run `cairn-phone offload` against the dongle to completion (2026-10-06): **nine bundles in 62 s, nine receipts verified against the pinned key on the device, nine bundles pruned**. The flashed build uses dev pairing (Just Works, no MITM, bonds cleared each boot, bench-mode auto-detect) to unblock macOS CoreBluetooth; see the firmware README caveat
 - [ ] Enrolled-app challenge–response on the BLE link (hardening; not a prerequisite)
+- [ ] Restore shipping pairing (MITM + DISPLAY_ONLY + `READ_AUTHEN`/`WRITE_AUTHEN`) once the iPhone client is wired and the macOS pairing failure is understood (not just worked around)
 
 Server ([server #4](https://github.com/ParkWardRR/cairn-vehicle-server/issues/4), [#7](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/7)):
 
@@ -633,8 +634,7 @@ iOS ([#14](https://github.com/ParkWardRR/cairn-companion-ios-esp32-obd2-gps-ble/
 
 - [ ] BLE offload client, durable per-bundle state machine, background operation (CoreBluetooth state restoration, background `URLSession`). `server/internal/offloadclient` and `cmd/cairn-phone` are a working reference in Go
 
-Then the **hardware round trip** ([docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md) stage B):
-capture → seal → BLE offload → relay → receipt → prune on the real dongle.
+The **hardware round trip** ([docs/hardware-roundtrip.md](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/hardware-roundtrip.md) stage B) — capture → seal → BLE offload → relay → receipt → prune on the real dongle — **completed 2026-10-06** (dev-pairing build). Stage B with the shipping pairing is the next hardening milestone.
 
 ## Deferred deliberately
 
