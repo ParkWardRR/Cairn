@@ -10,7 +10,7 @@ This spec is normative here, in the Cairn contracts (`contracts/ble/v1/`). The i
 |---|---|
 | Service UUID | `A8E3xxxx-4F5B-11EF-A017-325096B39F47` (base; 16-bit suffix per characteristic below. Final values assigned when the spec lands in the firmware repo) |
 | Scan filter | Service UUID only. Advertised name `Cairn` is display-only |
-| Security | All characteristics require encrypted + authenticated access (`READ_ENC`/`WRITE_ENC` + `AUTHEN`). Unbonded phones can discover but not read, write, or subscribe |
+| Security | All characteristics require encrypted + authenticated access (`READ_ENC`/`WRITE_ENC` + `AUTHEN`). Unbonded phones can discover but not read, write, or subscribe. (The firmware's dev build flashed for the 2026-10-06 first-trip bring-up drops `AUTHEN` and pairs with Just Works; see the firmware README's "Pairing and access" caveat. This contract describes the shipping target.) |
 | Bonding | Static 6-digit passkey from gitignored `secrets.h`. Bond limit 1; new bond replaces old. Bond reset via boot-time button or firmware command |
 
 ## Characteristics
@@ -23,6 +23,7 @@ This spec is normative here, in the Cairn contracts (`contracts/ble/v1/`). The i
 | `PROTOCOL_VERSION` | `00F0` | read | 2 B | once | 1 |
 | `BARO_ALT` | `0002` | phone → device | 4 B | ~1 Hz | 2 |
 | `UTC_SYNC` | `0003` | phone → device | 8 B | connect + 1/min | 2 |
+| `ENGINE_DECLARATION` | `0004` | phone → device, write w/o response | 1–31 B | once per bond | 2 |
 | `OBD_LIVE` | `0020` | device → phone | 48 B | ~1 Hz | 2 |
 | `DEVICE_STATUS` | `0021` | device → phone | 12 B | 1 Hz | 2 |
 
@@ -76,6 +77,14 @@ Relative barometric altitude, not MSL and not the GNSS ellipsoid. The dongle sho
 | 0 | 8 | `unix_ms` | u64 | phone wall clock, Unix milliseconds; sent on connect and about once a minute |
 
 The app sends both only when the dongle exposes the characteristic, using write-without-response when offered, otherwise a confirmed write.
+
+## `ENGINE_DECLARATION` (1–31 bytes, Phase 2, phone → device)
+
+A UTF-8 engine profile identifier (e.g. `bmw-n20`, `bmw-b58`). Written without response, no NUL terminator, 1–31 bytes. The dongle persists the latest declaration in NVS and uses it in the engine-discovery chain (compile-time → **BLE declaration** → VIN pattern → VIN engine codes → default). A profile the firmware does not have compiled in is accepted and logged, but will not change the active profile until an image with that profile is flashed.
+
+The phone writes this at most once per bond, after the user picks a vehicle whose profile differs from what the dongle would auto-select. It is not an override of a running profile mid-trip: the firmware uses it only at the next OBD identification pass. The server does not read it directly — the vehicle record's `engine_code` on the server is independent and used for display and query filtering.
+
+Writes larger than 31 bytes or empty are refused silently and logged on the device as `engine declaration: bad length`.
 
 ## Staleness and timing
 
