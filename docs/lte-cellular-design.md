@@ -8,12 +8,14 @@
 > existing contracts into a concrete design for the cellular path. It is written
 > against the split repositories and their current state.
 >
-> The research that informed this document:
-> - [EIOTCLUB IoT SIM in US report](../reports/EIOTCLUB%20IoT%20SIM%20in%20US.md)
-> - [SIM7600A radio and AT commands](../../research_notes/EIOTCLUB%20IoT%20SIM%20in%20US/sim7600a_radio_and_at_commands.md)
-> - [APN plans and data path](../../research_notes/EIOTCLUB%20IoT%20SIM%20in%20US/apn_plans_and_data_path.md)
-> - [Roaming policy and reliability](../../research_notes/EIOTCLUB%20IoT%20SIM%20in%20US/roaming_policy_and_reliability.md)
-> - [EIOTCLUB identity and switching](../../research_notes/EIOTCLUB%20IoT%20SIM%20in%20US/eiotclub_identity_and_switching.md)
+> The research that informed this document is **not in any repository**: it is in
+> the maintainer's local workspace, alongside the five checkouts, and is named
+> here rather than linked because a link to it can never resolve for a reader.
+> - `reports/EIOTCLUB IoT SIM in US.md`
+> - `research_notes/EIOTCLUB IoT SIM in US/sim7600a_radio_and_at_commands.md`
+> - `research_notes/EIOTCLUB IoT SIM in US/apn_plans_and_data_path.md`
+> - `research_notes/EIOTCLUB IoT SIM in US/roaming_policy_and_reliability.md`
+> - `research_notes/EIOTCLUB IoT SIM in US/eiotclub_identity_and_switching.md`
 
 ## 1. Store-and-forward, not live streaming
 

@@ -220,7 +220,7 @@ The full connectivity-path analysis — including the three practical paths to t
 homelab (BLE → iPhone → Tailscale, Linux gateway, public HTTPS), the
 store-and-forward radio scheduling model, the case for a narrow isolated
 ingestion endpoint, and the privacy constraints — is in
-[lte-cellular-design.md](../../docs/lte-cellular-design.md).
+[lte-cellular-design.md](../../../docs/lte-cellular-design.md).
 
 ## 9. Open questions for review
 

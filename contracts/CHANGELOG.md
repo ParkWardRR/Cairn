@@ -5,6 +5,9 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `uplink/v1/spec.md` §8: fixes the relative link to `docs/lte-cellular-design.md`, which pointed one
+  directory too high and so resolved nowhere. **Releases nothing** — no normative text, byte layout or
+  vector is touched; it is listed here only because the file sits under `contracts/`.
 - `ble/v1/device-info.md`: `DEVICE_INFO` (characteristic `0040`) is **out of draft**. Three independent
   implementations now agree on `vectors/device-info/vectors.json`: the Go reference (`tools/blevectors`),
   a Python-on-OpenSSL cross-check, the firmware's C
