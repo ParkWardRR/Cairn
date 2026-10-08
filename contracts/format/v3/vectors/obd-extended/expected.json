@@ -1,7 +1,7 @@
 {
   "name": "obd-extended",
-  "description": "Three OBD_EXTENDED records: full boost, all sentinels, and MAP saturated.",
-  "asserts": "Every field decodes to the expected value or is absent when sentinel. MAPSaturated is true only when MAP is 255 kPa. BoostPSI requires both MAP and baro; with either absent it is uncomputable, not assumed from sea level.",
+  "description": "Three OBD_EXTENDED records: full boost with pedal position, all sentinels, and MAP saturated at schema_version 1.",
+  "asserts": "Every field decodes to the expected value or is absent when sentinel. MAPSaturated is true only when MAP is 255 kPa. BoostPSI requires both MAP and baro; with either absent it is uncomputable, not assumed from sea level. pedal_pct is read only at schema_version 2: record 2 is version 1 and carries 55 in byte 23, which a conformant reader reports as absent because that byte is reserved there.",
   "scan": {
     "stop_reason": "EOF",
     "frames_retained": 3,
@@ -19,7 +19,7 @@
     "stop_reason": "EOF",
     "frames_retained": 3,
     "stop_offset": 404,
-    "plaintext_sha256_hex": "69bee56d57c02ffc4ddc396fe65b5e99bf6b1f36147bf0baad83d90ca06487ac"
+    "plaintext_sha256_hex": "5db46ff650d9ae73bb2a627a9eda89832ffbb53f050def9c959258aca37fc83d"
   },
   "obd_ext": {
     "records": [
@@ -38,7 +38,9 @@
         "map_saturated": false,
         "boost_psi": 18.7098633,
         "lambda": 2.8836,
-        "abs_load_pct": 189.80392156862746
+        "abs_load_pct": 189.80392156862746,
+        "schema_version": 2,
+        "pedal_pct": 97
       },
       {
         "map_kpa": null,
@@ -52,7 +54,9 @@
         "pids_requested": 0,
         "pids_answered": 0,
         "poll_cadence_ms": 1200,
-        "map_saturated": false
+        "map_saturated": false,
+        "schema_version": 2,
+        "pedal_pct": null
       },
       {
         "map_kpa": 255,
@@ -67,7 +71,9 @@
         "pids_answered": 2,
         "poll_cadence_ms": 200,
         "map_saturated": true,
-        "lambda": 2.7852
+        "lambda": 2.7852,
+        "schema_version": 1,
+        "pedal_pct": null
       }
     ],
     "note": "Sentinels: u16 0xFFFF, u8 0xFF, i8 0x80 (-128). A sentinel field is absent, not zero. Derived values use the standard's own formulas."

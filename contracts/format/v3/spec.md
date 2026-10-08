@@ -293,6 +293,7 @@ must report the isolated damaged byte range and must mark the resulting bundle
 | `0x08` | `GNSS_GAP` | §4.8 |
 | `0x09` | `POLICY_SNAPSHOT` | §4.9 |
 | `0x0A` | `OBD_EXTENDED` | §4.11 |
+| `0x0B` | `TIME_OBSERVATION` | §4.12 |
 
 Unknown record types encountered by a reader are **skipped using `frame_len`**,
 counted, and reported. An unknown type is not an error — it is how a newer
@@ -722,6 +723,65 @@ Which of these an ECU supports is only discoverable by asking, so one record of
 sentinels with `pids_answered = 0` is the evidence that it supports none —
 better recorded once than re-inferred from an absence on every analysis.
 
+### 4.12 `TIME_OBSERVATION` — 16 bytes
+
+One wall-clock reading from one source, recorded as evidence rather than as a
+decision. Written whenever a source yields a time, including when it merely
+confirms what another source already said.
+
+| Offset | Size | Field | Units |
+|---:|---:|---|---|
+| 0 | 8 | `utc_ms` | u64, Unix epoch milliseconds as the source reported them |
+| 8 | 4 | `acc_ms` | u32, the source's own uncertainty; `0xFFFFFFFF` = not stated |
+| 12 | 1 | `source` | u8, §4.12.1 |
+| 13 | 1 | `flags` | u8, bit 0 = this observation was adopted as the manifest's `utc_basis_ms` |
+| 14 | 2 | `reserved` | zero |
+
+The monotonic reading of the same instant is the **frame's** `monotonic_ms`, not a
+field here. That pairing is the whole value of the record: `utc_ms − monotonic_ms`
+is the UTC of monotonic zero implied by this source, so two observations from
+different sources can be compared directly, and drift within one source is
+visible across a trip.
+
+#### 4.12.1 Sources
+
+| Value | Source | Notes |
+|---:|---|---|
+| `1` | `GNSS` | The receiver's date and time. Needs a fix, so it can be minutes into a drive or never. |
+| `2` | `PHONE` | A paired phone's clock, over the BLE link. Network-synchronised in practice, and available before any fix. |
+| `3` | `MODEM_NETWORK` | The cellular network's time, from the modem. Available whenever the modem attaches. |
+| `4` | `RTC` | A battery-backed real-time clock. Reserved: no current hardware fits one. |
+
+Server ingest time is deliberately **not** a source here. The server stamps its
+own clock on arrival and has no reason to round-trip it through a device record.
+
+### 4.12.2 Why observations and not just a basis
+
+The manifest's `utc_basis_ms` (§5.1) stays exactly as specified: one basis, chosen
+on the device, which every reader can already use. These records do not replace it
+— they make it checkable, and they make a bundle useful when it is absent.
+
+Three things forced this:
+
+- **A single basis cannot be revised.** It is taken once, from the first source to
+  produce a date, and a later and better source cannot improve it without moving
+  the time reference under samples already written against the original. Keeping
+  the observations separate means the basis stays stable while the evidence
+  accumulates.
+- **A drive with no GNSS fix was undated entirely.** Measured: every trip on one
+  deployment carried `utc_basis_ms = 0` and decoded to 1970-01-01. The phone and
+  the cellular network both had the time throughout; nothing could record it.
+- **Sources disagree, and the disagreement is data.** A phone clock, a GNSS
+  receiver and a network each have different accuracy and different failure modes.
+  Choosing between them is a policy question that belongs where policy can change
+  without reflashing, so the device records what each said and the consumer
+  decides.
+
+A reader that wants one answer should prefer the lowest `acc_ms`, break ties by
+source order above, and treat a source whose implied basis drifts across a trip as
+suspect. A reader that only wants the device's own choice reads the manifest and
+ignores these records entirely — which is what makes the addition safe.
+
 ### 4.10 Degraded-state bitmap
 
 `DEVICE_HEALTH.health_state` is a bitmap, not an enum.
@@ -810,9 +870,34 @@ signatures.
 | 26 | `device_counter` | u64 — must equal every segment header's; starts at 1 |
 | 27 | `storage_key_version` | u32 — must equal every segment header's |
 | 28 | `encryption_suite` | text, `"xchacha20poly1305+hkdf-sha256/v1"` |
+| 29 | `engine_profile` | array `[id (text), version (u8), sha256 (32 bytes)]`, optional (§5.1.1) |
 
-Keys 24–28 are **mandatory**. Key 23 is optional and, when present, sorts before
-24, so a manifest has 27 or 28 fields.
+Keys 24–28 are **mandatory**. Keys 23 and 29 are optional and sort into their
+numeric positions, so a manifest has 27 to 29 fields.
+
+#### 5.1.1 `engine_profile`, and why a bundle has to name it
+
+The engine profile decides the multi-PID request, every value conversion, the
+hot/cold tiering and cold rotation, the polling cadences, and the engine-on and
+drive-confirmation thresholds. A bundle that does not name it leaves a reader
+unable to say whether a timing figure came through `clamp(A/2-64, -127, 127)` or
+something else — in a format whose purpose is being checkable years later, that is
+a hole rather than an omission.
+
+The **digest, not just the name**, because a profile edited without a version bump
+is a different profile and only the digest says so. It is the SHA-256 of the
+profile document as `contracts/engine/v1` defines it, which is the same value the
+generator reports.
+
+Optional, following key 23: a bundle produced by a device with no profile — or by
+one built before this key existed — is still valid and still signed over whatever
+keys are present. A reader must not require it.
+
+Readers should prefer this over parsing `firmware_version`. Devices have carried
+the profile there as a suffix (`cairn-v2.0.0-dev+bmw-n20@400cbc`) because that
+field already existed, but it is a 32-byte text field with no room to spare and no
+structure, so the suffix is dropped rather than truncated when a version string
+grows. The suffix is a stopgap; this key is the contract.
 
 The signature covers the deterministic CBOR encoding of every present key. It is stored
 separately in `manifest.sig`, so the signed bytes are exactly the file bytes with
