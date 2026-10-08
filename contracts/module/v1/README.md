@@ -96,23 +96,6 @@ Nothing implements this yet, so it cannot leave draft. Before it can:
       couples a contract to a web asset set. It may belong in the module's own UI layer
       instead.
 
-## Known defect in §7
-
-**A module's hash covers every file in its directory, including its `README.md`.** That is
-what §7 says, and both implementations do it — so editing a module's prose changes its
-digest, and therefore the module-set identity, and therefore (once the server folds it in)
-the store contract digest. A documentation fix would make a rebuilt store look like a
-different store.
-
-That is a false positive: a README cannot change what a derivation computes. The rule that
-would be right is **the manifest plus every file the manifest names** (`views`, `queries`,
-and whatever keys are added later) — precise, no "except documentation" carve-out, and it
-extends by itself.
-
-Not yet fixed: nothing consumes identity, so nothing is wrong today, and changing it means
-editing this contract, a new tag and a re-pin in `cairn-modules`. The right moment is when
-the server first folds identity into the store digest and being wrong would cost something.
-
 ## Known coverage gaps
 
 - **One vector is YAML**, `vectors/invalid/bad-duplicate-key.yaml`. A duplicate mapping

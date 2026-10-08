@@ -5,6 +5,16 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- **`module/v1/spec.md` §7: a module's hash now covers its manifest and every file the manifest names, not
+  its whole directory.** The old rule made a `README.md` edit change the module's digest, the module-set
+  identity and therefore the store contract digest — so a prose fix would make a rebuilt store look like a
+  different store. That is a false mismatch, and invariant 5 is worth less every time it cries wolf. The new
+  rule covers what can change a module's output and nothing else; it needs no "except documentation"
+  carve-out and extends by itself to any later key whose value is a path.
+  **Normative and behavioural**, so a consumer computing identity must be updated together with its pin:
+  `modgen` in `cairn-modules` is. Nothing else computes identity yet. Suggested release: a patch on
+  `module/v1`, which is draft and so may change in place.
+
 - `module/v1/module.schema.json`: adds `pedal_pct` to `$defs/engine_field`, so the capture-field vocabulary
   matches `engine/v1`'s `$defs/field` again after
   [631dad2](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/631dad2) added it there.

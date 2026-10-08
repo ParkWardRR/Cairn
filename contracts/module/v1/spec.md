@@ -172,10 +172,23 @@ A module set changes what a derived store contains, so by the project's fifth in
 *anything derived is disposable and must prove it reproduces* — the module set is part of
 that store's identity.
 
-- A module hashes to SHA-256 of its directory's files, in path order, with CRLF read as
-  LF.
+- A module hashes to SHA-256 over **its manifest and every file the manifest names** —
+  `views[]`, `queries`, and any later key whose value is a path — in that order: the
+  manifest first, then the named paths sorted. Each contributes its repo-relative path,
+  a `0x00` byte, its bytes with CRLF read as LF, and a `0x00` byte.
 - The **module set identity** is SHA-256 of `cairn.module-set/v1-draft\n` followed, for
   each module in `id` order, by `<id>\n<version>\n<hex hash>\n`.
+
+**Only the declarations, not the directory.** A module's hash covers what can change its
+output and nothing else. A `README.md`, a note, a scratch file — none of them can change
+what a derivation computes or what a query returns, so none of them moves the hash. The
+earlier rule hashed the whole directory, which made a prose fix look like a different
+module and therefore a different store; that is a false mismatch, and invariant 5 is worth
+less every time it cries wolf.
+
+"The manifest plus every file the manifest names" needs no "except documentation"
+carve-out, and it extends by itself: a key added later whose value is a path is covered the
+day it is added, with nothing to remember.
 
 A consumer reports it: the server folds it into the store contract digest and into
 `v_reproducibility`, so a rebuild under a different module set is **visibly** a different
