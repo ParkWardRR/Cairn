@@ -8,6 +8,7 @@
 | Phone | [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | BLE relay, GPS assist, server client | Swift · SwiftUI | [docs](https://github.com/ParkWardRR/cairn-ios-companion-app/tree/main/docs) | [issues](https://github.com/ParkWardRR/cairn-ios-companion-app/issues) | [CI](https://github.com/ParkWardRR/cairn-ios-companion-app/actions) |
 | Server | [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | Verifies, decrypts, stores; serves app and dashboard | Go | [docs](https://github.com/ParkWardRR/cairn-vehicle-server/tree/main/docs) | [issues](https://github.com/ParkWardRR/cairn-vehicle-server/issues) | [CI](https://github.com/ParkWardRR/cairn-vehicle-server/actions) |
 | Dashboard | [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | Browser UI: trips, places, engine, health | Nuxt · TypeScript | [docs](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard/tree/main/docs) | [issues](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard/issues) | [CI](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard/actions) |
+| Modules | [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | Interpretation, separated from the logging core: one package per module | YAML · Rust | [readme](https://github.com/ParkWardRR/cairn-modules#readme) | [issues](https://github.com/ParkWardRR/cairn-modules/issues) | [CI](https://github.com/ParkWardRR/cairn-modules/actions) |
 
 <sub>Shared: [Roadmap](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/ROADMAP.md) · [Install](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/INSTALL.md) · [Architecture](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/docs/architecture.md) · [Threat model](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/docs/threat-model.md) · [Trust model](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/docs/trust-model-v3.md) · [Contracts](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/tree/main/contracts) · [Archive of the original monorepo](https://github.com/ParkWardRR/cairn-original-monorepo-archive)</sub>
 <!-- cairn-nav:end -->
@@ -250,6 +251,7 @@ Cairn is several repositories, each of which can be built, tested and released a
 | [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | The iPhone app. Feeds the dongle phone GPS over BLE; is becoming an enrolled, signing client of the server; will relay bundles (Swift) |
 | [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | Your server. Enrols devices and apps, verifies, stores and decodes bundles, issues signed receipts, serves the phone API and the analytical store (Go) |
 | [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | The browser dashboard. Reads the analytical store through server-side routes; signs in with a passkey or a Tailnet identity (Nuxt) |
+| [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | The modules. Boost, fuel economy, trims, driving style, the speedometer check and place kinds, each one package carrying its dongle, server, web and app parts. `modgen` validates a module set against the pinned contracts and emits what each surface needs (YAML, Rust). **Nothing is wired in yet** |
 | [cairn-original-monorepo-archive](https://github.com/ParkWardRR/cairn-original-monorepo-archive) | The original single repository, preserved read-only. Every component repository keeps its history |
 
 The split happened on 2026-10-05; the plan and what was executed are in
@@ -310,9 +312,10 @@ The current pins, generated from each repository's lock files by
 <!-- pins:start -->
 | Repository | Contracts it is pinned to | Protocols | Also pinned |
 |---|---|---|---|
-| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.2.0` (`ad01bf6`) | ble v1, enrolment v1, format v3, store v1, sync v1 | firmware `a3fe7ef` (interop) |
+| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.3.0` (`fcfa01b`) | ble v1, enrolment v1, format v3, store v1, sync v1 | firmware `f71355e` (interop) |
 | [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | `contracts-v0.1.0` (`56d980b`) | store v1 | vehicle server `b0deb01` |
-| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.2.0` (`ad01bf6`) | ble v1, enrolment v1, format v3 | none |
+| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.4.0` (`46070e2`) | ble v1, engine v1, enrolment v1, format v3 | none |
+| [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | `contracts-v0.4.0` (`46070e2`) | engine v1, module v1, store v1 | none |
 <!-- pins:end -->
 
 <sub>The iPhone app also carries a `contracts.lock` (at `contracts-v0.2.0`, replaying the `sync/v1` vectors) but is not yet one of the repositories the pin dashboard reads.</sub>
@@ -435,6 +438,7 @@ own toolchain, build and test commands in its README; start there.
 | Dashboard | [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | Node.js, Nuxt |
 | Dongle firmware and emulator | [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | PlatformIO (Arduino on ESP-IDF); Rust for the emulator |
 | iPhone app | [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | Xcode, Swift |
+| Modules and their generator | [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | Rust for `modgen`; nothing else yet |
 | This repository's tools | here, [`tools/`](tools/README.md) | Go |
 
 A typical order for a fresh install: stand up the server with its deploy guide, enrol the dongle

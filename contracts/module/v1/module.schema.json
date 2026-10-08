@@ -140,7 +140,7 @@
       "$comment": "A path inside the module's own directory. No leading slash and no `..`: a module cannot reach outside itself."
     },
     "engine_field": {
-      "enum": ["rpm", "speed_kph", "throttle_pct", "timing_advance_deg", "map_kpa", "lambda_e4", "engine_load_pct", "coolant_temp_c", "intake_temp_c", "maf_cgps", "ambient_temp_c", "fuel_trim_short_pct", "fuel_trim_long_pct", "baro_kpa", "abs_load_raw", "fuel_level_pct"],
+      "enum": ["rpm", "speed_kph", "throttle_pct", "timing_advance_deg", "map_kpa", "lambda_e4", "engine_load_pct", "coolant_temp_c", "intake_temp_c", "maf_cgps", "ambient_temp_c", "fuel_trim_short_pct", "fuel_trim_long_pct", "baro_kpa", "abs_load_raw", "fuel_level_pct", "pedal_pct"],
       "$comment": "MUST stay identical to the `field` enum in engine/v1's acquisition.schema.json. The checker compares the two, so they cannot drift."
     },
     "metric": {

@@ -9,8 +9,9 @@ the manifest; [`queries.schema.json`](queries.schema.json) is a module's named q
 
 - **Status:** draft. Identified in-document as `cairn.module/v1-draft`; nothing implements
   it yet.
-- **Producers:** a maintainer writes a module by hand, in the `cairn-modules` repository
-  (planned, see [the module system plan](../../../docs/module-system-plan.md)).
+- **Producers:** a maintainer writes a module by hand, in
+  [cairn-modules](https://github.com/ParkWardRR/cairn-modules) (created 2026-10-08; see
+  [the module system plan](../../../docs/module-system-plan.md)).
 - **Consumers:** the server loads manifests and applies derivations, views and queries;
   the web layer builds its nav, routes and queries from them; the app generates metric
   descriptors; the firmware's generator resolves `requires.engine_fields`.
@@ -70,11 +71,16 @@ Run it with `go run ./cmd/module-check` from `tools/`.
 
 Nothing implements this yet, so it cannot leave draft. Before it can:
 
-- [ ] **`cairn-modules` exists**, with `modgen` validating and emitting the per-surface
-      artefacts, and at least one real module in it.
-- [ ] **A second, independent implementation.** `tools/modulecheck` is one; `modgen`
-      (planned, Rust) will be the other. Until then the vectors describe one reader
-      rather than constraining two — the same caveat `engine/v1`'s analysis half carries.
+- [x] **`cairn-modules` exists**, with `modgen` validating and emitting the per-surface
+      artefacts. **No real module yet**: the one module in it is a manifest and nothing
+      else, which is deliberate at this stage but leaves the `derives`, `metrics`, `views`
+      and `queries` halves of this contract exercised only by the vectors below.
+- [x] **A second, independent implementation.** `tools/modulecheck` here, in Go, and
+      [`modgen`](https://github.com/ParkWardRR/cairn-modules/tree/main/tools/modgen) in
+      Rust, written from [`spec.md`](spec.md) rather than ported from the Go. Both pass
+      all 39 vectors. Writing the second one found a real defect in these vectors:
+      `invalid/bad-status.json` had encoded one implementation's exact phrasing, which a
+      substring match is meant to avoid.
 - [ ] **The grandfathered derivations prove byte-identical.** `boost.boost_psi` and
       `boost.lambda_ratio` are computed in the server's decode path today; a module may
       take over their definition only against the committed `format/v3` conformance
@@ -83,9 +89,29 @@ Nothing implements this yet, so it cannot leave draft. Before it can:
       ([spec §7](spec.md#7-availability-identity-reproducibility)). This must land with
       the first real module, not after: a derived store whose contents depend on an
       unrecorded module set cannot prove it reproduces, and that is invariant 5.
+- [ ] **The `nuxt` and `swift` emit targets.** `modgen` has `fields` and `go`; the other
+      two land with the web and app phases, when there is a consumer to shape them. Until
+      then the `ui` and `ios` keys of this contract are validated but never rendered.
 - [ ] **A decision on `ui.nav.icon`.** It names an icon a surface must already have, which
       couples a contract to a web asset set. It may belong in the module's own UI layer
       instead.
+
+## Known defect in §7
+
+**A module's hash covers every file in its directory, including its `README.md`.** That is
+what §7 says, and both implementations do it — so editing a module's prose changes its
+digest, and therefore the module-set identity, and therefore (once the server folds it in)
+the store contract digest. A documentation fix would make a rebuilt store look like a
+different store.
+
+That is a false positive: a README cannot change what a derivation computes. The rule that
+would be right is **the manifest plus every file the manifest names** (`views`, `queries`,
+and whatever keys are added later) — precise, no "except documentation" carve-out, and it
+extends by itself.
+
+Not yet fixed: nothing consumes identity, so nothing is wrong today, and changing it means
+editing this contract, a new tag and a re-pin in `cairn-modules`. The right moment is when
+the server first folds identity into the store digest and being wrong would cost something.
 
 ## Known coverage gaps
 

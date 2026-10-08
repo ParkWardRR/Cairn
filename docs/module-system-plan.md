@@ -442,11 +442,28 @@ against `store/v1`, and the capture-field enum compared with `engine/v1`'s.
 
 *No code moved. Nothing broke.*
 
-**M2 — the repo and the generator.** Create `cairn-modules`. Port `enginegen`'s
-shape into `modgen`: validate, hash, emit Go/Nuxt/Swift/field-set artefacts.
-`modules/boost/` exists as a manifest and `README.md` with **no implementation**
-— the vector case that proves a declaration-only module validates and generates
-nothing. CI: `modgen` tests, schema conformance, DuckDB-only store tests.
+**M2 — the repo and the generator. Landed 2026-10-08.**
+[cairn-modules](https://github.com/ParkWardRR/cairn-modules) exists, with `modgen`
+in Rust as `enginegen`'s sibling: validate, hash, select and emit. `modules/boost/`
+is a manifest and a `README.md` with **no implementation** — the case that proves a
+declaration-only module validates and generates nothing, and the one a validator is
+most likely to get wrong.
+
+`modgen` is the second independent implementation `module/v1`'s release gate asks
+for, written from the spec rather than ported from the contracts repository's Go
+`modulecheck`. Both now pass all 39 vectors, and writing the second found a defect
+in the first: one vector had encoded Go's exact phrasing, which a substring match
+exists to avoid.
+
+Two of the four emit targets exist. `fields` (the capture-field union, for
+`enginegen`) and `go` (the module set as data, for the server) are written and
+exercised in CI. **`nuxt` and `swift` are deliberately absent**: their consumers
+arrive in M4 and M6, and generating artefacts nobody reads would be guessing at
+their shape. There are no DuckDB store tests yet either, because no module declares
+any SQL.
+
+CI needed a fifth self-hosted runner — one is registered per repository — and the
+`tests/check-runners.sh` policy the other four repositories carry.
 
 **M3 — server, one module.** `cairn-tsdb` loads manifests, applies derivations,
 creates module views, generates `v_metric_samples`, serves named queries.

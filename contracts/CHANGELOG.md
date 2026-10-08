@@ -5,6 +5,16 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `module/v1/module.schema.json`: adds `pedal_pct` to `$defs/engine_field`, so the capture-field vocabulary
+  matches `engine/v1`'s `$defs/field` again after
+  [631dad2](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/631dad2) added it there.
+  Additive, and `module/v1` is draft. **Caught by machine, not by review:** `tools/modulecheck`'s
+  `CheckVocabulary` compares the two enums and failed CI, which is the first real exercise of the guard
+  `engine/v1` was created to need — the two files had drifted by exactly one field.
+- `module/v1/README.md`: records a defect in §7 (a module's hash covers its `README.md`, so a prose edit
+  changes the module-set identity) and marks the two release-gate items `cairn-modules` and the second
+  implementation as met.
+
 Nothing yet.
 
 ## 0.4.0 (2026-10-08)
