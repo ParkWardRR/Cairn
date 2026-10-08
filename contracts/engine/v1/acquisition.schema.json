@@ -163,7 +163,7 @@
     "maybe_ms": { "anyOf": [{ "$ref": "#/$defs/unknown" }, { "type": "integer", "minimum": 1, "maximum": 4294967295 }] },
     "mv_pair": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 0, "maximum": 65535 } },
     "field": {
-      "enum": ["rpm", "speed_kph", "throttle_pct", "timing_advance_deg", "map_kpa", "lambda_e4", "engine_load_pct", "coolant_temp_c", "intake_temp_c", "maf_cgps", "ambient_temp_c", "fuel_trim_short_pct", "fuel_trim_long_pct", "baro_kpa", "abs_load_raw", "fuel_level_pct"],
+      "enum": ["rpm", "speed_kph", "throttle_pct", "timing_advance_deg", "map_kpa", "lambda_e4", "engine_load_pct", "coolant_temp_c", "intake_temp_c", "maf_cgps", "ambient_temp_c", "fuel_trim_short_pct", "fuel_trim_long_pct", "baro_kpa", "abs_load_raw", "fuel_level_pct", "pedal_pct"],
       "$comment": "The capture-record field the stored value feeds. One PID per field. THIS ENUM IS THE SHARED VOCABULARY: contracts/module/v1 names these same strings in a module's requires.engine_fields, so adding a field here is what lets a module ask for it."
     },
     "pid": {

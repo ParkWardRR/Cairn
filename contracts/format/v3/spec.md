@@ -645,7 +645,7 @@ instead of one record half full of sentinels.
 | 16 | 4 | `pids_answered` | u32 bitmap |
 | 20 | 2 | `poll_cadence_ms` | u16, actual measured cadence |
 | 22 | 1 | `fuel_level_pct` | u8, PID `0x2F`, `0xFF` = unavailable |
-| 23 | 1 | `reserved` | zero |
+| 23 | 1 | `pedal_pct` | u8, accelerator pedal position, PID `0x49`, `0xFF` = unavailable (§4.11.2) |
 
 **Pressures are absolute, as the ECU reports them.** Gauge pressure — what a
 boost gauge shows — is `map_kpa − baro_kpa`, and PSI is that times 0.1450377. It
@@ -692,6 +692,30 @@ PID `0x4F` byte D declares the vehicle's own maximum manifold pressure as
 of assuming 255. PID `0x87` is also defined as intake manifold absolute
 pressure with a wider range, though its scaling could not be sourced with
 confidence and it is not yet read.
+
+### 4.11.2 `pedal_pct` is the driver, `throttle_pct` is the engine
+
+These two are not interchangeable and the difference decides whether a log can be
+read at all.
+
+`throttle_pct` (`OBD_SNAPSHOT`, PID `0x11`) is the throttle **plate** angle. On a
+drive-by-wire engine the ECU opens the plate as far as *it* decides, not as far as
+the pedal travelled, so it does not reach 100% at wide-open throttle and its
+reading at WOT is vehicle-specific. Measured on an N20 over a 1002 s drive: 77%
+was the highest value anywhere in the trip, and during the one sample that caught
+8.6 psi of boost at 4142 rpm it read **32%**.
+
+`pedal_pct` (PID `0x49`) is the driver's demand. It is what identifies a pull as
+wide open, and without it a reader cannot separate "the driver asked for
+everything" from "the engine chose to give this much" — which is the first
+question asked of any performance log.
+
+**This field took the record's last reserved byte.** Bundles sealed before it was
+defined carry `0x00` there, which is indistinguishable from a genuine 0% pedal by
+value alone. A reader must therefore consult the `pids_requested` bitmap: a field
+that was never requested carries no measurement regardless of the byte's value.
+That bitmap already existed for exactly this purpose, which is what makes
+reclaiming the byte safe rather than ambiguous.
 
 Unlike `OBD_SNAPSHOT`, this record **is written even when no PID answered**.
 Which of these an ECU supports is only discoverable by asking, so one record of
