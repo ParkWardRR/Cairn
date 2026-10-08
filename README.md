@@ -329,6 +329,7 @@ The current pins, generated from each repository's lock files by
 | [docs/lte-cellular-design.md](docs/lte-cellular-design.md) | LTE and cellular connectivity design: hardware, connectivity paths, radio scheduling, data budgets, security boundaries, and privacy constraints |
 | [docs/guarantee-audit.md](docs/guarantee-audit.md) | Every documented guarantee and the test that verifies it, and what is not covered |
 | [docs/repo-split-plan.md](docs/repo-split-plan.md) | The plan, outcome and follow-up issues of splitting the monorepo into these repositories |
+| [docs/module-system-plan.md](docs/module-system-plan.md) | **Plan, nothing implemented.** Separating interpretation (boost, fuel economy, trims, driving style, speedometer check, place kinds) from the GPS-logging core, as modules that carry their dongle, server, web and iOS parts in one package |
 | [tools/README.md](tools/README.md) | The Go tools and scripts this repository still uses, and what each is for |
 
 **Contracts**

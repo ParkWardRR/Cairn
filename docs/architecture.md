@@ -78,6 +78,13 @@ scheduling, data budgets, and privacy constraints, is in
 4. Raw, sealed bundles are authoritative; everything derived is disposable and
    must prove it reproduces (ROADMAP invariants 1–5).
 
+Cairn's core is GPS logging management — capture, custody, receipt-gated prune,
+decode, trips. Everything that *interprets* the readings (boost, fuel economy,
+fuel trims, driving style, speedometer error, place kinds) is still inside that
+core today; [module-system-plan.md](module-system-plan.md) is the plan to move it
+out into modules that carry their dongle, server, web and iOS parts in one
+package. None of it is implemented.
+
 ## Components
 
 ### Device — Freematics ONE+ Model B (`firmware/cairn-v2`)
