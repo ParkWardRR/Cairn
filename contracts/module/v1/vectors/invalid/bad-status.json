@@ -1,0 +1,13 @@
+{
+  "expect_error": "stub, derived or verified",
+  "manifest": {
+    "schema": "cairn.module/v1-draft",
+    "id": "stub-module",
+    "version": 1,
+    "name": "A module that claims nothing",
+    "status": "provisional",
+    "sources": [
+      "the manifest-only case: a legitimate module with no metric, no engine field and no derivation. A validator must accept it, and this is the first vector it should be held to"
+    ]
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "expect_error": "declare",
+  "note": "a metric must read a view this module creates. v_turbo_curve carries another module's prefix, so nothing in this manifest could create it",
+  "manifest": {
+    "schema": "cairn.module/v1-draft",
+    "id": "boost",
+    "version": 1,
+    "name": "Boost and pulls",
+    "status": "derived",
+    "sources": [
+      "MAP minus barometric is gauge pressure; format/v3 section 4.10 and OBDExtended.BoostGaugeKPa in the server's reference implementation",
+      "the WOT pull detection of store/v1's v_pulls (throttle >= 70%, RPM rise > 500, >= 2 samples)"
+    ],
+    "requires": {
+      "store": [
+        "boost.map_kpa",
+        "boost.baro_kpa",
+        "obd.rpm",
+        "obd.throttle_pct"
+      ],
+      "engine_fields": [
+        "map_kpa",
+        "baro_kpa",
+        "rpm",
+        "throttle_pct"
+      ]
+    },
+    "derives": [
+      {
+        "column": "boost.boost_psi",
+        "type": "DOUBLE",
+        "expr": "CASE WHEN map_kpa < 255 AND baro_kpa > 0 THEN (map_kpa - baro_kpa) * 0.1450377 END",
+        "note": "null, never zero, when MAP is saturated or baro is unknown: a saturated reading is not a measurement of 0 psi"
+      }
+    ],
+    "metrics": [
+      {
+        "key": "boost_psi",
+        "label": "Boost",
+        "unit": "psi",
+        "sample": "pull",
+        "source_view": "v_turbo_curve",
+        "source_column": "peak_boost_psi",
+        "trip_insight": {
+          "label": "Peak boost",
+          "agg": "max",
+          "precision": 1
+        },
+        "dashboard_highlight": true,
+        "ios_gauge": {
+          "field": "boostKpa",
+          "label": "Boost",
+          "unit": "kPa",
+          "precision": 1
+        }
+      }
+    ],
+    "views": [
+      "store/views.sql"
+    ],
+    "queries": "api/queries.yaml",
+    "ui": {
+      "route": "/boost",
+      "nav": {
+        "label": "Turbo",
+        "group": "detail",
+        "order": 20,
+        "icon": "lightning-bolt"
+      },
+      "vehicle_scope": "single"
+    },
+    "ios": {
+      "trip_section": {
+        "label": "Turbo",
+        "order": 20
+      }
+    }
+  }
+}

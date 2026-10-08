@@ -1,0 +1,56 @@
+{
+  "expect_error": "module",
+  "module": "boost",
+  "note": "the queries file names a different module than the manifest that points at it",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "turbo",
+    "queries": [
+      {
+        "name": "curve",
+        "summary": "Boost against RPM for one car, excluding stale readings",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "vehicle_id",
+            "summary": "the car to answer for"
+          }
+        ],
+        "age_threshold_ms": 2000,
+        "sql": "SELECT o.rpm, b.boost_psi, b.map_kpa, b.baro_kpa\nFROM obd o\nASOF JOIN boost b ON o.vehicle_id = b.vehicle_id AND o.boot_id = b.boot_id AND o.mono_ms >= b.mono_ms\nWHERE o.vehicle_id = $vehicle_id AND b.boost_psi IS NOT NULL AND o.mono_ms - b.mono_ms < 2000\nORDER BY o.rpm"
+      },
+      {
+        "name": "peak-for-trip",
+        "summary": "Peak boost on one trip",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "vehicle_id"
+          },
+          {
+            "name": "boot_id",
+            "type": "boot_id"
+          }
+        ],
+        "sql": "SELECT max(boost_psi) AS peak_boost_psi\nFROM boost\nWHERE vehicle_id = $vehicle_id AND boot_id = $boot_id AND boost_psi IS NOT NULL"
+      },
+      {
+        "name": "pulls",
+        "summary": "Every wide-open-throttle pull, newest first",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "vehicle_id"
+          },
+          {
+            "name": "limit",
+            "type": "int",
+            "required": false,
+            "summary": "how many, default is the server's"
+          }
+        ],
+        "sql": "SELECT * FROM v_pulls WHERE vehicle_id = $vehicle_id ORDER BY started_at DESC LIMIT $limit"
+      }
+    ]
+  }
+}

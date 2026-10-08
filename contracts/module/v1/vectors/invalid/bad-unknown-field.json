@@ -1,0 +1,15 @@
+{
+  "expect_error": "unknown field",
+  "note": "additionalProperties is false throughout; an extra key is an error and not an extension point (spec section 2)",
+  "manifest": {
+    "schema": "cairn.module/v1-draft",
+    "id": "stub-module",
+    "version": 1,
+    "name": "A module that claims nothing",
+    "status": "stub",
+    "sources": [
+      "the manifest-only case: a legitimate module with no metric, no engine field and no derivation. A validator must accept it, and this is the first vector it should be held to"
+    ],
+    "notes": "a manifest is not a place to stash data"
+  }
+}

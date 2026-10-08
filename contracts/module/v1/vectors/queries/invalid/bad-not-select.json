@@ -1,0 +1,14 @@
+{
+  "expect_error": "SELECT",
+  "note": "nothing a module declares may write to the store",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "wipe",
+        "sql": "DELETE FROM boost"
+      }
+    ]
+  }
+}

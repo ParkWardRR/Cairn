@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cairn:module:v1-draft",
+  "title": "Cairn module manifest (YAML)",
+  "$comment": "A module is interpretation: it says what a reading MEANS, across the dongle, server, web and app at once. The core is GPS logging management -- capture, custody, receipt-gated prune, decode, trips -- and a module never touches it. DRAFT: the identifier keeps its -draft suffix until the gate in README.md is met. JSON Schema states structure only; what it cannot state is in spec.md and is enforced by the checker: id equals the directory name, exactly one module owns each derived column, derivation order has no cycle, a metric's source view is declared by the module, a query's parameters all appear in its SQL, and a stub claims nothing. NOTE ON WHAT IS ABSENT: there is deliberately no field here through which a module could ask for bundle bytes, a key, a receipt, a prune decision or a network listener. That is structural, not a convention -- additionalProperties is false throughout, so such a request cannot be spelled.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "name", "status", "sources"],
+  "properties": {
+    "schema": { "const": "cairn.module/v1-draft" },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 31,
+      "$comment": "Equals the module's directory name. Namespaces its derived columns, views, queries and generated symbols."
+    },
+    "version": { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "name": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["stub", "derived", "verified"],
+      "$comment": "The same three words, with the same meanings, as engine/v1. stub: identity only, claims nothing -- a module may legitimately be nothing but a manifest. derived: extracted from code that already worked. verified: checked against the real car."
+    },
+    "sources": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "store": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/column_ref" },
+          "$comment": "Columns this module reads, as table.column. Checked against store/v1's schema.json, so a typo fails validation rather than a page. May name a column another module derives; the loader then orders the derivations, and a cycle is an error."
+        },
+        "engine_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/engine_field" },
+          "$comment": "Capture-record fields the dongle must be recording, from engine/v1's acquisition `field` enum. A module STATES a requirement; it cannot make a dongle poll a PID the engine profile does not declare. Unmet at build time is a build error."
+        }
+      }
+    },
+
+    "derives": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["column", "type", "expr"],
+        "properties": {
+          "column": { "$ref": "#/$defs/column_ref" },
+          "type": {
+            "enum": ["BOOLEAN", "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "FLOAT", "DOUBLE", "VARCHAR", "DATE", "TIMESTAMP"],
+            "$comment": "A DuckDB type, from store/v1's vocabulary."
+          },
+          "expr": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "$comment": "A SQL scalar expression over the columns of the row's own table, evaluated by DuckDB during load. SQL, not a new little language: the host already has an evaluator, and adding one would be the thing the retired plugin system got wrong."
+          },
+          "note": { "type": "string", "minLength": 1 }
+        }
+      },
+      "$comment": "Columns this module defines on core tables. Exactly one module may own a column. When the owning module is absent the column exists and is all-null, which is what the store already says about a car that never reported the input."
+    },
+
+    "metrics": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/metric" },
+      "$comment": "What this module contributes to the generic machinery: v_metric_samples, v_health_stats, v_tune_effect, the trip-insight list and the dashboard highlights. Replaces the literal metric list those views carry today."
+    },
+
+    "views": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/rel_path" },
+      "$comment": "SQL files creating this module's views, applied in order. Every view must be named v_<module id>_* or be listed in store/v1 under a grandfathered name."
+    },
+
+    "queries": {
+      "$ref": "#/$defs/rel_path",
+      "$comment": "The module's named, parameterised queries (queries.schema.json). Named queries are how raw SQL leaves the web repository: a route calls a query by name with typed parameters, and no string is ever spliced into SQL."
+    },
+
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "nav", "vehicle_scope"],
+      "properties": {
+        "route": { "type": "string", "pattern": "^/[a-z0-9][a-z0-9-/]*$" },
+        "nav": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "group", "order"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 24 },
+            "group": { "enum": ["everyday", "detail"], "$comment": "detail entries are hidden until the reader asks for them, or is on one." },
+            "order": { "type": "integer", "minimum": 0, "maximum": 999 },
+            "icon": { "type": "string", "pattern": "^[a-z0-9-]+$" }
+          }
+        },
+        "vehicle_scope": {
+          "enum": ["all", "single", "none"],
+          "$comment": "single means this page always answers for exactly one car. A trim map or boost curve pooled over an N20 and a B58 describes no real engine, so it is not a default to get wrong."
+        }
+      }
+    },
+
+    "ios": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "trip_section": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "order"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 24 },
+            "order": { "type": "integer", "minimum": 0, "maximum": 999 }
+          }
+        }
+      },
+      "$comment": "The app's participation is deliberately narrow. Live gauges come from metrics[].ios_gauge, and the app's richer analysis arrives over sync/v1 as the insight payload the server already produces, so a new module usually needs no iOS change at all. The phone is the uplink and a reader, not a sixth place to reimplement a trim map."
+    }
+  },
+
+  "$defs": {
+    "column_ref": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+      "$comment": "table.column, both lowercase snake_case."
+    },
+    "rel_path": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+      "maxLength": 128,
+      "$comment": "A path inside the module's own directory. No leading slash and no `..`: a module cannot reach outside itself."
+    },
+    "engine_field": {
+      "enum": ["rpm", "speed_kph", "throttle_pct", "timing_advance_deg", "map_kpa", "lambda_e4", "engine_load_pct", "coolant_temp_c", "intake_temp_c", "maf_cgps", "ambient_temp_c", "fuel_trim_short_pct", "fuel_trim_long_pct", "baro_kpa", "abs_load_raw", "fuel_level_pct"],
+      "$comment": "MUST stay identical to the `field` enum in engine/v1's acquisition.schema.json. The checker compares the two, so they cannot drift."
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "unit", "sample", "source_view", "source_column"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,39}$",
+          "$comment": "Also an engine/v1 analysis `signals[].key`, which is how a reading finds its limits. A metric with no matching signal is shown without a verdict -- never called normal."
+        },
+        "label": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string", "$comment": "Empty for a dimensionless metric such as lambda." },
+        "sample": {
+          "enum": ["sample", "pull", "boot", "trip"],
+          "$comment": "What one observation is. A CLOSED enum on purpose: it decides how v_metric_samples counts, and `enough observations to judge` means nothing if a module can invent its own unit. boost is per-pull and the trims are per-boot, so two is already the minimum."
+        },
+        "source_view": { "type": "string", "pattern": "^v_[a-z][a-z0-9_]*$" },
+        "source_column": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "trip_insight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label", "agg", "precision"],
+          "properties": {
+            "label": { "type": "string", "minLength": 1, "maxLength": 24 },
+            "agg": { "enum": ["min", "max", "avg", "median"] },
+            "precision": { "type": "integer", "minimum": 0, "maximum": 4 }
+          },
+          "$comment": "Contributed to the trip-detail insight list. Without a contribution point like this, moving a module's code out of the core fails at the shell pages that pull module-owned metrics."
+        },
+        "dashboard_highlight": { "type": "boolean", "default": false },
+        "ios_gauge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["field", "label", "unit", "precision"],
+          "properties": {
+            "field": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9]*$", "$comment": "A decoded property name on the app's live-telemetry record." },
+            "label": { "type": "string", "minLength": 1, "maxLength": 16 },
+            "unit": { "type": "string" },
+            "precision": { "type": "integer", "minimum": 0, "maximum": 4 }
+          }
+        }
+      }
+    }
+  }
+}

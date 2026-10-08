@@ -1,0 +1,13 @@
+{
+  "expect_error": "name",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "Boost Curve",
+        "sql": "SELECT 1"
+      }
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "schema": "cairn.module/v1-draft",
+  "id": "fuel-mixture",
+  "version": 1,
+  "name": "Fuel mixture and trims",
+  "status": "derived",
+  "sources": [
+    "the trim-map binning and staleness rules of store/v1's v_trim_map",
+    "the health sentences of the server's internal/insight, whose three rules this module does not change"
+  ],
+  "requires": {
+    "store": [
+      "boost.stft_pct",
+      "boost.ltft_pct",
+      "boost.lambda_e4",
+      "obd.rpm",
+      "obd.load_pct"
+    ],
+    "engine_fields": [
+      "lambda_e4",
+      "fuel_trim_short_pct",
+      "fuel_trim_long_pct",
+      "rpm",
+      "engine_load_pct"
+    ]
+  },
+  "derives": [
+    {
+      "column": "boost.lambda_ratio",
+      "type": "DOUBLE",
+      "expr": "CASE WHEN lambda_e4 > 0 THEN lambda_e4 / 10000.0 END",
+      "note": "grandfathered: store/v1 declares this column and the server computes it today; the module takes over the definition, not the value"
+    }
+  ],
+  "metrics": [
+    {
+      "key": "lambda",
+      "label": "Air-fuel ratio (lambda)",
+      "unit": "",
+      "sample": "pull",
+      "source_view": "v_pulls",
+      "source_column": "avg_lambda",
+      "trip_insight": {
+        "label": "Avg lambda",
+        "agg": "avg",
+        "precision": 3
+      },
+      "dashboard_highlight": true
+    },
+    {
+      "key": "ltft_pct",
+      "label": "Long-term fuel trim",
+      "unit": "%",
+      "sample": "boot",
+      "source_view": "v_fuel_mixture_trims",
+      "source_column": "ltft_pct",
+      "dashboard_highlight": true
+    },
+    {
+      "key": "stft_pct",
+      "label": "Short-term fuel trim",
+      "unit": "%",
+      "sample": "boot",
+      "source_view": "v_fuel_mixture_trims",
+      "source_column": "stft_pct"
+    }
+  ],
+  "views": [
+    "store/trims.sql"
+  ],
+  "queries": "api/queries.yaml",
+  "ui": {
+    "route": "/fuel",
+    "nav": {
+      "label": "Fuel mix",
+      "group": "detail",
+      "order": 30,
+      "icon": "flame"
+    },
+    "vehicle_scope": "single"
+  }
+}

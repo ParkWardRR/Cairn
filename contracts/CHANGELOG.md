@@ -5,6 +5,28 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- **`module/v1` is new, as a draft.** Modules: interpretation separated from the GPS-logging core, where one
+  module is a package carrying its dongle, server, web and app parts together. It is the delivery mechanism
+  for an acceptance test the project has carried since the rebuild and never met -- "a new vehicle, a new
+  place kind or a new metric can be added by configuration or a documented extension point, not by editing
+  core code". Design: [docs/module-system-plan.md](../docs/module-system-plan.md).
+  - **`module.schema.json`** (the manifest: identity, `requires`, `derives`, `metrics`, `views`, `queries`,
+    `ui`, `ios`) and **`queries.schema.json`** (named, parameterised queries). 39 vectors: 4 valid manifests
+    including the manifest-only case, 23 invalid, 1 valid query file, 11 invalid, plus one YAML-only
+    duplicate-key case.
+  - **It is not the plugin system retired on 2026-10-05.** A module ships declarations, never executable
+    code; it cannot see a bundle byte, hold a key, influence a receipt or a prune, add a listener, or write
+    to the store. That is structural -- `additionalProperties: false` throughout means no such request can
+    be spelled. Derived values are SQL expressions evaluated by DuckDB, so no new interpreter is added on
+    any host.
+  - **`tools/modulecheck`** is the first implementation. Two of its checks need the whole contracts tree and
+    so can only live here: `requires.store` is resolved against `store/v1`'s `schema.json`, and the
+    capture-field enum is compared with `engine/v1`'s. The second matters most -- `engine/v1` exists because
+    two copies of one vocabulary drifted, and this is the guard against repeating it with three.
+  - **Nothing implements it yet**, so it cannot leave draft. Five items remain, listed in its README; the
+    one that must not slip is folding module-set identity into the store digest and `v_reproducibility`,
+    because a derived store whose contents depend on an unrecorded module set cannot prove it reproduces.
+  - **Releases nothing yet.** Suggested release with `engine/v1`: `contracts-v0.4.0`.
 - **`engine/v1` is new, as a draft.** It ends a split: engine profiles were two files in two
   repositories under two schema identifiers, and the server's own `internal/engine` doc comment said
   they "share an engine id (`bmw-n20`) and nothing else". The acquisition half (`cairn.engine/v1-draft`,

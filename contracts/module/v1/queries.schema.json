@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:cairn:module-queries:v1-draft",
+  "title": "Cairn module named queries (YAML)",
+  "$comment": "A module's named, parameterised queries. This is how raw SQL leaves the web repository: a route calls a query by name with typed parameters, and the server binds them. Today the web layer splices a regex-checked vehicle id into SQL strings, and keeps a generated inventory of 88 of them; a named query with bound parameters removes that surface by construction rather than by care.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "module", "queries"],
+  "properties": {
+    "schema": { "const": "cairn.module-queries/v1-draft" },
+    "module": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "$comment": "The owning module id. Must equal the manifest's." },
+    "queries": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/query" }
+    }
+  },
+  "$defs": {
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "sql"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$",
+          "$comment": "Reached as POST /q/<module>/<name>. Unique within the module."
+        },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "params": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/param" },
+          "$comment": "Every parameter must appear as $name in the SQL, and every $name in the SQL must be declared. The checker enforces both directions, so a query cannot silently ignore an argument or read an unbound one."
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192,
+          "$comment": "One SELECT. Parameters are named placeholders ($vehicle_id), never interpolated text. A statement that is not a SELECT, or that holds a semicolon outside a string, is rejected: a query is a question, and nothing a module declares may write to the store."
+        },
+        "age_threshold_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "$comment": "When the query relies on an ASOF join, the staleness bound it applies, repeated here so a reader can state it. An ASOF join always finds SOMETHING, so staleness has to be an explicit predicate and never a default -- the rule store/v1's views already follow."
+        }
+      }
+    },
+    "param": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+        "type": {
+          "enum": ["vehicle_id", "boot_id", "date", "int", "number", "string"],
+          "$comment": "vehicle_id and boot_id are 32 lowercase hex characters and are their own types because they are the two the store is partitioned by, and the two a caller is most likely to pass from a URL."
+        },
+        "required": { "type": "boolean", "default": true },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    }
+  }
+}

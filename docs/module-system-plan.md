@@ -183,11 +183,11 @@ requires:
     - boost.baro_kpa
     - obd.rpm
     - obd.throttle_pct
-  engine_fields:                  # CAIRN_FIELD_* the dongle must be recording
-    - MAP_KPA
-    - BARO_KPA
-    - RPM
-    - THROTTLE_PCT
+  engine_fields:                  # from engine/v1's acquisition `field` enum
+    - map_kpa
+    - baro_kpa
+    - rpm
+    - throttle_pct
 
 # Columns this module defines on core tables. SQL expressions, evaluated by
 # DuckDB during load. Exactly one module may own a column.
@@ -343,7 +343,7 @@ The existing `make` targets extend rather than change:
 | `firmware ENGINES=...` | accepts `MODULES=...` |
 
 A module cannot make the dongle poll a PID that the engine profile does not
-declare. It can only say "I need `MAP_KPA`" and be told no. With one dongle and
+declare. It can only say "I need `map_kpa`" and be told no. With one dongle and
 no spare, that asymmetry is the whole safety argument: the failure mode is a
 build error on the Mac, never a changed polling loop in the car.
 
@@ -398,11 +398,11 @@ Per-module inventory. Every path is real and was read while writing this.
 
 | Module | Server | Web | iOS | Dongle |
 |---|---|---|---|---|
-| `boost` | `v_boost_curve`, `v_pulls`; `OBDExtended.BoostGaugeKPa`/`BoostPSI`; `boost_psi` derivation; `insight.Boost` | `boost.vue` (282); `analytics/boost-curve`, `boost-detail` (41), `pulls`; peak-boost in `trips/[bootId]/insights` and `dashboard/highlights` | `boostKpa`/`hasBoost` descriptors; `MainView.swift:325` | `MAP_KPA`, `BARO_KPA` |
-| `fuel-economy` | — (all derivation is client-side today) | `economy.vue` (307); `analytics/fuel-economy` (65); `useFuelMath.ts` (37); `trips/[bootId]/fuel`; ethanol blend in `stores/ui.ts` | — | `MAF_CGPS` |
-| `fuel-mixture` | `v_trim_map`; the metric list behind `v_metric_samples`/`v_health_stats`/`v_tune_effect`; `insight.Lambda/LTFT/STFT`; `lambda_ratio` derivation; `Generic()` profile | `fuel.vue` (376); `analytics/trim-map` (27), `fuel-health` (40); avg-lambda in `insights` and `highlights` | health findings over `sync/v1` — no change | `LAMBDA`, `STFT`, `LTFT` |
+| `boost` | `v_boost_curve`, `v_pulls`; `OBDExtended.BoostGaugeKPa`/`BoostPSI`; `boost_psi` derivation; `insight.Boost` | `boost.vue` (282); `analytics/boost-curve`, `boost-detail` (41), `pulls`; peak-boost in `trips/[bootId]/insights` and `dashboard/highlights` | `boostKpa`/`hasBoost` descriptors; `MainView.swift:325` | `map_kpa`, `baro_kpa` |
+| `fuel-economy` | — (all derivation is client-side today) | `economy.vue` (307); `analytics/fuel-economy` (65); `useFuelMath.ts` (37); `trips/[bootId]/fuel`; ethanol blend in `stores/ui.ts` | — | `maf_cgps` |
+| `fuel-mixture` | `v_trim_map`; the metric list behind `v_metric_samples`/`v_health_stats`/`v_tune_effect`; `insight.Lambda/LTFT/STFT`; `lambda_ratio` derivation; `Generic()` profile | `fuel.vue` (376); `analytics/trim-map` (27), `fuel-health` (40); avg-lambda in `insights` and `highlights` | health findings over `sync/v1` — no change | `lambda_e4`, `fuel_trim_short_pct`, `fuel_trim_long_pct` |
 | `driving-style` | IMU peak/event aggregation | `behavior.vue` (289); `analytics/imu` (18) | — | — (IMU is core capture) |
-| `speedometer-check` | `v_speed_agreement` | `calibration.vue` (166); `analytics/speed-agreement` | — | `SPEED_KPH` |
+| `speedometer-check` | `v_speed_agreement` | `calibration.vue` (166); `analytics/speed-agreement` | — | `speed_kph` |
 | `places` | — | `places.vue` (761); `places.get`, `places/saved/*`; `shared/utils/placeKinds.ts`; `docs/places.md` | — | — |
 
 Stays core: `v_gnss_sources` (GNSS provenance — internal versus phone fix),
@@ -417,13 +417,30 @@ contribute.
 
 Each phase ends green and deployed; nothing is half-migrated across a release.
 
-**M1 — the contract.** `contracts/module/v1`: `module.schema.json`, `SPEC.md`,
-valid and negative vectors. Absorb the unreleased `contracts/engine/v1`
-([#20](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/20)) as
-two sections of one document — `cairn.engine/v1-draft` becomes the *acquisition*
-half and `cairn.engine-analysis/v0` the *analysis* half of a module's engine
-relationship, which is what closes the drift noted in §1. Tag `contracts-v0.4.0`.
-*No code moves. Nothing can break.*
+**M1 — the contract. Landed 2026-10-08, as a draft; not yet tagged.**
+[`contracts/engine/v1`](../contracts/engine/v1/) absorbed the two engine-profile
+drafts as the *acquisition* and *analysis* halves of one document, closing the
+drift noted in §1 and the substance of
+[#20](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/20); its
+`field` enum is now the shared capture vocabulary.
+[`contracts/module/v1`](../contracts/module/v1/) followed: the manifest and
+named-query schemas, the normative spec, and 39 vectors.
+
+Both are **draft**, and both keep their in-document identifiers (`-draft`, `v0`),
+so no producer or consumer had to change — promoting a directory makes a contract
+citable, promoting an identifier claims the bytes are settled, and only the first
+was true. Each carries its own release gate; `contracts-v0.4.0` is a maintainer's
+call, not CI's.
+
+Two checkers came with them, both in the contracts repository:
+`tools/enginelang` is a third, independent implementation of the formula language
+written from the spec rather than ported from the firmware's Rust — it passed all
+105 expression vectors on its first complete run, which is what the draft spec
+named as its release gate. `tools/modulecheck` validates manifests, and its two
+most valuable checks need the whole contracts tree: `requires.store` resolved
+against `store/v1`, and the capture-field enum compared with `engine/v1`'s.
+
+*No code moved. Nothing broke.*
 
 **M2 — the repo and the generator.** Create `cairn-modules`. Port `enginegen`'s
 shape into `modgen`: validate, hash, emit Go/Nuxt/Swift/field-set artefacts.

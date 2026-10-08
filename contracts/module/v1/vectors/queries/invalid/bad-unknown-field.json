@@ -1,0 +1,14 @@
+{
+  "expect_error": "unknown field",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "curve",
+        "sql": "SELECT 1",
+        "cache_ttl_s": 30
+      }
+    ]
+  }
+}

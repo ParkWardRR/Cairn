@@ -1,0 +1,19 @@
+{
+  "expect_error": "type",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "curve",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "uuid"
+          }
+        ],
+        "sql": "SELECT * FROM boost WHERE vehicle_id = $vehicle_id"
+      }
+    ]
+  }
+}

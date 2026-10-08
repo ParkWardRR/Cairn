@@ -1,0 +1,21 @@
+{
+  "expect_error": "a stub claims nothing",
+  "manifest": {
+    "schema": "cairn.module/v1-draft",
+    "id": "stub-module",
+    "version": 1,
+    "name": "A module that claims nothing",
+    "status": "stub",
+    "sources": [
+      "the manifest-only case: a legitimate module with no metric, no engine field and no derivation. A validator must accept it, and this is the first vector it should be held to"
+    ],
+    "derives": [
+      {
+        "column": "boost.boost_psi",
+        "type": "DOUBLE",
+        "expr": "CASE WHEN map_kpa < 255 AND baro_kpa > 0 THEN (map_kpa - baro_kpa) * 0.1450377 END",
+        "note": "null, never zero, when MAP is saturated or baro is unknown: a saturated reading is not a measurement of 0 psi"
+      }
+    ]
+  }
+}

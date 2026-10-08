@@ -1,0 +1,11 @@
+{
+  "expect_error": "sources",
+  "manifest": {
+    "schema": "cairn.module/v1-draft",
+    "id": "stub-module",
+    "version": 1,
+    "name": "A module that claims nothing",
+    "status": "stub",
+    "sources": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "expect_error": "declared",
+  "note": "$boot_id is read but never declared, so the server would bind nothing for it",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "curve",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "vehicle_id"
+          }
+        ],
+        "sql": "SELECT * FROM boost WHERE vehicle_id = $vehicle_id AND boot_id = $boot_id"
+      }
+    ]
+  }
+}

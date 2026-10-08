@@ -7,6 +7,7 @@ it (`.github/workflows/ci.yml`).
 |---|---|---|
 | `cmd/contract-check`, `contractcheck/` | Checks every protocol version under `contracts/` is complete and valid | `contracts.yml` |
 | `cmd/engine-check`, `enginelang/` | A third, independent implementation of the `engine/v1` formula language, compiler and bytecode evaluator, run against `contracts/engine/v1/vectors/expr.txt`. Deliberately has no `--update`: a checker that can rewrite its own vectors is not a check | `contracts.yml` |
+| `cmd/module-check`, `modulecheck/` | Validates `contracts/module/v1` manifests and query files against its vectors: the rules a JSON Schema cannot state, plus the two that need the whole contracts tree — that a required column exists in `store/v1`, and that the capture-field enum has not drifted from `engine/v1` | `contracts.yml` |
 | `cmd/link-check`, `links/` | Fails if a relative link in any markdown file does not resolve | `docs.yml` |
 | `cmd/pin-dashboard`, `pindash/` | Regenerates the README's table of pins from each repository's lock files | `pins.yml` |
 | `cmd/uplink-vectors`, `uplinkvectors/` | Generates and checks `contracts/uplink/v1/vectors`, and is the reference for its request-signing rules | `ci.yml` (the test fails if the checked-in vectors drift) |

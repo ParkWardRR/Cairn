@@ -1,0 +1,21 @@
+{
+  "schema": "cairn.module/v1-draft",
+  "id": "places",
+  "version": 1,
+  "name": "Places",
+  "status": "derived",
+  "sources": [
+    "the place kinds and keyword matching the web dashboard carries in shared/utils/placeKinds.ts"
+  ],
+  "queries": "api/queries.yaml",
+  "ui": {
+    "route": "/places",
+    "nav": {
+      "label": "Places",
+      "group": "everyday",
+      "order": 60,
+      "icon": "map-pin"
+    },
+    "vehicle_scope": "all"
+  }
+}

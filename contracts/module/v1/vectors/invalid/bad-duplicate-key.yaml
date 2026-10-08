@@ -1,0 +1,17 @@
+# expect-error: duplicate
+#
+# The only vector here that must be YAML. A duplicate mapping key cannot be written in
+# JSON, and many YAML parsers accept one silently, keeping the last value -- so a review
+# can see `status: verified` while the loader reads `status: stub`. A parser that does not
+# reject this is not safe to load a manifest with.
+#
+# The Go checker skips it (it reads the JSON vectors); any YAML-based implementation must
+# reject it. Recorded as a coverage gap in README.md.
+schema: cairn.module/v1-draft
+id: boost
+version: 1
+name: Boost and pulls
+status: verified
+status: stub
+sources:
+  - a duplicate mapping key

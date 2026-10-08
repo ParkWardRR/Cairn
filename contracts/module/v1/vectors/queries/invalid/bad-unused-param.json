@@ -1,0 +1,24 @@
+{
+  "expect_error": "appear",
+  "note": "boot_id is declared but never used, so a caller's argument would be silently ignored",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "curve",
+        "params": [
+          {
+            "name": "vehicle_id",
+            "type": "vehicle_id"
+          },
+          {
+            "name": "boot_id",
+            "type": "boot_id"
+          }
+        ],
+        "sql": "SELECT * FROM boost WHERE vehicle_id = $vehicle_id"
+      }
+    ]
+  }
+}

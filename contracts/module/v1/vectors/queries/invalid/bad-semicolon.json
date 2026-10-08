@@ -1,0 +1,14 @@
+{
+  "expect_error": "semicolon",
+  "note": "one statement per query",
+  "queries_file": {
+    "schema": "cairn.module-queries/v1-draft",
+    "module": "boost",
+    "queries": [
+      {
+        "name": "two",
+        "sql": "SELECT 1; DROP TABLE boost"
+      }
+    ]
+  }
+}

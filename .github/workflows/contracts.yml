@@ -10,11 +10,13 @@ on:
   push:
     branches: [main]
     paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**',
-            'tools/enginelang/**', 'tools/cmd/engine-check/**', '.github/workflows/contracts.yml']
+            'tools/enginelang/**', 'tools/cmd/engine-check/**',
+            'tools/modulecheck/**', 'tools/cmd/module-check/**', '.github/workflows/contracts.yml']
   pull_request:
     branches: [main]
     paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**',
-            'tools/enginelang/**', 'tools/cmd/engine-check/**', '.github/workflows/contracts.yml']
+            'tools/enginelang/**', 'tools/cmd/engine-check/**',
+            'tools/modulecheck/**', 'tools/cmd/module-check/**', '.github/workflows/contracts.yml']
 
 jobs:
   contracts:
@@ -46,3 +48,12 @@ jobs:
         run: |
           go test ./enginelang/
           go run ./cmd/engine-check
+
+      - name: Module manifests agree with their vectors, and the shared vocabulary has not drifted
+        # module/v1 names engine/v1's capture-field enum and store/v1's columns. engine/v1
+        # exists because two copies of one vocabulary drifted apart; CheckVocabulary is the
+        # guard against repeating that with three. See contracts/module/v1/README.md.
+        working-directory: tools
+        run: |
+          go test ./modulecheck/
+          go run ./cmd/module-check
