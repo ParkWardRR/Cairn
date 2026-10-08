@@ -261,7 +261,7 @@ The split happened on 2026-10-05; the plan and what was executed are in
 A repository does not copy them; it pins a release by tag **and** commit (`contracts.lock`) and
 fetches that, so a change to a contract cannot reach an implementation unnoticed. The collection is
 tagged `contracts-vX.Y.Z` only when contract content changes; the latest is
-**`contracts-v0.2.0`** (2026-10-05). Each protocol directory is versioned independently, and a
+**`contracts-v0.4.0`** (2026-10-08). Each protocol directory is versioned independently, and a
 breaking change adds a new directory (`format/v4`) rather than editing an old one.
 
 | Protocol | What it is | Producers / consumers | Version | Status |
@@ -269,8 +269,10 @@ breaking change adds a new directory (`format/v4`) rather than editing an old on
 | [`format`](contracts/format/v3/README.md) | Sealed trip bundles: encrypted segments, manifest, receipt, update descriptor | firmware writes; server and emulator read | v3 | **stable**; 59 byte-exact vectors including negatives, reproduced by three implementations (Go, Rust, C) |
 | [`enrolment`](contracts/enrolment/v1/README.md) | The sealed enrolment blob and the USB console protocol | firmware produces; server verifies | v1 | **stable**; vectors (including 32 negative blobs and 5 stateful sequences) reproduced by two implementations; exercised on real hardware |
 | [`sync`](contracts/sync/v1/README.md) | The phone's API to the server: signing, enrolment, push/pull, snapshot, bundle relay | server implements; app consumes | v1 | **draft**: the server implements it, the iOS app does not yet; 83 generated exchanges, no independent consumer has validated them |
-| [`ble`](contracts/ble/v1/README.md) | The dongle's BLE service: phone GPS, status, bundle offload, device info, check-in | firmware serves; app consumes | v1 | companion **stable**; offload implemented on the firmware and a Go reference client but not on the phone; `device-info` and `checkin` **draft** |
+| [`ble`](contracts/ble/v1/README.md) | The dongle's BLE service: phone GPS, status, bundle offload, device info, check-in | firmware serves; app consumes | v1 | companion **stable**; `device-info` **stable** since 0.4.0 (four implementations agree); offload implemented on the firmware and a Go reference client but not on the phone; `checkin` and the uplink/instruction characteristics **draft** |
 | [`store`](contracts/store/v1/README.md) | The analytical store the web dashboard queries (`schema.json`, machine-checked) | server produces; web consumes | v1 | **draft** |
+| [`engine`](contracts/engine/v1/README.md) | Engine profiles in two halves: how to read an ECU (PIDs, the formula language, cadence, sleep) and what the readings mean (labels, axes, warning limits) | firmware compiles the acquisition half; server reads the analysis half | v1 | **draft**: 105 formula vectors reproduced by three implementations (Rust, C, Go), 20 invalid profiles, 19 analysis profiles; the in-document identifiers keep their `-draft`/`v0` suffixes |
+| [`module`](contracts/module/v1/README.md) | Modules: interpretation separated from the logging core, one package carrying its dongle, server, web and app parts. Manifest, derived columns, metrics, named queries | server, web, app and the firmware's generator consume | v1 | **draft**: schemas, spec and 39 vectors, one checker; nothing implements it yet |
 | [`uplink`](contracts/uplink/v1/README.md) | How a dongle with Wi-Fi or LTE uploads bundles itself: device-signed requests, a pinned server key, offer/chunk/commit/receipt | reserved for the firmware; server | v1 | **draft**: spec and 15 vectors only, nothing implements it |
 | [`share`](contracts/share/v1/README.md) | A portable trip export with redaction | reserved | v1 | **reserved, draft**: no design until the threat model's sharing section is satisfied |
 

@@ -5,6 +5,20 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.4.0 (2026-10-08)
+
+**Two new protocol directories, both draft: `engine/v1` and `module/v1`.** Nothing existing is renamed,
+renumbered or retyped and no vector changed, so every consumer pinning 0.3.0 is still satisfied by this tag
+and may bump at its own pace. `ble/v1`'s `DEVICE_INFO` leaves draft here rather than in the separate
+`0.3.1` its entry below suggested.
+
+Both new contracts keep their in-document identifiers (`cairn.engine/v1-draft`, `cairn.engine-analysis/v0`,
+`cairn.module/v1-draft`), so **no producer or consumer has to change to adopt this tag**. Promoting a
+directory makes a contract findable and citable; promoting an identifier says the bytes are settled, and
+only the first is true of either. Each carries its own release gate, in its README.
+
 - **`module/v1` is new, as a draft.** Modules: interpretation separated from the GPS-logging core, where one
   module is a package carrying its dongle, server, web and app parts together. It is the delivery mechanism
   for an acceptance test the project has carried since the rebuild and never met -- "a new vehicle, a new
@@ -26,7 +40,7 @@ publishes. Protocol directories are versioned independently of the collection ta
   - **Nothing implements it yet**, so it cannot leave draft. Five items remain, listed in its README; the
     one that must not slip is folding module-set identity into the store digest and `v_reproducibility`,
     because a derived store whose contents depend on an unrecorded module set cannot prove it reproduces.
-  - **Releases nothing yet.** Suggested release with `engine/v1`: `contracts-v0.4.0`.
+  - **Released in this tag** as a draft directory. It constrains nothing yet, because nothing implements it.
 - **`engine/v1` is new, as a draft.** It ends a split: engine profiles were two files in two
   repositories under two schema identifiers, and the server's own `internal/engine` doc comment said
   they "share an engine id (`bmw-n20`) and nothing else". The acquisition half (`cairn.engine/v1-draft`,
@@ -46,11 +60,11 @@ publishes. Protocol directories are versioned independently of the collection ta
     `tools/cmd/engine-check` in the Contracts workflow. It passed all 105 vectors on its first complete
     run, so the Rust generator and the C evaluator do match the normative text. This was the release gate
     named in the draft spec; the items remaining before `engine/v1` leaves draft are listed in its README.
-  - **Releases nothing yet.** Suggested release when a maintainer next tags: `contracts-v0.4.0` (minor;
-    a new protocol directory, no existing contract touched).
+  - **Released in this tag** as a draft directory: a minor, since it adds a protocol and touches no
+    existing one.
 - `uplink/v1/spec.md` §8: fixes the relative link to `docs/lte-cellular-design.md`, which pointed one
-  directory too high and so resolved nowhere. **Releases nothing** — no normative text, byte layout or
-  vector is touched; it is listed here only because the file sits under `contracts/`.
+  directory too high and so resolved nowhere. **Would have released nothing on its own** — no normative
+  text, byte layout or vector is touched; it is listed here only because the file sits under `contracts/`.
 - `ble/v1/device-info.md`: `DEVICE_INFO` (characteristic `0040`) is **out of draft**. Three independent
   implementations now agree on `vectors/device-info/vectors.json`: the Go reference (`tools/blevectors`),
   a Python-on-OpenSSL cross-check, the firmware's C
@@ -59,7 +73,8 @@ publishes. Protocol directories are versioned independently of the collection ta
   ([ParkWardRR/cairn-ios-companion-app#27](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/27),
   7/7 vector rows). The `UPLINK_EVENT`, `INSTRUCTION`, `INSTRUCTION_RESULT` and `HOME_TRIGGER`
   characteristics in the same file stay **draft** until they also have cross-implementation agreement.
-  Suggested release: `contracts-v0.3.1` (patch; a documentation status change, no vector or byte changed).
+  **Released in this tag** instead of the suggested `contracts-v0.3.1`: a status change with no vector or
+  byte changed, folded into the minor rather than tagged separately.
 
 ## 0.3.0 (2026-10-06)
 
