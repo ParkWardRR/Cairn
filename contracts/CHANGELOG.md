@@ -5,6 +5,18 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- **`module/v1/vectors/valid-boost.json`: the `boost.boost_psi` expression was wrong, and would have silently
+  changed the column.** It read `map_kpa < 255 AND baro_kpa > 0`, but the server's reference
+  `OBDExtended.BoostPSI()` returns a value whenever **both** readings are present: it does not exclude a
+  saturated manifold reading, and does not treat a barometric reading of 0 as absent. Saturation is excluded
+  by the views that read the column (`v_boost_curve`, `v_pulls`), not by the column itself — so the vector
+  would have turned every saturated sample's boost into `NULL`.
+  Found by building §4's own gate rather than by review: the server's new
+  `TestBoostPSIDerivationReproducesTheReference` evaluates the expression in DuckDB against the Go reference
+  over 2,056 `(map, baro)` combinations, and `TestTheRejectedExpressionReallyDiffers` pins the defect so it
+  cannot come back believed equivalent. `lambda_ratio` was checked the same way over all 65,536 values and
+  was already right.
+
 - **`module/v1/spec.md` §7: a module's hash now covers its manifest and every file the manifest names, not
   its whole directory.** The old rule made a `README.md` edit change the module's digest, the module-set
   identity and therefore the store contract digest — so a prose fix would make a rebuilt store look like a

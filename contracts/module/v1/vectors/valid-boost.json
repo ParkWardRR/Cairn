@@ -26,8 +26,8 @@
     {
       "column": "boost.boost_psi",
       "type": "DOUBLE",
-      "expr": "CASE WHEN map_kpa < 255 AND baro_kpa > 0 THEN (map_kpa - baro_kpa) * 0.1450377 END",
-      "note": "null, never zero, when MAP is saturated or baro is unknown: a saturated reading is not a measurement of 0 psi"
+      "expr": "CASE WHEN map_kpa IS NOT NULL AND baro_kpa IS NOT NULL THEN (map_kpa::DOUBLE - baro_kpa::DOUBLE) * 0.1450377 END",
+      "note": "reproduces the column exactly as the server's decode path computes it today: a value whenever BOTH readings are present. It does NOT exclude a saturated manifold reading and does NOT treat a barometric reading of 0 as absent -- saturation is excluded by the views that read the column, not by the column. An earlier draft of this vector had `map_kpa < 255 AND baro_kpa > 0`, which would have silently turned every saturated sample's boost into NULL"
     }
   ],
   "metrics": [
