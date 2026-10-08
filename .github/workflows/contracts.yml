@@ -9,10 +9,12 @@ name: Contracts
 on:
   push:
     branches: [main]
-    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**', '.github/workflows/contracts.yml']
+    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**',
+            'tools/enginelang/**', 'tools/cmd/engine-check/**', '.github/workflows/contracts.yml']
   pull_request:
     branches: [main]
-    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**', '.github/workflows/contracts.yml']
+    paths: ['contracts/**', 'tools/contractcheck/**', 'tools/cmd/contract-check/**',
+            'tools/enginelang/**', 'tools/cmd/engine-check/**', '.github/workflows/contracts.yml']
 
 jobs:
   contracts:
@@ -34,3 +36,13 @@ jobs:
       - name: Every protocol version is complete and valid
         working-directory: tools
         run: go run ./cmd/contract-check ../contracts
+
+      - name: The engine formula language agrees with its vectors
+        # A third, independent implementation of cairn.engine/v1-draft, written from
+        # contracts/engine/v1/spec.md rather than ported from the firmware's Rust. Two
+        # implementations written together agree on the mistakes they were written with;
+        # this is the one that makes the vectors evidence. See contracts/engine/v1/README.md.
+        working-directory: tools
+        run: |
+          go test ./enginelang/
+          go run ./cmd/engine-check

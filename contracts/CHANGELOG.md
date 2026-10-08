@@ -5,6 +5,27 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- **`engine/v1` is new, as a draft.** It ends a split: engine profiles were two files in two
+  repositories under two schema identifiers, and the server's own `internal/engine` doc comment said
+  they "share an engine id (`bmw-n20`) and nothing else". The acquisition half (`cairn.engine/v1-draft`,
+  how to read an ECU) came from the firmware's `engines/engine.schema.draft.json` and
+  `engines/SPEC.draft.md`; the analysis half (`cairn.engine-analysis/v0`, what a reading means) was an
+  undocumented Go struct and now has a schema. Closes the substance of
+  [#20](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/issues/20).
+  - **The in-document identifiers are unchanged** — a profile still says `schema: cairn.engine/v1-draft` —
+    so no producer or consumer has to change for this to land. Promoting the directory makes the contract
+    citable; promoting the identifiers says the bytes are settled, and only the first is true yet.
+  - **Vectors:** `vectors/expr.txt` (105 formula-language vectors: 50 evaluate, 23 reject, 32 raw
+    bytecode), `vectors/invalid/` (20 acquisition profiles that must be rejected) and
+    `vectors/analysis/` (19 analysis profiles, 4 valid and 15 invalid — new, and checked against the
+    server's reader while they were written).
+  - **A third implementation now exists.** `tools/enginelang` implements the formula language, compiler
+    and bytecode evaluator in Go, written from the spec rather than ported from the Rust, and run by
+    `tools/cmd/engine-check` in the Contracts workflow. It passed all 105 vectors on its first complete
+    run, so the Rust generator and the C evaluator do match the normative text. This was the release gate
+    named in the draft spec; the items remaining before `engine/v1` leaves draft are listed in its README.
+  - **Releases nothing yet.** Suggested release when a maintainer next tags: `contracts-v0.4.0` (minor;
+    a new protocol directory, no existing contract touched).
 - `uplink/v1/spec.md` §8: fixes the relative link to `docs/lte-cellular-design.md`, which pointed one
   directory too high and so resolved nowhere. **Releases nothing** — no normative text, byte layout or
   vector is touched; it is listed here only because the file sits under `contracts/`.

@@ -6,6 +6,7 @@ it (`.github/workflows/ci.yml`).
 | Path | What it is | Used by |
 |---|---|---|
 | `cmd/contract-check`, `contractcheck/` | Checks every protocol version under `contracts/` is complete and valid | `contracts.yml` |
+| `cmd/engine-check`, `enginelang/` | A third, independent implementation of the `engine/v1` formula language, compiler and bytecode evaluator, run against `contracts/engine/v1/vectors/expr.txt`. Deliberately has no `--update`: a checker that can rewrite its own vectors is not a check | `contracts.yml` |
 | `cmd/link-check`, `links/` | Fails if a relative link in any markdown file does not resolve | `docs.yml` |
 | `cmd/pin-dashboard`, `pindash/` | Regenerates the README's table of pins from each repository's lock files | `pins.yml` |
 | `cmd/uplink-vectors`, `uplinkvectors/` | Generates and checks `contracts/uplink/v1/vectors`, and is the reference for its request-signing rules | `ci.yml` (the test fails if the checked-in vectors drift) |
