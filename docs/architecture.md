@@ -13,7 +13,7 @@ The trust model that ties these together is in
 ```mermaid
 flowchart LR
   subgraph Car
-    D["Freematics ONE+ (ESP32)<br/>GNSS · IMU · OBD · microSD<br/>encrypted append-only segments"]
+    D["Freematics ONE+ (ESP32)<br/>GNSS · IMU · OBD · microSD<br/>SIM7600A-H LTE modem<br/>encrypted append-only segments"]
   end
   P["iPhone<br/>Cairn Companion"]
   subgraph Host["Homelab host"]
@@ -29,6 +29,8 @@ flowchart LR
   D -- "BLE: GPS assist, diagnostics,<br/>bundle offload (ciphertext)" --- P
   P -- "LAN · signed requests<br/>(sync + bundle relay)" --> A
   P -- "Tailnet" --> TS --> A
+  D -. "Wi-Fi at home<br/>(bounded slots, planned)" .-> A
+  D -- "LTE fallback<br/>(whole sealed bundles)" --> I
   A -- "relay → intake" --> CAS
   I -.-> CAS
   I -. escrowed roots .-> KS
@@ -38,6 +40,31 @@ flowchart LR
   KS -. decrypt .-> TSDB
   A --- AS[("sync log · audit")]
 ```
+
+### Transport paths
+
+The dongle has three transport paths, tried in order of preference:
+
+1. **BLE → iPhone → Tailscale/LAN → server** (shipped). The phone pulls
+   sealed bundles over BLE and uploads them. The preferred everyday path.
+2. **Wi-Fi at home** (planned). Bounded slots when parked near a known
+   network; BLE is the home state and the one radio is time-sliced.
+3. **LTE fallback** (working since 2026-10-07). Carries **whole sealed bundles**,
+   not digests — the owner reversed the digest plan, because a digest earns no
+   receipt and so can never authorise a prune, which means a digest-only path
+   never frees the card. Compression was measured and dropped: sealed segments
+   are AEAD ciphertext that `gzip -9` reduces only to 90% of raw, and a trip is
+   about 230 KB anyway. User-set monthly caps are still to be enforced on the
+   dongle ([firmware #21](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/21)).
+   The SIM7600A-H on the car's dongle is LTE-FDD B2/B4/B12 only, so no B71 and
+   no B13 — Verizon is out. TLS runs on the ESP32 rather than in the modem,
+   because the Tailscale Funnel ingress requires SNI; measured throughput is
+   ~3 KB/s, bounded by the 115200 UART and an `AT+CIPSEND` round trip per
+   1024 bytes.
+
+The full cellular design, including connectivity paths to the homelab, radio
+scheduling, data budgets, and privacy constraints, is in
+[lte-cellular-design.md](lte-cellular-design.md).
 
 ## Core rules
 
@@ -106,6 +133,8 @@ capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, 
    → receipt handed back over BLE → verified prune
         ↓
    CAS (ciphertext) → decode with escrowed key → PostgreSQL / DuckDB → UI, app sync
+
+   (planned) Wi-Fi at home or LTE fallback → same offer/chunk/commit/receipt protocol
 ```
 
 ## Listeners
@@ -116,9 +145,14 @@ capture → AEAD frames on SD → seal (manifest: vehicle, assignment, counter, 
 | `:8444` app API | server TLS; signed requests | iOS app on LAN |
 | `127.0.0.1:8445` app API | loopback HTTP; signed requests; Tailscale Serve headers trusted only from loopback | iOS app over the Tailnet |
 | `127.0.0.1:8480` cairn-tsdb | loopback | UI server |
+| *(planned)* device uplink | TLS 1.3; pinned SPKI; device-signed requests | Dongle over Wi-Fi or LTE ([uplink/v1](../contracts/uplink/v1/spec.md)) |
 
 Remote access is **Tailscale only**, on the host, never Funnel, never port
 forwarding. See [tailscale-deployment.md](https://github.com/ParkWardRR/cairn-vehicle-server/blob/main/docs/tailscale-deployment.md).
+The planned device uplink is a narrow, authenticated surface for the dongle
+only; see [lte-cellular-design.md](lte-cellular-design.md) §3 for the
+connectivity path options and [uplink/v1 §8](../contracts/uplink/v1/spec.md)
+for reachability.
 
 ## Deployment
 

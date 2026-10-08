@@ -216,6 +216,12 @@ failed request costs the server one hex parse and one Ed25519 verification, with
 check after it, the pre-authentication work is bounded and cheap; that claim is to be checked
 by that review and by a measurement, not assumed.
 
+The full connectivity-path analysis — including the three practical paths to the
+homelab (BLE → iPhone → Tailscale, Linux gateway, public HTTPS), the
+store-and-forward radio scheduling model, the case for a narrow isolated
+ingestion endpoint, and the privacy constraints — is in
+[lte-cellular-design.md](../../docs/lte-cellular-design.md).
+
 ## 9. Open questions for review
 
 1. **One key, several purposes.** The device key signs manifests, the enrolment blob and now

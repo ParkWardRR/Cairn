@@ -128,8 +128,24 @@ The dongle deletes a recording only after the server has returned a signed recei
 that recording, checked against a key built into the dongle. The phone only carries bytes: it
 cannot read, alter or forge them.
 
-**Planned, not shipped:** the dongle also uploads by itself over Wi-Fi at home and over LTE, in
-addition to BLE. See [Roadmap](#roadmap-in-brief) and the [uplink contract](contracts/uplink/v1/README.md).
+**Shipped since 2026-10-07:** the dongle also uploads by itself over **LTE**, in addition to BLE.
+The car's dongle has a SIMCOM SIM7600A-H modem (LTE Cat-4, B2/B4/B12 only), and the firmware
+attaches, opens a TLS session to the server through a Tailscale Funnel ingress, uploads sealed
+bundles and prunes each one on a receipt it verifies against a key pinned in firmware.
+
+It carries **whole sealed bundles, not digests** — the owner's decision on 2026-10-07, reversing
+the earlier plan. A digest earns no receipt, so it can never authorise a prune, which means a
+digest-only transport never frees the card. The volume turns out not to need compressing: a trip
+is about 230 KB, so a 2 GB plan carries some nine thousand of them, and sealed segments are AEAD
+ciphertext that `gzip -9` only reduces to 90% of raw anyway.
+
+Wi-Fi is implemented and proven, but switched off in the production build: it cannot associate
+while the BLE controller is initialised
+([firmware #31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31)). See
+[Roadmap](#roadmap-in-brief), the [uplink contract](contracts/uplink/v1/README.md), the
+[cellular design](docs/lte-cellular-design.md), and the firmware's
+[uplink status](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/network-uplink-status.md)
+for exactly what has run on hardware.
 
 ### One drive, from the road to the dashboard
 
@@ -310,6 +326,7 @@ The current pins, generated from each repository's lock files by
 | [docs/architecture.md](docs/architecture.md) | The component map: system diagram, core rules, listeners, data flow |
 | [docs/trust-model-v3.md](docs/trust-model-v3.md) | The normative trust model: actors and paths, vehicles and counters, storage encryption, enrolment, hardening |
 | [docs/threat-model.md](docs/threat-model.md) | Assets, boundaries and every threat with mitigation and residual risk, plus the sharing constraints and the planned networked dongle |
+| [docs/lte-cellular-design.md](docs/lte-cellular-design.md) | LTE and cellular connectivity design: hardware, connectivity paths, radio scheduling, data budgets, security boundaries, and privacy constraints |
 | [docs/guarantee-audit.md](docs/guarantee-audit.md) | Every documented guarantee and the test that verifies it, and what is not covered |
 | [docs/repo-split-plan.md](docs/repo-split-plan.md) | The plan, outcome and follow-up issues of splitting the monorepo into these repositories |
 | [tools/README.md](tools/README.md) | The Go tools and scripts this repository still uses, and what each is for |
@@ -346,10 +363,10 @@ Honest status, separating what has run on real hardware from what has only run o
 
 | State | What |
 |---|---|
-| **Shipped and tested** (on the real dongle and server) | Capture of GNSS, IMU and OBD; encrypted, sealed storage on the SD card; device enrolment and provisioning; the BLE companion link (phone GPS to the dongle) running on hardware; the Wi-Fi removal (the dongle holds no network credential and has no network stack; the unit that ran older firmware may keep a residual Wi-Fi password in flash until flash encryption is on, and NVS deletions are now zeroed in place on every boot). The server is deployed on the LAN with enrolment, escrowed keys, vehicle and counter binding. The dashboard is deployed. **The BLE bundle offload chain ran end to end on 2026-10-06**: nine bundles pulled over BLE in 62 s with the Go reference phone (`cmd/cairn-phone` on macOS), nine receipts verified against the pinned key on the device, nine bundles pruned (dev-pairing build; see the firmware README's "Pairing and access" caveat) |
+| **Shipped and tested** (on the real dongle and server) | Capture of GNSS, IMU and OBD; encrypted, sealed storage on the SD card; device enrolment and provisioning; the BLE companion link (phone GPS to the dongle) running on hardware; the Wi-Fi removal (the dongle holds no network credential and has no network stack; the unit that ran older firmware may keep a residual Wi-Fi password in flash until flash encryption is on, and NVS deletions are now zeroed in place on every boot). The server is deployed on the LAN with enrolment, escrowed keys, vehicle and counter binding. The dashboard is deployed. **The BLE bundle offload chain ran end to end on 2026-10-06**: nine bundles pulled over BLE in 62 s with the Go reference phone (`cmd/cairn-phone` on macOS), nine receipts verified against the pinned key on the device, nine bundles pruned (dev-pairing build; see the firmware README's "Pairing and access" caveat). **The dongle's own network uplinks ran on 2026-10-07**: four bundles delivered and pruned over Wi-Fi mTLS, and one over **LTE** through the public Funnel ingress (T-Mobile US, TLSv1.2 ECDHE-ECDSA, 158,906 bytes, verified receipt, pruned). TLS verification was proven from the failing side too — a deliberately wrong pinned CA is rejected |
 | **Host-tested only** | Secure OTA (written and verified on the host, install not yet exercised on hardware); the server's relay still has rows that run only against a simulated BLE link, in addition to the real radio path above |
 | **In progress** | Engine telemetry on the real car (which OBD PIDs it answers); the iPhone app's adoption of enrolment, signing, an encrypted store and sync (a `sync/v1` signing client is under way; the BLE offload codec landed 2026-10-06, CoreBluetooth wiring is open as iOS #14); Tailnet reach (installed, login pending per the roadmap); tune records, engine profiles and a health summary in the server |
-| **Planned** | The first **real-car** trip on the dashboard (dongle in the OBD-II port of the 428i, drive, bench offload); the iPhone BLE offload client (iOS #14); restoring the shipping BLE pairing (MITM + authenticated characteristics) after the macOS pairing failure is understood rather than worked around; Wi-Fi and LTE on the dongle ([`uplink/v1`](contracts/uplink/v1/README.md), owner decision 2026-10-05, no committed firmware implements it); flash and NVS encryption (gated, irreversible); enrolled-app challenge-response on BLE; a v2 to v3 data migration; sharing with redaction |
+| **Planned** | The first **real-car** trip on the dashboard (dongle in the OBD-II port of the 428i, drive, bench offload); the iPhone BLE offload client (iOS #14); restoring the shipping BLE pairing (MITM + authenticated characteristics) after the macOS pairing failure is understood rather than worked around; Wi-Fi on the dongle in production (written and proven, but blocked by BLE coexistence, [firmware #31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31)); on-dongle enforcement of the monthly, daily and per-trip data caps ([firmware #21](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/21)); the per-chunk cellular cost at the production chunk size ([firmware #35](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/35)); flash and NVS encryption (gated, irreversible); enrolled-app challenge-response on BLE; a v2 to v3 data migration; sharing with redaction |
 
 **Hardware constraint.** There is exactly one real dongle, a Freematics ONE+ whose chip is an
 ESP32-D0WDQ6 **revision v1.0**. ESP32 Secure Boot V2 needs revision v3.0 or later, so it is not
@@ -384,7 +401,17 @@ flowchart LR
     lte --> goal
 ```
 
-- The dongle **gets Wi-Fi and LTE back**, besides BLE. Security first (the encryption gate); BLE stays the home state and the one radio is time-sliced. LTE carries digests, not bundles, and a digest can never authorise a prune. Not implemented in any committed firmware; the shipped dongle has neither.
+- The dongle **has LTE back** and Wi-Fi written. SIMCOM SIM7600A-H, LTE Cat-4, B2/B4/B12.
+  BLE stays the home state and the 2.4 GHz radio is time-sliced; the cellular modem has its own
+  antenna and is unaffected by that, which is why LTE succeeded on a bundle Wi-Fi lost. LTE
+  carries **whole sealed bundles, not digests** (owner, 2026-10-07): a digest can never
+  authorise a prune, so a digest-only path never frees the card, and at ~230 KB a trip there is
+  nothing to gain by compressing AEAD ciphertext. The encryption gate was not met but
+  knowingly traded — credentials are in plaintext flash and the cost is stated — because it
+  needs eFuse burns this unit may not take. Wi-Fi is off in production pending
+  [firmware #31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31). Design in
+  [docs/lte-cellular-design.md](docs/lte-cellular-design.md); measured status in the firmware's
+  [uplink status](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/network-uplink-status.md).
 - Wi-Fi and LTE are configured from the web UI and the iOS app, sealed to the dongle's key, and the web layer must authenticate before it takes any secret.
 - Per-engine YAML profiles, chosen at build time, with the app checking what is installed.
 - A v2 to v3 data migration is wanted; a dedicated Bluetooth page in the iOS settings; boot speed and time-to-upload become measured budgets.

@@ -299,6 +299,29 @@ things for a reviewer to attack: the cost of an unauthenticated request (N5), th
 units (N1), the "allow-list is harmless" claim for phone instructions (N7), and the interaction of
 the data-cap ceiling with revocation latency (N13).
 
+### Residual exposure from cellular activity
+
+Application-encrypted bundles protect telemetry content, but they do not make
+cellular activity invisible. The following observers see metadata regardless of
+payload encryption:
+
+| Observer / component | Residual exposure |
+|---|---|
+| Cellular carrier | SIM/subscriber association, cellular location, connection timing, traffic volume |
+| Local Wi-Fi infrastructure | Association and traffic metadata |
+| BLE observers | Advertising presence and potentially identifying advertisement fields |
+| Public HTTPS infrastructure | Endpoint identity and connection metadata |
+| Relay phone / gateway | Bundle sizes and timing; should not need plaintext telemetry |
+| Homelab | Plaintext after authorised ingestion, plus logs/backups the owner controls |
+
+Leakage-minimising defaults for the networked dongle: generic BLE
+advertisements with no VIN or route data, no discovery broadcasts containing
+telemetry, no random Wi-Fi association, no analytics or third-party telemetry,
+encrypted local bundles, and capped burst uploads. Frequent tiny transmissions
+reduce latency but expose more activity timing and add overhead; for a capped
+cellular plan, encrypted batching without cover traffic is the right tradeoff.
+The full cellular design is in [lte-cellular-design.md](lte-cellular-design.md).
+
 ## Recommendations
 
 1. Use a dedicated VLAN or network segment for IoT devices including Cairn
