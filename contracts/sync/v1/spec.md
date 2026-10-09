@@ -398,19 +398,53 @@ table".
 
 ### `trip_summary` entities
 
-Published in `pull` as `entity_type: "trip_summary"`, id `<vehicle_id>:<boot_id>`,
-scoped to the vehicle. **All values are integers** (§4.1): timestamps are epoch
-milliseconds, speeds are cm/s, distance is whole metres.
+Published in `pull` as `entity_type: "trip_summary"`, id
+`<vehicle_id>:<started_ms>`, scoped to the vehicle. **All values are integers**
+(§4.1): timestamps are epoch milliseconds, speeds are cm/s, distance is whole
+metres.
 
 ```json
 { "boot_id": "…", "device_id": "…",
   "started_ms": 1790000000000, "ended_ms": 1790000600000, "duration_ms": 600000,
+  "driving_ms": 540000, "leg_count": 3,
   "distance_m": 5230,
   "max_gnss_speed_cmps": 2410, "max_obd_speed_cmps": 2500, "max_rpm": 6100,
   "obd_samples": 300, "gnss_samples": 590, "boost_samples": 300,
   "gap_count": 1, "gap_duration_ms": 4000,
   "bundle_count": 1, "decoder_version": 3 }
 ```
+
+#### A trip is an outing, which is why the id is not the boot
+
+The id used to be `<vehicle_id>:<boot_id>`, and that was wrong because a boot is
+an artifact of when the car cut power to the dongle, not a fact about the driving.
+It failed in both directions at once: a shop stop that switches the ignition off
+starts a new boot, so one errand published as several trips; and two drives inside
+one boot published as a single trip whose span covered the stop between them.
+Measured on a real errand — home, Trader Joe's, Pavillions, home — that produced
+two entities, one of which claimed seven hours.
+
+A trip is therefore an **outing**: consecutive drives merged across any stop
+shorter than the producer's threshold (20 minutes in the reference
+implementation). `duration_ms` is the wall-clock span including those stops,
+`driving_ms` counts only the moving parts, and `leg_count` says how many drives
+the outing contains. `boot_id` is still published — it is the boot the trip
+started in — but it is no longer the identity.
+
+`started_ms` is the identity because a trip is anchored at its first observation.
+Two consequences a consumer must handle:
+
+- **An entity can be re-keyed.** If a bundle covering an earlier part of the same
+  outing arrives late, the trip's start moves earlier and it is published under a
+  new id. The old id is then stale rather than contradicted; a consumer that keeps
+  both will show one trip twice. Reconciling by `(vehicle_id, overlapping span)`
+  rather than by id alone is the safe read.
+- **A trip can absorb a later one.** If the gap between two published trips later
+  turns out to be shorter than the threshold — because the data that fell in it
+  arrived afterwards — they become one trip under the earlier id.
+
+Both follow from a trip being derived rather than declared, and neither is new:
+the same thing happened under boot ids whenever a bundle was reprocessed.
 
 A later record for the same entity id supersedes the earlier one (a trip whose
 bundles were reprocessed, or that grew as more of it arrived). Treat the latest

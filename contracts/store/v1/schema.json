@@ -1,6 +1,6 @@
 {
   "contract": "store/v1",
-  "store_contract": "store/v1.3",
+  "store_contract": "store/v1.4",
   "tables": {
     "boost": {
       "columns": [
@@ -1156,6 +1156,26 @@
         }
       ]
     },
+    "v_trip_leg": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "started_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "closed_at",
+          "type": "TIMESTAMP"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        }
+      ]
+    },
     "v_trip_period": {
       "columns": [
         {
@@ -1227,6 +1247,10 @@
           "type": "VARCHAR"
         },
         {
+          "name": "trip_id",
+          "type": "VARCHAR"
+        },
+        {
           "name": "started_at",
           "type": "TIMESTAMP"
         },
@@ -1236,6 +1260,14 @@
         },
         {
           "name": "duration_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "driving_ms",
+          "type": "BIGINT"
+        },
+        {
+          "name": "leg_count",
           "type": "BIGINT"
         },
         {
