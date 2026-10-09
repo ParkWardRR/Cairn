@@ -339,7 +339,7 @@ The current pins, generated from each repository's lock files by
 | Document | What it is |
 |---|---|
 | [ROADMAP.md](ROADMAP.md) | **The single roadmap for all six repositories**: what is proven, what is next, what each repository has to do, the decisions, the invariants and the phase history |
-| [INSTALL.md](INSTALL.md) | Building and installing from source (written for the single repository; see the note under [Build and run](#build-and-run)) |
+| [INSTALL.md](INSTALL.md) | What you need, the order to install the parts in, and what every repository shares: the contracts fetch, the two keys to back up first, and the Tailscale rule |
 | [docs/architecture.md](docs/architecture.md) | The component map: system diagram, core rules, listeners, data flow |
 | [docs/trust-model-v3.md](docs/trust-model-v3.md) | The normative trust model: actors and paths, vehicles and counters, storage encryption, enrolment, hardening |
 | [docs/threat-model.md](docs/threat-model.md) | Assets, boundaries and every threat with mitigation and residual risk, plus the sharing constraints and the planned networked dongle |
@@ -464,8 +464,8 @@ A typical order for a fresh install: stand up the server with its deploy guide, 
 at the server. Remote access is through Tailscale on the host only (never Funnel, never port
 forwarding).
 
-> [INSTALL.md](INSTALL.md) predates the split: its paths (`server/`, `firmware/cairn-v2/`, `ui/`)
-> are now the roots of the matching repositories. Treat the repositories' own READMEs as current.
+> [INSTALL.md](INSTALL.md) is the order to install the parts in and the few things that are only
+> true across repositories. Each repository's own README is the authority on building it.
 
 To work on this repository:
 
