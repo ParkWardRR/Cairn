@@ -1,6 +1,6 @@
 {
   "contract": "store/v1",
-  "store_contract": "store/v1.2",
+  "store_contract": "store/v1.3",
   "tables": {
     "boost": {
       "columns": [
@@ -62,6 +62,10 @@
         },
         {
           "name": "fuel_level_pct",
+          "type": "UTINYINT"
+        },
+        {
+          "name": "pedal_pct",
           "type": "UTINYINT"
         },
         {
@@ -511,6 +515,50 @@
         {
           "name": "reboot_count",
           "type": "UTINYINT"
+        }
+      ]
+    },
+    "time_obs": {
+      "columns": [
+        {
+          "name": "vehicle_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "content_root",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "boot_id",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "seq",
+          "type": "UINTEGER"
+        },
+        {
+          "name": "mono_ms",
+          "type": "UINTEGER"
+        },
+        {
+          "name": "utc_ms",
+          "type": "UBIGINT"
+        },
+        {
+          "name": "implied_basis_ms",
+          "type": "UBIGINT"
+        },
+        {
+          "name": "accuracy_ms",
+          "type": "UINTEGER"
+        },
+        {
+          "name": "source",
+          "type": "VARCHAR"
+        },
+        {
+          "name": "adopted",
+          "type": "BOOLEAN"
         }
       ]
     },

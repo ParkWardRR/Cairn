@@ -274,7 +274,8 @@ The split happened on 2026-10-05; the plan and what was executed are in
 A repository does not copy them; it pins a release by tag **and** commit (`contracts.lock`) and
 fetches that, so a change to a contract cannot reach an implementation unnoticed. The collection is
 tagged `contracts-vX.Y.Z` only when contract content changes; the latest is
-**`contracts-v0.5.0`** (2026-10-08). Each protocol directory is versioned independently, and a
+**`contracts-v0.5.0`** (2026-10-08), and there are **unreleased contract changes on `main`** that two
+consumers already implement ([changelog](contracts/CHANGELOG.md)). Each protocol directory is versioned independently, and a
 breaking change adds a new directory (`format/v4`) rather than editing an old one.
 
 | Protocol | What it is | Producers / consumers | Version | Status |
@@ -321,16 +322,21 @@ The current pins, generated from each repository's lock files by
 [`tools/cmd/pin-dashboard`](tools/README.md) (a weekly workflow opens a pull request when they drift):
 
 <!-- pins:start -->
-| Repository | Contracts it is pinned to | Protocols | Also pinned |
-|---|---|---|---|
-| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.5.0` (`2c095c7`) | ble v1, enrolment v1, format v3, module v1, store v1, sync v1 | firmware `f71355e` (interop) |
-| [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | `contracts-v0.1.0` (`56d980b`) | store v1 | vehicle server `b0deb01` |
-| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.5.0` (`2c095c7`) | ble v1, engine v1, enrolment v1, format v3 | none |
-| [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | `contracts-v0.2.0` (`ad01bf6`) | ble v1, enrolment v1, format v3, sync v1 | none |
-| [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | `contracts-v0.4.0` (`46070e2`) | engine v1, module v1, store v1 | none |
+| Repository | Contracts it is pinned to | Behind | Protocols | Also pinned |
+|---|---|---|---|---|
+| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.5.0` (`2c095c7`) | current | ble v1, enrolment v1, format v3, module v1, store v1, sync v1 | firmware `f71355e` (interop) |
+| [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | `contracts-v0.5.0` (`2c095c7`) | current | store v1 | vehicle server `b0deb01` |
+| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.5.0` (`2c095c7`) | current | ble v1, engine v1, enrolment v1, format v3 | none |
+| [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | `contracts-v0.5.0` (`2c095c7`) | current | ble v1, enrolment v1, format v3, sync v1 | none |
+| [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | `contracts-v0.4.0` (`46070e2`) | **1 release** | engine v1, module v1, store v1 | none |
 <!-- pins:end -->
 
-<sub>All five consuming repositories are read. A pin that is behind is not automatically wrong — a repository bumps when it needs the change — but the roadmap says <a href="ROADMAP.md#contract-pins-and-what-a-bump-unblocks">what each bump unblocks</a>.</sub>
+<sub><b>Behind</b> counts the releases cut after each pin, from this repository's own tags. A pin that is behind is not
+automatically wrong — a repository bumps when it needs the change — but it should be a decision rather than something
+nobody looked at, which is what the column is for. <code>cairn-modules</code> <b>cannot</b> move to
+<code>contracts-v0.5.0</code>: that tag has <code>pedal_pct</code> in <code>engine/v1</code> and not in
+<code>module/v1</code>, so <code>modgen</code> refuses it, correctly. The fix is committed and unreleased — see
+<a href="contracts/CHANGELOG.md">the changelog</a> and <a href="ROADMAP.md#contract-pins-and-what-a-bump-unblocks">what a bump unblocks</a>.</sub>
 
 ## Documentation index
 

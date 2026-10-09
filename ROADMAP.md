@@ -532,15 +532,32 @@ afterwards on the right stretch, carrying the telemetry that was actually live a
 A repository does not copy a contract; it pins a release by tag **and** commit in
 `contracts.lock` and fetches that, so a contract change cannot reach an implementation
 unnoticed. The latest release is **`contracts-v0.5.0`**. The live table is generated into the
-[README](README.md) by `tools/cmd/pin-dashboard`.
+[README](README.md) by `tools/cmd/pin-dashboard`, which since 2026-10-09 also counts how many
+releases each pin is behind — a stale pin was otherwise invisible.
 
-| Repository | Pinned to | Behind by | What a bump unblocks |
+| Repository | Pinned to | Behind | Note |
 |---|---|---|---|
 | server | `contracts-v0.5.0` | — | current |
 | firmware | `contracts-v0.5.0` | — | current |
-| modules | `contracts-v0.4.0` | 1 | the §7 identity correction, which `modgen` already implements ahead of its pin |
-| iOS app | `contracts-v0.2.0` | 3 | `engine/v1`, `module/v1`, `DEVICE_INFO` out of draft, the `TIME_OBSERVATION` record, manifest key 29 |
-| dashboard | `contracts-v0.1.0` | 4 | every `store/v1` addition since 1.0, including the period views and the module surface |
+| dashboard | `contracts-v0.5.0` | — | bumped 2026-10-09 from v0.1.0, four behind. The pin had **no consumer**: no CI job fetched it, so nothing could notice. It has one now — every relation the built queries read must be declared by the pinned schema |
+| iOS app | `contracts-v0.5.0` | — | bumped 2026-10-09 from v0.2.0, three behind. `DEVICE_INFO` had left draft two releases earlier and the app was still replaying the draft vectors |
+| modules | `contracts-v0.4.0` | **1 release** | **Cannot move.** See below |
+
+**`contracts-v0.5.0` is an inconsistent release, and the guard that says so is working.**
+`engine/v1` gained `pedal_pct` in that tag; `module/v1`'s `$defs/engine_field` did not get it
+until after, so `modgen validate` refuses the 0.5.0 tree — which is exactly what a
+vocabulary guard is for. `cairn-modules` therefore stays on v0.4.0 until a release carries
+the fix. **Four contract commits are unreleased on `main`**, two of them normative: the §7
+rule that a module hashes its manifest and the files the manifest names rather than its whole
+directory, and the table separating an *introduced* derived column from a *grandfathered*
+one. `modgen` and the server's `internal/modules` both already implement the §7 rule, so two
+implementations are **ahead of every existing tag**.
+
+| Required | Repo |
+|---|---|
+| **Cut `contracts-v0.6.0`** — a maintainer's call, never CI. It carries the `pedal_pct` vocabulary fix, the §7 identity correction, the introduced/grandfathered table, the corrected `valid-boost.json` vector, and `store/v1/schema.json` regenerated at **store/v1.3** (the contract had been behind its own implementation since `86e2381`) | front door |
+| Then bump to v0.6.0, which is what stops `modgen` being ahead of its pin | modules |
+| Then bump to v0.6.0 and drop the "ahead of the pin" note from `internal/modules` | server |
 
 **Two consequences worth stating.** The firmware's engine schema now lives in the contracts
 repository, and `scripts/fetch-contracts.sh` verifies that the tag resolves to the pinned commit

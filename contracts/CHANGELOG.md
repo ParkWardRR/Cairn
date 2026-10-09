@@ -5,6 +5,29 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+> **`contracts-v0.5.0` cannot be consumed by anything that checks the capture-field
+> vocabulary, and the fix is in here.** `engine/v1` gained `pedal_pct` in
+> [631dad2](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/631dad2),
+> which 0.5.0 carries; `module/v1`'s `$defs/engine_field` only gained it in
+> [df8a997](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/df8a997),
+> which it does not. So `modgen validate` refuses the 0.5.0 tree — correctly — and
+> `cairn-modules` cannot move off `contracts-v0.4.0` until a release carries df8a997.
+> The guard working is the good news; the tag being unconsumable is the reason the next
+> release matters.
+
+- **`store/v1/schema.json` is regenerated at `store/v1.3`**, which the server has been
+  serving since `86e2381` while this file still said `store/v1.2` — the contract was
+  behind its own implementation. Purely additive, as a minor must be: the `time_obs`
+  table and the `boost.pedal_pct` column. Generated, not written: `go run
+  ./cmd/dump-schema` in the server starts the real store and dumps the schema it built
+  for itself.
+- `store/v1/README.md`: documents both additions. `time_obs` has **no `observed_at`**,
+  deliberately — a row whose job is to establish the time cannot be stamped with the time
+  it is establishing — and for the same reason it is keyed on the carrying frame rather
+  than on `vehicle_id` like every other object. `boost.pedal_pct` is PID 0x49 and is a
+  **different signal** from `obd.throttle_pct`, the throttle plate angle, which does not
+  reach 100% at wide-open throttle on a drive-by-wire engine.
+
 - `module/v1/spec.md` §4: separates an **introduced** derived column from a **grandfathered** one. The old
   text said a derived column is all-null when its owning module is absent, which is right for a column a
   module adds and wrong for `boost.boost_psi` and `boost.lambda_ratio`: the core computed those before any

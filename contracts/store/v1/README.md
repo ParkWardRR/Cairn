@@ -3,12 +3,13 @@
 What the web dashboard relies on from the server's analytical store, `cairn-tsdb`. Its
 objects and columns are pinned in [`schema.json`](schema.json); this file carries the rest.
 
-**Tables:** `bundles`, `position`, `imu`, `obd`, `boost`, `status`, `transition`, `gap`, and from **`store/v1.1`** `tune`.
+**Tables:** `bundles`, `position`, `imu`, `obd`, `boost`, `status`, `transition`, `gap`, from **`store/v1.1`** `tune`, and from **`store/v1.3`** `time_obs`.
 **Views:** `v_telemetry`, `v_reproducibility`, `v_vehicles`, `v_drive_summary`,
 `v_trip_summary`, `v_trim_map`, `v_boost_curve`, `v_pulls`, `v_speed_agreement`,
 `v_gnss_sources`, from **`store/v1.1`** `v_boot_start`, `v_metric_samples`, `v_tune_effect` and
 `v_health_stats`, and from **`store/v1.2`** `v_trip_period`. **Table macros** (`store/v1.2`):
-`period_summary(from_day, to_day)`. Every table, view and macro result carries `vehicle_id`.
+`period_summary(from_day, to_day)`. Every table, view and macro result carries `vehicle_id`
+except `time_obs`, which is keyed on the frame that carried the observation.
 
 **`schema.json`** lists every table and view (and, from `store/v1.2`, every macro) with its columns and DuckDB types, and the
 `store/v1.N` it was generated from. It is generated, not written: the server's
@@ -22,6 +23,23 @@ matter. A **compatible type** is the same type, or a wider integer of the same s
 signed to unsigned, narrowing) is a retype and breaks the contract. The server's CI compares
 its native schema with the pinned file; this repository's CI checks only the file's own
 shape (valid, known fields, every object has `vehicle_id`).
+
+### Time observations (`store/v1.3`)
+
+**`time_obs`**: one row per source per wall-clock reading, carrying `utc_ms`, the accuracy
+that source claimed, which source it was, and whether the device adopted it as the bundle's
+basis. The frame's own `mono_ms` is the other half: `utc_ms - mono_ms` is the UTC of
+monotonic zero that source implies, which is the figure that makes sources comparable and
+drift visible within one trip.
+
+It has **no `observed_at`**, deliberately, because a row whose job is to establish the time
+cannot be stamped with the time it is establishing. For the same reason it does not carry
+`vehicle_id` as the other objects do — it is keyed on the bundle and frame that carried it.
+
+**`boost.pedal_pct`** arrives in the same minor: accelerator pedal position from PID 0x49.
+It is a distinct signal from `obd.throttle_pct`, which is the throttle *plate* angle and
+does not reach 100% at wide-open throttle on a drive-by-wire engine. `NULL` means not
+measured, which every row written before the column existed necessarily is.
 
 ### Periods (`store/v1.2`)
 

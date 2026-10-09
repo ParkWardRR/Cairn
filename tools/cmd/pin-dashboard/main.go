@@ -3,6 +3,10 @@
 //
 //	go run ./cmd/pin-dashboard --readme ../README.md            rewrite the table
 //	go run ./cmd/pin-dashboard --readme ../README.md --check    fail if it is out of date
+//
+// The "Behind" column counts the releases cut after each pin, read from this repository's
+// own tags. It exists because a stale pin is otherwise invisible: the dashboard sat four
+// releases behind for days, and nothing in CI could notice, because nothing read its pin.
 package main
 
 import (
@@ -11,6 +15,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/ParkWardRR/cairn-driving-log-selfhosted/tools/pindash"
 )
@@ -35,6 +43,41 @@ func get(repo, file string) []byte {
 	return b
 }
 
+// releases lists the contract releases, oldest first, from the tags of the repository this
+// is run in. An empty result is not fatal: Render then omits the column rather than
+// claiming every pin is current.
+func releases() pindash.Releases {
+	out, err := exec.Command("git", "tag", "-l", "contracts-v*").Output()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "pin-dashboard: cannot read tags, omitting the Behind column:", err)
+		return nil
+	}
+	tags := strings.Fields(string(out))
+	// Sort by version, not lexically, or contracts-v0.10.0 would sort before v0.2.0.
+	sort.Slice(tags, func(i, j int) bool { return less(tags[i], tags[j]) })
+	return tags
+}
+
+func less(a, b string) bool {
+	x, y := parts(a), parts(b)
+	for i := 0; i < 3; i++ {
+		if x[i] != y[i] {
+			return x[i] < y[i]
+		}
+	}
+	return a < b
+}
+
+func parts(tag string) [3]int {
+	var v [3]int
+	for i, f := range strings.SplitN(strings.TrimPrefix(tag, "contracts-v"), ".", 3) {
+		if i < 3 {
+			v[i], _ = strconv.Atoi(f)
+		}
+	}
+	return v
+}
+
 func main() {
 	readme := flag.String("readme", "../README.md", "the document holding the pins block")
 	check := flag.Bool("check", false, "do not write; exit 1 if the block is out of date")
@@ -55,7 +98,7 @@ func main() {
 			Interop:   get(r.name, "interop.lock"),
 		})
 	}
-	table, err := pindash.Render(repos)
+	table, err := pindash.Render(repos, releases())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "pin-dashboard:", err)
 		os.Exit(2)
