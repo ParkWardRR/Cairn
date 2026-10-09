@@ -96,18 +96,49 @@ the columns of that row's own table**, evaluated by DuckDB during load.
 
 - **Exactly one module owns a column.** Two owners would make the value depend on load
   order.
-- **When the owning module is absent the column exists and is all-null** — which is
-  exactly what the store already says about a car that never reported the input. That is
-  what lets `store/v1` stay honest under any module set.
 - A derivation **cannot write**, cannot read another table, and cannot aggregate. Anything
   that needs more than one row is a view.
 
-Two columns are **grandfathered**: `boost.boost_psi` and `boost.lambda_ratio` are declared
-by `store/v1` and computed today in the server's decode path. A module may take over their
-*definition*, but the column, its type and its values must not change — proven against the
-committed `format/v3` conformance vectors, not by inspection. The reference implementation
-in the server's `format` package stays as the thing those vectors pin; the module's SQL is
-tested against it, not instead of it.
+### An absent module: introduced against grandfathered
+
+A derived column is one of two kinds, and they behave differently when no module provides
+the definition.
+
+| | **Introduced** by a module | **Grandfathered** |
+|---|---|---|
+| Declared by `store/v1`? | no — the module adds it | yes |
+| With the module present | the module's expression | the module's expression |
+| With the module absent | the column exists and is **all-null** | **the core's definition stands** |
+
+An introduced column being all-null is exactly what the store already says about a car
+that never reported the input, and it is what lets `store/v1` stay honest under any module
+set.
+
+A grandfathered column must **not** go null, because something already depends on it. The
+core computed it before any module existed, and nulling it when an operator happens to run
+without a module set would break every deployment and every query that reads it. So the
+core's definition stands until a module takes over, and the module's expression then
+replaces it — identically, which is what the proof below is for.
+
+This is the only place a module's absence is not simply "that interpretation is missing",
+and it is the price of letting interpretation move out of a core that already shipped.
+
+### The two grandfathered columns
+
+`boost.boost_psi` and `boost.lambda_ratio` are declared by `store/v1` and computed today in
+the server's decode path. A module may take over their *definition*, but the column, its
+type and its values must not change — **proven, not inspected**. The reference
+implementation in the server's `format` package stays as the thing the `format/v3` vectors
+pin; the module's SQL is tested against it, not instead of it.
+
+"Proven" means evaluated: the expression is run by the same engine that will run it in
+production, against the reference, over every input the record can hold. Reading two
+expressions and judging them equivalent is how a stored column changes silently. It has
+already happened once here — an earlier draft of this contract's own `valid-boost.json`
+carried `map_kpa < 255 AND baro_kpa > 0`, which looks like a tightening and is in fact a
+different column: `BoostPSI()` returns a value whenever both readings are present, and
+saturation is excluded by the *views* that read the column, not by the column. Every
+saturated sample's boost would have become `NULL`.
 
 ## 5. Metrics
 

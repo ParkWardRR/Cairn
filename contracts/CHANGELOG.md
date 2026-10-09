@@ -5,6 +5,16 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
+- `module/v1/spec.md` §4: separates an **introduced** derived column from a **grandfathered** one. The old
+  text said a derived column is all-null when its owning module is absent, which is right for a column a
+  module adds and wrong for `boost.boost_psi` and `boost.lambda_ratio`: the core computed those before any
+  module existed, so nulling them when an operator runs without a module set would break every deployment
+  and every query that reads them. The core's definition now explicitly stands until a module takes over.
+  Found while writing the loader that applies derivations — the two sentences could not both be obeyed.
+  Also states that "the values must not change" means *evaluated* against the reference over every input the
+  record can hold, not read and judged equivalent, and cites the defect in this contract's own vector as the
+  reason.
+
 - **`module/v1/vectors/valid-boost.json`: the `boost.boost_psi` expression was wrong, and would have silently
   changed the column.** It read `map_kpa < 255 AND baro_kpa > 0`, but the server's reference
   `OBDExtended.BoostPSI()` returns a value whenever **both** readings are present: it does not exclude a
