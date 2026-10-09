@@ -1,5 +1,5 @@
 <!-- cairn-nav:start -->
-<p align="center"><b>Cairn is a family of five repositories.</b> Each builds, tests and releases on its own; they agree through the shared <a href="https://github.com/ParkWardRR/cairn-driving-log-selfhosted/tree/main/contracts">contracts</a>.</p>
+<p align="center"><b>Cairn is a family of six repositories.</b> Each builds, tests and releases on its own; they agree through the shared <a href="https://github.com/ParkWardRR/cairn-driving-log-selfhosted/tree/main/contracts">contracts</a>, and they share one <a href="https://github.com/ParkWardRR/cairn-driving-log-selfhosted/blob/main/ROADMAP.md">roadmap</a>.</p>
 
 | Part | Repository | What it does | Stack | Docs | Issues | CI |
 |---|---|---|---|---|---|---|
@@ -81,7 +81,7 @@ opposite constraint, and most design decisions follow from it:
 - **Nothing is deleted on faith.** The dongle deletes a recording only after your server hands back
   a *signed receipt* for exactly that recording.
 - **Every part can be replaced.** Formats and protocols are written down, versioned and tested
-  ([contracts](contracts/)), so the five repositories agree by specification, not by sharing code.
+  ([contracts](contracts/)), so the six repositories agree by specification, not by sharing code.
 
 ## Why use it
 
@@ -96,8 +96,9 @@ opposite constraint, and most design decisions follow from it:
 4. **Adaptability.** More than one car, more than one phone. The file and wire formats are
    public and tested ([contracts](contracts/)), so you can read your own data with your own
    tools or extend the system without reverse-engineering it.
-5. **Private by design.** The shipped dongle has no Wi-Fi and no network password to leak; data is
-   encrypted on the device before it leaves, and only your server can read it.
+5. **Private by design.** Data is encrypted on the device before it leaves, and only your server
+   can read it. Whichever way a trip travels — the phone, Wi-Fi or the dongle's own cellular link —
+   the carrier moves ciphertext it cannot read, alter or delete.
 
 ## Where to start
 
@@ -220,10 +221,19 @@ flowchart TB
 ```
 
 **Rule zero: encrypt first.** Data is encrypted on the device before it is stored on the card or
-offered to a phone, and for the planned networked dongle no network credential (Wi-Fi password,
-SIM PIN, pinned server keys) is provisioned onto a unit until flash and NVS encryption are enabled
-on it. That second part is a gate, not an accepted risk; the owner confirmed it on 2026-10-05
+offered to any carrier, and that part holds unconditionally
 ([threat model](docs/threat-model.md#rule-zero-encrypt-first)).
+
+The second half of rule zero — *no network credential on a unit until flash and NVS encryption are
+enabled on it* — **was traded away on 2026-10-07, knowingly.** It could not be met: the car's chip
+is ESP32 revision v1.0, flash and NVS encryption are eFuse burns, burns are ruled out on the only
+unit, and gating the network behind them blocked the network permanently rather than ordering it.
+So the Wi-Fi passphrase, the APN, the pinned CA and this device's client key are compiled into the
+gitignored `include/secrets.h` and are therefore in plaintext flash. **What that costs, exactly:** a
+flash dump permits uploading *as* this device and reading what it uploads — it does **not** permit
+deleting anything, because a prune requires a server-signed receipt verified on-device. The narrower
+replacement, a credential key the chip cannot reconstruct alone, is
+[Phase 28](ROADMAP.md#phase-28--the-networked-dongle-finished--in-progress).
 
 | Mechanism | What it does | Where specified |
 |---|---|---|
@@ -233,7 +243,7 @@ on it. That second part is a gate, not an accepted risk; the owner confirmed it 
 | **Signed receipts** | The server signs a receipt that names a bundle's content root. The dongle prunes only after verifying a receipt against a key pinned in firmware, so a hostile phone cannot forge one, replay one for another bundle, or make the dongle delete anything | [`format/v3`](contracts/format/v3/spec.md), [`ble/v1/offload.md`](contracts/ble/v1/offload.md) |
 | **Per-vehicle keys and scope** | A vehicle is explicit in every segment header and manifest. A monotonic device counter is bound to content: the same counter with different content is a forgery or a rolled-back device and is quarantined | [trust model section 2](docs/trust-model-v3.md) |
 | **Revocation** | Revoking a device or an app client takes effect on the next request, without a restart. Destroying a stored root crypto-shreds every copy of that device's history, including backups | [trust model section 3.1](docs/trust-model-v3.md) |
-| **Tailscale is reachability, not authorisation** | A device on your Tailnet is not thereby a Cairn client. Funnel is never used; the app listener rejects Funnel-marked requests | [trust model section 1](docs/trust-model-v3.md) |
+| **Tailscale is reachability, not authorisation** | A device on your Tailnet is not thereby a Cairn client. The **app** listener rejects Funnel-marked requests outright. Funnel *is* used, for one narrow purpose: a raw TCP ingress for the dongle's cellular uplink, where TLS is not terminated at the edge, so the mutual authentication survives end to end and the Funnel edge carries ciphertext it cannot read | [trust model section 1](docs/trust-model-v3.md), [cellular design](docs/lte-cellular-design.md) |
 
 What is **not** claimed: protection from a compromised server (it holds the roots), from an attacker
 holding the live, unlocked dongle (revoke it), or from someone who dumps an ESP32 on which flash
@@ -242,7 +252,8 @@ encryption is not yet enabled. Honest limits are part of the design; see
 
 ## The repositories
 
-Cairn is several repositories, each of which can be built, tested and released alone.
+Six repositories, each of which can be built, tested and released alone, and one shared
+[roadmap](ROADMAP.md) that sequences the work across all of them.
 
 | Repository | Responsibility |
 |---|---|
@@ -263,7 +274,7 @@ The split happened on 2026-10-05; the plan and what was executed are in
 A repository does not copy them; it pins a release by tag **and** commit (`contracts.lock`) and
 fetches that, so a change to a contract cannot reach an implementation unnoticed. The collection is
 tagged `contracts-vX.Y.Z` only when contract content changes; the latest is
-**`contracts-v0.4.0`** (2026-10-08). Each protocol directory is versioned independently, and a
+**`contracts-v0.5.0`** (2026-10-08). Each protocol directory is versioned independently, and a
 breaking change adds a new directory (`format/v4`) rather than editing an old one.
 
 | Protocol | What it is | Producers / consumers | Version | Status |
@@ -274,7 +285,7 @@ breaking change adds a new directory (`format/v4`) rather than editing an old on
 | [`ble`](contracts/ble/v1/README.md) | The dongle's BLE service: phone GPS, status, bundle offload, device info, check-in | firmware serves; app consumes | v1 | companion **stable**; `device-info` **stable** since 0.4.0 (four implementations agree); offload implemented on the firmware and a Go reference client but not on the phone; `checkin` and the uplink/instruction characteristics **draft** |
 | [`store`](contracts/store/v1/README.md) | The analytical store the web dashboard queries (`schema.json`, machine-checked) | server produces; web consumes | v1 | **draft** |
 | [`engine`](contracts/engine/v1/README.md) | Engine profiles in two halves: how to read an ECU (PIDs, the formula language, cadence, sleep) and what the readings mean (labels, axes, warning limits) | firmware compiles the acquisition half; server reads the analysis half | v1 | **draft**: 105 formula vectors reproduced by three implementations (Rust, C, Go), 20 invalid profiles, 19 analysis profiles; the in-document identifiers keep their `-draft`/`v0` suffixes |
-| [`module`](contracts/module/v1/README.md) | Modules: interpretation separated from the logging core, one package carrying its dongle, server, web and app parts. Manifest, derived columns, metrics, named queries | server, web, app and the firmware's generator consume | v1 | **draft**: schemas, spec and 39 vectors, one checker; nothing implements it yet |
+| [`module`](contracts/module/v1/README.md) | Modules: interpretation separated from the logging core, one package carrying its dongle, server, web and app parts. Manifest, derived columns, metrics, named queries | server, web, app and the firmware's generator consume | v1 | **draft**: schemas, spec and 39 vectors; **two** implementations (`modgen` in cairn-modules, and the server's `internal/modules`), and the server runs module-owned derivations. Views, metrics and named queries are not implemented yet |
 | [`uplink`](contracts/uplink/v1/README.md) | How a dongle with Wi-Fi or LTE uploads bundles itself: device-signed requests, a pinned server key, offer/chunk/commit/receipt | reserved for the firmware; server | v1 | **draft**: spec and 15 vectors only, nothing implements it |
 | [`share`](contracts/share/v1/README.md) | A portable trip export with redaction | reserved | v1 | **reserved, draft**: no design until the threat model's sharing section is satisfied |
 
@@ -312,13 +323,14 @@ The current pins, generated from each repository's lock files by
 <!-- pins:start -->
 | Repository | Contracts it is pinned to | Protocols | Also pinned |
 |---|---|---|---|
-| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.3.0` (`fcfa01b`) | ble v1, enrolment v1, format v3, store v1, sync v1 | firmware `f71355e` (interop) |
+| [cairn-vehicle-server](https://github.com/ParkWardRR/cairn-vehicle-server) | `contracts-v0.5.0` (`2c095c7`) | ble v1, enrolment v1, format v3, module v1, store v1, sync v1 | firmware `f71355e` (interop) |
 | [cairn-vehicle-web-dashboard](https://github.com/ParkWardRR/cairn-vehicle-web-dashboard) | `contracts-v0.1.0` (`56d980b`) | store v1 | vehicle server `b0deb01` |
-| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.4.0` (`46070e2`) | ble v1, engine v1, enrolment v1, format v3 | none |
+| [cairn-esp32-device-firmware](https://github.com/ParkWardRR/cairn-esp32-device-firmware) | `contracts-v0.5.0` (`2c095c7`) | ble v1, engine v1, enrolment v1, format v3 | none |
+| [cairn-ios-companion-app](https://github.com/ParkWardRR/cairn-ios-companion-app) | `contracts-v0.2.0` (`ad01bf6`) | ble v1, enrolment v1, format v3, sync v1 | none |
 | [cairn-modules](https://github.com/ParkWardRR/cairn-modules) | `contracts-v0.4.0` (`46070e2`) | engine v1, module v1, store v1 | none |
 <!-- pins:end -->
 
-<sub>The iPhone app also carries a `contracts.lock` (at `contracts-v0.2.0`, replaying the `sync/v1` vectors) but is not yet one of the repositories the pin dashboard reads.</sub>
+<sub>All five consuming repositories are read. A pin that is behind is not automatically wrong — a repository bumps when it needs the change — but the roadmap says <a href="ROADMAP.md#contract-pins-and-what-a-bump-unblocks">what each bump unblocks</a>.</sub>
 
 ## Documentation index
 
@@ -326,7 +338,7 @@ The current pins, generated from each repository's lock files by
 
 | Document | What it is |
 |---|---|
-| [ROADMAP.md](ROADMAP.md) | Product direction, decisions, invariants, the phase history and what is open |
+| [ROADMAP.md](ROADMAP.md) | **The single roadmap for all six repositories**: what is proven, what is next, what each repository has to do, the decisions, the invariants and the phase history |
 | [INSTALL.md](INSTALL.md) | Building and installing from source (written for the single repository; see the note under [Build and run](#build-and-run)) |
 | [docs/architecture.md](docs/architecture.md) | The component map: system diagram, core rules, listeners, data flow |
 | [docs/trust-model-v3.md](docs/trust-model-v3.md) | The normative trust model: actors and paths, vehicles and counters, storage encryption, enrolment, hardening |
@@ -334,7 +346,7 @@ The current pins, generated from each repository's lock files by
 | [docs/lte-cellular-design.md](docs/lte-cellular-design.md) | LTE and cellular connectivity design: hardware, connectivity paths, radio scheduling, data budgets, security boundaries, and privacy constraints |
 | [docs/guarantee-audit.md](docs/guarantee-audit.md) | Every documented guarantee and the test that verifies it, and what is not covered |
 | [docs/repo-split-plan.md](docs/repo-split-plan.md) | The plan, outcome and follow-up issues of splitting the monorepo into these repositories |
-| [docs/module-system-plan.md](docs/module-system-plan.md) | **Plan, nothing implemented.** Separating interpretation (boost, fuel economy, trims, driving style, speedometer check, place kinds) from the GPS-logging core, as modules that carry their dongle, server, web and iOS parts in one package |
+| [docs/module-system-plan.md](docs/module-system-plan.md) | The seven-stage plan for separating interpretation (boost, fuel economy, trims, driving style, speedometer check, place kinds) from the GPS-logging core, as modules carrying their dongle, server, web and iOS parts in one package. **M1–M2 done; M3 partly done** — see the [roadmap](ROADMAP.md#m1m7--the-module-system--in-progress) |
 | [tools/README.md](tools/README.md) | The Go tools and scripts this repository still uses, and what each is for |
 
 **Contracts**
@@ -364,68 +376,74 @@ the dashboard's [authentication](https://github.com/ParkWardRR/cairn-vehicle-web
 
 ## Where things stand
 
-Honest status, separating what has run on real hardware from what has only run on a host. The
-[roadmap](ROADMAP.md) has the detail per phase.
+Honest status, as of **2026-10-08**, separating what has run on real hardware from what has only
+run on a host. The [roadmap](ROADMAP.md#where-cairn-is-today) carries the detail, the evidence for
+each claim, and what closes each open item.
 
 | State | What |
 |---|---|
-| **Shipped and tested** (on the real dongle and server) | Capture of GNSS, IMU and OBD; encrypted, sealed storage on the SD card; device enrolment and provisioning; the BLE companion link (phone GPS to the dongle) running on hardware; the Wi-Fi removal (the dongle holds no network credential and has no network stack; the unit that ran older firmware may keep a residual Wi-Fi password in flash until flash encryption is on, and NVS deletions are now zeroed in place on every boot). The server is deployed on the LAN with enrolment, escrowed keys, vehicle and counter binding. The dashboard is deployed. **The BLE bundle offload chain ran end to end on 2026-10-06**: nine bundles pulled over BLE in 62 s with the Go reference phone (`cmd/cairn-phone` on macOS), nine receipts verified against the pinned key on the device, nine bundles pruned (dev-pairing build; see the firmware README's "Pairing and access" caveat). **The dongle's own network uplinks ran on 2026-10-07**: four bundles delivered and pruned over Wi-Fi mTLS, and one over **LTE** through the public Funnel ingress (T-Mobile US, TLSv1.2 ECDHE-ECDSA, 158,906 bytes, verified receipt, pruned). TLS verification was proven from the failing side too — a deliberately wrong pinned CA is rejected |
-| **Host-tested only** | Secure OTA (written and verified on the host, install not yet exercised on hardware); the server's relay still has rows that run only against a simulated BLE link, in addition to the real radio path above |
-| **In progress** | Engine telemetry on the real car (which OBD PIDs it answers); the iPhone app's adoption of enrolment, signing, an encrypted store and sync (a `sync/v1` signing client is under way; the BLE offload codec landed 2026-10-06, CoreBluetooth wiring is open as iOS #14); Tailnet reach (installed, login pending per the roadmap); tune records, engine profiles and a health summary in the server |
-| **Planned** | The first **real-car** trip on the dashboard (dongle in the OBD-II port of the 428i, drive, bench offload); the iPhone BLE offload client (iOS #14); restoring the shipping BLE pairing (MITM + authenticated characteristics) after the macOS pairing failure is understood rather than worked around; Wi-Fi on the dongle in production (written and proven, but blocked by BLE coexistence, [firmware #31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31)); on-dongle enforcement of the monthly, daily and per-trip data caps ([firmware #21](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/21)); the per-chunk cellular cost at the production chunk size ([firmware #35](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/35)); flash and NVS encryption (gated, irreversible); enrolled-app challenge-response on BLE; a v2 to v3 data migration; sharing with redaction |
+| **Proven on hardware or in the live deployment** | Capture, sealing and encrypted storage on the car's dongle. Device enrolment and key escrow, verified against the real device's sealed blob. **All three transports:** the BLE offload chain (2026-10-06 — nine bundles in 62 s, nine receipts verified on the device, nine bundles pruned), Wi-Fi mTLS (2026-10-07 — four bundles delivered and pruned) and **LTE** (2026-10-07 — T-Mobile US through the public Funnel ingress, 158,906 bytes, verified receipt, pruned; then a whole trip unattended at 1.29 MB in 386 s). TLS verification proven from the failing side: a deliberately wrong pinned CA is rejected. The server deployed with intake, receipts, escrow, vehicle and counter binding. The dashboard deployed with every route authenticated, period statistics, search, the Phones page and GPS-source comparison. The iPhone app on TestFlight, with CarPlay signed and running |
+| **Built, not yet proven** | Secure OTA (host-verified; the install has never run on the dongle). The UTC-basis and OBD-sampling fixes — landed, and **one drive away** from confirmation. `sync/v1` on the phone (the client is built and vector-checked; no screen drives enrolment). Module derivations in the server, with no module view, metric or query yet. The phone's own GPS in a real trip: the live store holds **zero** phone positions |
+| **In progress** | [Phase 27](ROADMAP.md#phase-27--a-trip-you-can-trust--in-progress), a trip you can trust: correct dates, OBD coverage proportional to duration, a distance that matches the route. Then [Phase 28](ROADMAP.md#phase-28--the-networked-dongle-finished--in-progress) (Wi-Fi/BLE coexistence, the credential key, data caps the user sets) and [Phase 29](ROADMAP.md#phase-29--the-phone-becomes-the-app--in-progress) (the app replaces the Go reference phone). Tailnet reach: installed, the login approval pending |
+| **Open defects** | Eleven, [all listed](ROADMAP.md#open-defects) — three of them already fixed in code and waiting on a drive, and seven legacy v2 bundles stranded on the card because both ends are now v3 |
+| **Planned** | Insight (a tune record, baselines, a plain health summary), sharing with redaction, the module system reaching the web and the phone, browser-based flashing, a v2 → v3 data migration, and chip hardening on whatever hardware replaces this dongle |
 
 **Hardware constraint.** There is exactly one real dongle, a Freematics ONE+ whose chip is an
 ESP32-D0WDQ6 **revision v1.0**. ESP32 Secure Boot V2 needs revision v3.0 or later, so it is not
 available on that unit, and the weaker V1 scheme is irreversible and not planned. What applies
-instead: application-layer encryption of every frame (shipped), no network credential on the chip
-(shipped), flash plus NVS encryption (planned, gated behind a proven OTA path and a sacrificial unit),
-signed OTA images (written), and revocation of a stolen dongle. A unit of revision v3.0 or later would
-add secure boot V2. Details: [trust model section 7](docs/trust-model-v3.md) and the firmware's
+instead: application-layer encryption of every frame (shipped), signed OTA images (written), a
+credential key the chip cannot reconstruct on its own ([Phase
+28](ROADMAP.md#phase-28--the-networked-dongle-finished--in-progress)), and revocation of a stolen
+dongle. Flash and NVS encryption are reassigned to replacement hardware
+([Phase 34](ROADMAP.md#phase-34--chip-hardening-on-replacement-hardware--planned-gated)).
+Details: [trust model section 7](docs/trust-model-v3.md) and the firmware's
 [esp32-hardening](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/esp32-hardening.md).
 
 ## Roadmap in brief
 
-The full document is [ROADMAP.md](ROADMAP.md); this is the short version.
+The full document is **[ROADMAP.md](ROADMAP.md)** — the only roadmap in the project, covering all
+six repositories. This is the short version.
 
-**Product themes**, in the order the owner chose (it is theirs to change). Each is additive to the
-contracts and follows the contract-first loop:
-
-1. **History**: statistics for any period; bookmark, tag and search a route.
-2. **Vehicle insight**: a tune record so "since the tune" has a meaning, baselines, and a plain "is my car healthy?" view.
-3. **Sharing**: pick trips, preview and export a redacted file. A file the owner sends, never a hosted service. The threat model's sharing section comes first.
-4. **Approachability**: plain-language pass on every README and the web, with simple views by default.
-5. **Data control**: export, import and backup for every store that holds user data.
-
-**Direction changes since the split** (owner, 2026-10-05), which supersede parts of the phase history:
+**The next three phases, in order:**
 
 ```mermaid
 flowchart LR
-    now["Shipped: BLE only<br/>the phone is the uplink<br/>no network credential on the dongle"] --> enc["Gate: flash and NVS encryption<br/>before any credential is stored"]
-    enc --> wifi["Wi-Fi at home<br/>bounded slots, BLE is home state"]
-    enc --> lte["LTE: compressed digests only<br/>user-set limits, enforced on the dongle"]
-    wifi --> goal["Faster boot and<br/>time-to-upload"]
-    lte --> goal
+    p27["<b>Phase 27</b><br/>A trip you can trust<br/><i>dates · OBD density · engine stamp</i>"]
+    p28["<b>Phase 28</b><br/>The networked dongle, finished<br/><i>coexistence · credential key · limits</i>"]
+    p29["<b>Phase 29</b><br/>The phone becomes the app<br/><i>BLE offload + enrolment on iOS</i>"]
+    m3["<b>M3–M4</b><br/>Modules reach the store and the web"]
+    p27 --> p28 --> p29
+    p27 --> m3
 ```
 
-- The dongle **has LTE back** and Wi-Fi written. SIMCOM SIM7600A-H, LTE Cat-4, B2/B4/B12.
-  BLE stays the home state and the 2.4 GHz radio is time-sliced; the cellular modem has its own
-  antenna and is unaffected by that, which is why LTE succeeded on a bundle Wi-Fi lost. LTE
-  carries **whole sealed bundles, not digests** (owner, 2026-10-07): a digest can never
-  authorise a prune, so a digest-only path never frees the card, and at ~230 KB a trip there is
-  nothing to gain by compressing AEAD ciphertext. The encryption gate was not met but
-  knowingly traded — credentials are in plaintext flash and the cost is stated — because it
-  needs eFuse burns this unit may not take. Wi-Fi is off in production pending
-  [firmware #31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31). Design in
-  [docs/lte-cellular-design.md](docs/lte-cellular-design.md); measured status in the firmware's
-  [uplink status](https://github.com/ParkWardRR/cairn-esp32-device-firmware/blob/main/docs/network-uplink-status.md).
-- Wi-Fi and LTE are configured from the web UI and the iOS app, sealed to the dongle's key, and the web layer must authenticate before it takes any secret.
-- Per-engine YAML profiles, chosen at build time, with the app checking what is installed.
-- A v2 to v3 data migration is wanted; a dedicated Bluetooth page in the iOS settings; boot speed and time-to-upload become measured budgets.
+Phase 27 is **one drive away**: every fix for the 1970 dates and the starved OBD sampling has
+landed and none of it is verified. Nothing is scheduled ahead of it.
 
-**Where things stand by phase:** the data path (phases 1 to 12) is complete; v3 trust, vehicles,
-encrypted format and the sync API (19 to 22) are done on the host and partly on hardware; Tailscale
-deployment (23) is in progress; chip hardening (24) is planned and gated; iOS adoption (25) is
-tracked in issues; "No Wi-Fi" (26) is superseded.
+**Product themes**, in the order the owner chose (it is theirs to change), each additive to the
+contracts and following the contract-first loop:
+
+1. **History** — statistics for any period; bookmark, tag and search a route. *Shipped.*
+2. **Vehicle insight** — a tune record so "since the tune" has a meaning, baselines, and a plain
+   "is my car healthy?" view. *In progress.*
+3. **Sharing** — pick trips, preview and export a redacted file. A file the owner sends, never a
+   hosted service. The threat model's sharing section comes first.
+4. **Approachability** — plain language everywhere, simple views by default. *Continuous.*
+5. **Data control** — export, import and backup for every store that holds user data. *Partly
+   shipped.*
+
+**The sixth repository.** Interpretation is leaving the logging core: boost, fuel economy, trims,
+driving style, the speedometer check and place kinds each become a module carrying its dongle,
+server, web and app parts in one package
+([cairn-modules](https://github.com/ParkWardRR/cairn-modules),
+[plan](docs/module-system-plan.md)). Two stages are done and the server already runs a
+module-owned derivation; this is how "a new metric can be added by configuration, not by editing
+core code" finally becomes true.
+
+**Where things stand by phase:** the v2 data path (1–12) is complete; the analytical store and the
+dashboard (13–18) are in progress; v3 trust, vehicles, the encrypted format and the sync API
+(19–22) are done; Tailscale deployment (23) is in progress; chip hardening (24) is reassigned to
+replacement hardware as 34; iOS adoption (25) continues as 29; "No Wi-Fi" (26) is superseded, and
+its BLE offload shipped as one of three transports.
 
 ## Build and run
 
@@ -495,8 +513,8 @@ flowchart TB
 - **Encrypted at every hop that is not your server.** The SD card, the BLE link and the phone carry ciphertext only; the server's raw store is the same ciphertext, and keys live in a wrapped keystore apart from the data directory.
 - **Authentication supports both passkey and Tailnet identity.** The web dashboard accepts a **passkey** (a WebAuthn session; the only identity that may add or remove credentials, and only when recently used) or a **Tailnet identity** (a device owned by an allowlisted Tailscale login; it can read and change saved places but cannot manage credentials), plus a read-only service token for deploy checks. The phone authenticates to the server with per-request signatures from a Secure Enclave key, revocable on the next request, and Tailnet reachability alone is never a credential.
 - **Revocation over cleverness.** A stolen running dongle or a lost phone is handled by one admin action, not by hoping hardware helps.
-- **Known weak points, stated:** a static BLE passkey is the weakest part of the dongle bond (a challenge-response with the enrolled app is planned); the server can read everything because it must decode; flash and NVS encryption are not yet on, so a chip dump of the current dongle would reveal its storage root and signing seed; there is no secure boot on the car's unit.
-- **Planned networked dongle:** its threats (N1 to N14) are written down and gated *before* the firmware exists. That model's independent review has **not** happened, and the networked dongle must not ship before it does.
+- **Known weak points, stated:** a static BLE passkey is the weakest part of the dongle bond, and the shipped build currently uses Just Works pairing with bonds cleared each boot (a challenge-response with the enrolled app is [Phase 29](ROADMAP.md#phase-29--the-phone-becomes-the-app--in-progress)); the server can read everything because it must decode; flash and NVS encryption are **not** on and cannot be, so a chip dump of the current dongle reveals its storage root, its signing seed and its network credentials; there is no secure boot on the car's unit.
+- **The networked dongle shipped before its review.** Its threats (N1 to N14) were written down and gated before the firmware existed, and then the gate was traded away on 2026-10-07 to get the transports working. That model's **independent review has not happened**. The cost is bounded and stated above: a flash dump permits impersonation and reading, not deletion. Closing it is [Phase 28](ROADMAP.md#phase-28--the-networked-dongle-finished--in-progress), including the threat-model update.
 - **A public repository holds no real values.** Host names, addresses, keys and identifiers in the documents are placeholders (`user@host`, `<tailnet-name>`); real values live in ignored local files. The vector keys are public test keys.
 
 ## FAQ
@@ -504,10 +522,11 @@ flowchart TB
 **Do I need a cloud account or an internet connection?** No. The system works on your LAN, with
 optional private remote access over your own Tailnet.
 
-**Does it work without the iPhone?** The recording does: trips are sealed on the dongle's card with no
-phone or network. Today the phone is the only way to get them to the server (the dongle's own Wi-Fi
-and LTE are planned), so trips stay on the card until a phone offloads them. Nothing is lost
-meanwhile, because nothing is deleted without a receipt.
+**Does it work without the iPhone?** Yes, on both halves. Recording never needed a phone: trips are
+sealed on the dongle's card with no phone and no network. And since 2026-10-07 the dongle uploads by
+itself over its own cellular link, so a trip reaches the server with no phone involved at all. The
+phone remains the preferred path when it is there, because BLE is free and already in range.
+Whichever path is used, nothing is lost if it fails — nothing is deleted without a receipt.
 
 **What happens if my phone is lost or stolen?** Revoke that app client on the server and its requests
 stop working on the next call. The phone never held the keys to read trips, and cannot forge a
@@ -517,10 +536,13 @@ receipt.
 Tailscale login you have allowlisted. A first passkey is created from an allowlisted Tailnet device or
 with a one-time code on the server. Both are supported on purpose, and neither needs a cloud account.
 
-**Why does the dongle not just upload over Wi-Fi?** The shipped firmware removed it: no network stack
-means no network credential to leak. The owner has since decided to bring Wi-Fi and LTE back, but only
-after flash and NVS encryption protect the chip, and with the dongle's request signing and pinned server
-key specified first ([`uplink/v1`](contracts/uplink/v1/README.md)).
+**Does the dongle upload over Wi-Fi?** It can, and it has — four bundles over mutual TLS on
+2026-10-07 — but Wi-Fi is switched **off** in the production build, because it cannot associate while
+the BLE controller is initialised ([firmware
+#31](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/31)). LTE carries the data in
+the meantime. The direct-upload contract ([`uplink/v1`](contracts/uplink/v1/README.md)) is specified
+and the firmware still uses the older device listener; swapping it is
+[Phase 28](ROADMAP.md#phase-28--the-networked-dongle-finished--in-progress).
 
 **Why not Secure Boot?** The one real dongle is ESP32 silicon revision v1.0, which cannot do Secure
 Boot V2; the V1 alternative is weaker and permanent. See [Where things stand](#where-things-stand).
@@ -529,12 +551,17 @@ Boot V2; the V1 alternative is weaker and permanent. See [Where things stand](#w
 server host and the iPhone.
 
 **Does it work with my car?** It reads standard OBD-II data and is developed on BMW N20 and B58
-engines, where fuel trims and mixture say more about health than boost. Per-engine profiles, chosen at
-build time, are planned for other cars. There is no Android app in this project.
+engines, where fuel trims and mixture say more about health than boost. Per-engine profiles are real:
+`engine/v1` specifies both halves of a profile — how to read an ECU, and what the readings mean —
+with 105 formula vectors reproduced by three independent implementations, and the firmware compiles
+in the profiles you choose. Adding a car means writing a profile, not editing the firmware. There is
+no Android app in this project.
 
-**Can I share a trip?** Not yet. Sharing is a roadmap theme with its constraints written first
-([threat model](docs/threat-model.md#sharing-design-constraints-before-any-design)); it will be a file
-you send, never a hosted service.
+**Can I share a trip?** Not as a redacted export yet — that is
+[Phase 31](ROADMAP.md#phase-31--sharing-and-data-control--planned), and its constraints are written
+first ([threat model](docs/threat-model.md#sharing-design-constraints-before-any-design)); it will be
+a file you send, never a hosted service. You can already save a trip as a high-resolution picture
+from the dashboard.
 
 **Can I read my data without Cairn's software?** That is what the contracts are for: the bundle
 format and the analytical store are specified and versioned, and the store can be exported as Parquet.
@@ -544,8 +571,12 @@ format and the analytical store are specified and versioned, and the store can b
 
 ## Contributing
 
-- **Issues and ideas** go on the repository that owns the work; the roadmap and the
-  [split plan](docs/repo-split-plan.md) link the open ones.
+- **Issues and ideas** go on the repository that owns the work — [who owns
+  what](ROADMAP.md#who-owns-what) says which. The roadmap links every open one, grouped by the phase
+  it belongs to, so an issue should not need its own plan.
+- **There is one roadmap.** Do not start a `ROADMAP.md` in a component repository: a README says what
+  that part *is* and what it has running, and [ROADMAP.md](ROADMAP.md) says what happens next
+  everywhere.
 - **Changing a protocol** starts here, following [the contract-first loop](#the-contract-first-loop-and-pinning)
   and the rules in [contracts/README.md](contracts/README.md): draft the change with an implementation
   branch, generate vectors (including negative cases), have the spec and expected outputs reviewed, and

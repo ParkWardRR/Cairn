@@ -45,6 +45,7 @@ func main() {
 		{"cairn-vehicle-server", "cairn-vehicle-server"},
 		{"cairn-vehicle-web-dashboard", "cairn-vehicle-web-dashboard"},
 		{"cairn-esp32-device-firmware", "cairn-esp32-device-firmware"},
+		{"cairn-ios-companion-app", "cairn-ios-companion-app"},
 		{"cairn-modules", "cairn-modules"},
 	} {
 		repos = append(repos, pindash.Repo{
