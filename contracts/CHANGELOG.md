@@ -5,15 +5,28 @@ publishes. Protocol directories are versioned independently of the collection ta
 
 ## Unreleased
 
-> **`contracts-v0.5.0` cannot be consumed by anything that checks the capture-field
-> vocabulary, and the fix is in here.** `engine/v1` gained `pedal_pct` in
+Nothing yet.
+
+## 0.6.0 (2026-10-09)
+
+**A repair release.** It adds no protocol directory and changes no released byte layout, so
+every consumer pinning 0.5.0 is still satisfied by this tag and may bump at its own pace.
+What it does is make `module/v1` consumable and bring `store/v1`'s machine-readable schema
+back level with the store that serves it.
+
+> **`contracts-v0.5.0` could not be consumed by anything that checks the capture-field
+> vocabulary, and this release is the fix.** `engine/v1` gained `pedal_pct` in
 > [631dad2](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/631dad2),
 > which 0.5.0 carries; `module/v1`'s `$defs/engine_field` only gained it in
 > [df8a997](https://github.com/ParkWardRR/cairn-driving-log-selfhosted/commit/df8a997),
-> which it does not. So `modgen validate` refuses the 0.5.0 tree — correctly — and
-> `cairn-modules` cannot move off `contracts-v0.4.0` until a release carries df8a997.
-> The guard working is the good news; the tag being unconsumable is the reason the next
-> release matters.
+> which it does not. So `modgen validate` refused the 0.5.0 tree — correctly — and
+> `cairn-modules` could not move off `contracts-v0.4.0` at all. The guard working is the
+> good news; the tag being unconsumable is why this release exists.
+
+**`module/v1` is still draft**, and the two normative changes below are behavioural: a
+consumer that computes module identity must be updated together with its pin. `modgen` in
+`cairn-modules` and the server's `internal/modules` both already implement them, so both
+have been ahead of every tag until now.
 
 - **`store/v1/schema.json` is regenerated at `store/v1.3`**, which the server has been
   serving since `86e2381` while this file still said `store/v1.2` — the contract was
@@ -56,9 +69,9 @@ publishes. Protocol directories are versioned independently of the collection ta
   different store. That is a false mismatch, and invariant 5 is worth less every time it cries wolf. The new
   rule covers what can change a module's output and nothing else; it needs no "except documentation"
   carve-out and extends by itself to any later key whose value is a path.
-  **Normative and behavioural**, so a consumer computing identity must be updated together with its pin:
-  `modgen` in `cairn-modules` is. Nothing else computes identity yet. Suggested release: a patch on
-  `module/v1`, which is draft and so may change in place.
+  **Normative and behavioural**, so a consumer computing identity must be updated together with its pin.
+  Both consumers that compute identity are: `modgen` in `cairn-modules`, and the server's
+  `internal/modules`. Each had been ahead of every tag on this point until this release.
 
 - `module/v1/module.schema.json`: adds `pedal_pct` to `$defs/engine_field`, so the capture-field vocabulary
   matches `engine/v1`'s `$defs/field` again after
@@ -70,7 +83,29 @@ publishes. Protocol directories are versioned independently of the collection ta
   changes the module-set identity) and marks the two release-gate items `cairn-modules` and the second
   implementation as met.
 
-Nothing yet.
+## 0.5.0 (2026-10-08)
+
+Cut without an entry at the time; written up here from the tag. **Additive to `format/v3`**, whose
+byte layouts are stable, so it adds fields and a record type and changes nothing existing.
+
+- **`format/v3` manifest key 29, `engine_profile`**: `[id, version, sha256]`, optional and
+  independent of key 23, so a manifest has **27 to 29** fields. The digest and not just the name,
+  because a profile edited without a version bump is a different profile and only the digest says
+  so. A reader must not require the key. Readers should prefer it over parsing the profile out of
+  `firmware_version`, where devices had been carrying it as a suffix with 31 of 32 bytes used.
+- **`format/v3` record type `0x0B`, `TIME_OBSERVATION`**: one wall-clock reading from one source,
+  recorded as evidence rather than as a decision. The monotonic half is the **frame's**
+  `monotonic_ms`, not a payload field, and that pairing is the point — `utc_ms` minus it is the UTC
+  of monotonic zero that source implies, so sources are directly comparable and drift within one
+  source is visible across a trip. An unknown source number is kept and rendered, never rejected.
+- **`format/v3` `OBD_EXTENDED` gains `pedal_pct`** (PID 0x49), and `engine/v1`'s `$defs/field`
+  gains it as a capture field.
+
+> **This release is internally inconsistent and 0.6.0 is the fix.** `pedal_pct` went into
+> `engine/v1` here and not into `module/v1`'s `$defs/engine_field`, so the vocabulary guard
+> refuses this tree and `cairn-modules` cannot pin this tag. Consumers that do not check the two
+> enums against each other — the firmware, the server, the app, the dashboard — are unaffected and
+> several pin it today.
 
 ## 0.4.0 (2026-10-08)
 
