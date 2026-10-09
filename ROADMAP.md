@@ -243,6 +243,7 @@ independent features. Breaking changes were authorised; v2 is dead.
 | 32 | [Release engineering: flash it from a browser](#phase-32--release-engineering-flash-it-from-a-browser--planned) | **planned** |
 | 33 | [Speed: boot, time-to-upload, time-to-visible](#phase-33--speed-boot-time-to-upload-time-to-visible--planned) | **planned** |
 | 34 | [Chip hardening on replacement hardware](#phase-34--chip-hardening-on-replacement-hardware--planned-gated) | **planned, gated** |
+| 35 | [Routes, stretches and marking a drive](#phase-35--routes-stretches-and-marking-a-drive--planned-two-decisions-open) | **planned, two decisions open** |
 
 ---
 
@@ -334,6 +335,10 @@ involved.
 | iOS | Fast connect and fast offload: state restoration, background reconnect, connection parameters | [#29](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/29) |
 | iOS | Multiple dongles (the model, selection, per-dongle state) and multiple phones per car | [#26](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/26), [#19](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/19) |
 | iOS | Bump the contracts pin — the app is on `contracts-v0.2.0`, three releases behind | — |
+| iOS | Drive the CarPlay screen. Apple **approved** the Driving Task entitlement on 2026-10-08, the signed build runs on hardware, and a distribution export carries the capability — but the car screen has not been seen running, in the simulator or a head unit. Then the drive test: cold launch from the head unit, locked phone, disconnect and reconnect | — |
+| iOS | Phase 1's two remaining rows, both of which need a drive: background wake from suspended **and** from system-terminated, and the accuracy, battery and write-rate comparison against the dongle's own receiver | — |
+| iOS | Trip snapshot sync still calls an unauthenticated `/api/snapshot?format=tar` the committed server does not serve; move it to the signed `/v1/snapshot` | [#7](https://github.com/ParkWardRR/cairn-ios-companion-app/issues/7) |
+| firmware | `BARO_ALT`, `UTC_SYNC`, `OBD_LIVE` and `DEVICE_STATUS` characteristics. The app side of all four is built and vector-tested and **dormant**, because no firmware build exposes them — `UTC_SYNC` excepted, which the dongle now reads and no client writes | — |
 | firmware | An enrolled-app challenge–response at session start, a per-session write counter, the device fingerprint exposed for the app to verify. Then **restore the shipping pairing** (MITM + DISPLAY_ONLY + authenticated characteristics): the current build is Just Works with bonds cleared each boot | [#5](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/5) |
 | firmware | Arbitration and enrolment when several phones share one dongle | [#9](https://github.com/ParkWardRR/cairn-esp32-device-firmware/issues/9) |
 | server | Drive the relay path from the emulator matrix, not only the simulated BLE link | Phase 26 |
@@ -485,6 +490,40 @@ development mode before release mode touches a unit that matters.
 What applies to the unit in the car instead: application-layer AEAD on every frame (shipped), a
 credential key the chip cannot reconstruct alone (Phase 28), signed OTA images (written), and
 revocation of a stolen dongle.
+
+## Phase 35 — Routes, stretches and marking a drive — **planned, two decisions open**
+
+The owner's brief of 2026-10-08. Two halves that only pay off together: a **shape** for a drive
+richer than one flat polyline, and a way to **mark something while driving** without looking at a
+screen. The marks are what make the shapes worth having — "I drove this road" is only interesting
+once you can say *this* part of it, and *that* felt wrong. Design, worked through:
+[routes-and-marking.md](https://github.com/ParkWardRR/cairn-ios-companion-app/blob/main/docs/routes-and-marking.md).
+
+**Nothing has started, and two decisions need the owner before any code does.**
+
+1. **Naming.** "Segment" is already taken three times in Cairn: the AEAD-encrypted on-card storage
+   unit in `format/v3` (a frozen contract), the app's `DriveSegmenter` 10-minute gap split, and the
+   server's drive/stop/gap segmentation. A fourth meaning makes every conversation ambiguous.
+   *Recommendation: use **stretch***, which the brief already offers, and leave "segment" to storage.
+2. **Hierarchy.** "Several routes make up a trip" inverts how Cairn uses "trip" today, where a trip
+   is one drive and a route is the line it drew. The brief's sense works if a trip is the whole
+   outing — drive to the canyon, run the loop, drive home — but that is a different boundary from the
+   one the server's derived trip builder already uses. Either redefine the boundary, or put the
+   outing above the trip under a new name.
+
+**Closes when:** a drive can be marked by voice with the phone locked, and the mark is found
+afterwards on the right stretch, carrying the telemetry that was actually live at the time.
+
+| Repo | Required | Issue |
+|---|---|---|
+| front door | Settle the two decisions above, then the additive `store/v1` views for routes and stretches and a `sync/v1` carrier for marks | — |
+| server | Route and stretch tables, the out-and-back / loop / one-way classifier, and stretch matching across drives so the same road recognises itself | — |
+| iOS | `DriveMark` in CairnCore: kind, timestamp, drive id, optional location, and **the telemetry actually held at that moment with its freshness** — never a fabricated reading. Plus a reconciliation pass once the dongle's data for that window arrives | — |
+| iOS | One-tap marking from the Drive tab, the Action button, a Control Center control, a Lock Screen Live Activity, and a mark button on the CarPlay Now deck — the first *write* the car screen does, and it must not touch recording state | — |
+| iOS | App Intents and App Shortcuts for the spoken phrases, running without launching the UI. "Is my drive recording?" answers off the same evidence rule as the CarPlay HUD, which only claims recording on the dongle's own fresh word — **the negative answer is the feature**: a logger that cannot say "I can't confirm" is not trustworthy | — |
+| iOS | Store a location track per drive (Phase 3 work, still open) — a route cannot be classified without one, which makes retention and delete-all matter | — |
+| dashboard | Draw a route with its shape named, stretches selectable, marks on the route map and the speed trace, and search by mark kind | — |
+| firmware | Only if "save a clip either side of the tap" is to be exact. A phone-side ring buffer of the last N seconds works with today's firmware and holds only what BLE delivered; asking the dongle for the window is complete but needs a new characteristic. *Recommendation: ship the ring buffer first* | — |
 
 ---
 
